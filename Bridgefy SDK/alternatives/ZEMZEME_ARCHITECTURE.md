@@ -1,6 +1,6 @@
 # Zemzeme BLE Mesh 架構詳解
 
-> 來源：https://github.com/nicokimmel/zemzeme
+> 來源：https://github.com/whisperbit-labs/zemzeme-android
 > 版本：基於 BitChat v1.7.0 fork
 > 授權：Public Domain
 

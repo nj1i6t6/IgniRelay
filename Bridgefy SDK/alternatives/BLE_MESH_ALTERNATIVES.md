@@ -217,8 +217,11 @@ mesh/
 ### 具體行動項目
 
 #### 本週
-1. [ ] 找到 BitChat/Zemzeme 的 `AppConstants.Mesh.Gatt` 中實際的 Service UUID 和 Characteristic UUID
-2. [ ] 比對現有 `ble_manager.dart` 的 GATT 配置與 Zemzeme 的差異
+1. [x] 找到 BitChat/Zemzeme 的 `AppConstants.Mesh.Gatt` 中實際的 Service UUID 和 Characteristic UUID
+   - `SERVICE_UUID = F47B5E2D-4A9E-4C5A-9B3F-8E1D2C3A4B5C`
+   - `CHARACTERISTIC_UUID = A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D`
+   - `DESCRIPTOR_UUID = 00002902-0000-1000-8000-00805f9b34fb` (標準 CCCD)
+2. [ ] 比對現有 `ble_manager.dart` 的 GATT 配置與上述 UUID 的差異
 3. [ ] 修正 MTU 協商（連線後請求 MTU 517）
 4. [ ] 修正 GATT Server 廣告方式（加入 Service UUID）
 
@@ -237,9 +240,9 @@ mesh/
 
 | 資源 | URL |
 |------|-----|
-| BitChat Android | https://github.com/nicokimmel/bitchat-android |
-| BitChat iOS | https://github.com/nicokimmel/bitchat-ios |
-| Zemzeme | https://github.com/nicokimmel/zemzeme |
-| Bridgefy Flutter Plugin | https://github.com/nicokimmel/bridgefy-flutter-plugin |
-| Bridgefy Issue #28 | https://github.com/nicokimmel/bridgefy-flutter-plugin/issues/28 |
+| BitChat Android | https://github.com/permissionlesstech/bitchat-android |
+| BitChat (原始) | https://github.com/permissionlesstech/bitchat |
+| Zemzeme Android | https://github.com/whisperbit-labs/zemzeme-android |
+| Zemzeme 官網 | https://zemzeme.app/ |
+| Bridgefy Flutter Plugin | https://pub.dev/packages/bridgefy |
 | Berty Wesh | https://github.com/berty/wesh |
