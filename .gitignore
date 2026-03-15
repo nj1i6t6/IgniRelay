@@ -1,3 +1,14 @@
 /.venv
 /tmpclaude-0056-cwd
 /tmpclaude-9cb4-cwd
+
+# Large binary assets - keep locally but do not track in git
+/docs/sources/natural_earth_vector.sqlite.zip
+/docs/taiwan-260225.osm.pbf
+/docs/taiwan_resqmesh.mbtiles
+/docs/sources/water-polygons-split-3857.zip
+/docs/sources/lake_centerline.shp.zip
+/docs/tilemaker/build/RelWithDebInfo/tilemaker.pdb
+
+# Local backup of large files used during history rewrite
+/bigfile-backup/
