@@ -32,6 +32,7 @@
     <!-- ── Foreground Service ─────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- ── Battery Optimization Exemption ───────────────────────────── -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
@@ -42,7 +43,7 @@
     <uses-feature android:name="android.hardware.wifi.aware" android:required="false" />
 
     <application
-        android:label="ResQMesh"
+        android:label="烽傳 IgniRelay"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
@@ -71,6 +72,12 @@
             android:name=".ResQMeshForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- Bridgefy SDK Background Service -->
+        <service
+            android:name="me.bridgefy.main.BridgefyService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice|dataSync" />
 
         <!-- Disable Impeller: vector_map_tiles / vector_tile_renderer
              rely on Skia Canvas operations that Impeller does not fully support,

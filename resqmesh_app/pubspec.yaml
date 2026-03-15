@@ -1,8 +1,8 @@
 name: resqmesh_app
-description: Project ResQMesh - Offline Mesh Emergency Rescue System
+description: 烽傳 IgniRelay - Offline Mesh Emergency Rescue System
 publish_to: 'none'
 
-version: 0.1.7+8
+version: 0.1.8+9
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -24,6 +24,7 @@ dependencies:
 
   # ── BLE Mesh Networking ────────────────────────────────────
   flutter_blue_plus: ^2.2.1
+  # bridgefy: ^1.1.8  # 暫時停用 — Bridgefy maven repo 500 error，待恢復後啟用
 
   # ── State Management & Utils ───────────────────────────────
   provider: ^6.1.2

@@ -1153,3 +1153,78 @@ class MedicalSummary extends $pb.GeneratedMessage {
     $_setString(10, v);
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MeshEnvelope (Bridgefy 廣播驅動頂層封包)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MeshEnvelope extends $pb.GeneratedMessage {
+  factory MeshEnvelope({
+    EnvelopeType? type,
+    $core.List<$core.int>? payload,
+    $core.String? senderId,
+  }) {
+    final $result = create();
+    if (type != null) $result.type = type;
+    if (payload != null) $result.payload = payload;
+    if (senderId != null) $result.senderId = senderId;
+    return $result;
+  }
+
+  MeshEnvelope._() : super();
+
+  factory MeshEnvelope.fromBuffer($core.List<$core.int> i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(i, r);
+
+  factory MeshEnvelope.fromJson($core.String i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('MeshEnvelope',
+      package: const $pb.PackageName('resqmesh'), createEmptyInstance: create)
+    ..e<EnvelopeType>(1, 'type', $pb.PbFieldType.OE,
+        defaultOrMaker: EnvelopeType.ENVELOPE_EVENT,
+        valueOf: EnvelopeType.valueOf,
+        enumValues: EnvelopeType.values)
+    ..a<$core.List<$core.int>>(2, 'payload', $pb.PbFieldType.OY)
+    ..aOS(3, 'senderId', protoName: 'sender_id')
+    ..hasRequiredFields = false;
+
+  @$core.override
+  MeshEnvelope createEmptyInstance() => create();
+
+  static MeshEnvelope create() => MeshEnvelope._();
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.override
+  MeshEnvelope clone() => MeshEnvelope()..mergeFromMessage(this);
+
+  // Field 1: type (EnvelopeType)
+  @$pb.TagNumber(1)
+  EnvelopeType get type => $_getN(0);
+  @$pb.TagNumber(1)
+  set type(EnvelopeType v) {
+    setField(1, v);
+  }
+  @$pb.TagNumber(1)
+  $core.bool hasType() => $_has(0);
+
+  // Field 2: payload (bytes)
+  @$pb.TagNumber(2)
+  $core.List<$core.int> get payload => $_getN(1);
+  @$pb.TagNumber(2)
+  set payload($core.List<$core.int> v) {
+    $_setBytes(1, v);
+  }
+
+  // Field 3: sender_id (string)
+  @$pb.TagNumber(3)
+  $core.String get senderId => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set senderId($core.String v) {
+    $_setString(2, v);
+  }
+}

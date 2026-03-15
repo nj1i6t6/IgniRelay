@@ -12,6 +12,7 @@ android {
     ndkVersion = "27.0.12077973"
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -22,8 +23,7 @@ android {
 
     defaultConfig {
         applicationId = "network.resqmesh"
-        // minSdk 21: BLE Central (flutter_blue_plus) minimum
-        // WiFi Aware (API 26+) is guarded by runtime version checks
+        // minSdk 23: Bridgefy SDK 最低需求
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -43,9 +43,13 @@ android {
         variant.outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
             val versionName = variant.versionName
-            output.outputFileName = "ResQMesh-v${versionName}-${variant.buildType.name}.apk"
+            output.outputFileName = "IgniRelay-v${versionName}-${variant.buildType.name}.apk"
         }
     }
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
 
 flutter {

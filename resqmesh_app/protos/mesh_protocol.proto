@@ -151,3 +151,20 @@ message EmergencyContact {
   string phone = 1;      // 電話號碼
   string relation = 2;   // 與用戶的關係
 }
+
+// ── Bridgefy 廣播驅動 Mesh 封包 ──────────────────────────────────
+
+// MeshEnvelope 封裝類型（區分 Bloom Filter 交換與事件傳輸）
+enum EnvelopeType {
+  ENVELOPE_EVENT        = 0;  // 包含 MeshEvent 序列化 bytes
+  ENVELOPE_BLOOM_FILTER = 1;  // 包含 Bloom Filter 資料（事件 ID 列表）
+}
+
+// MeshEnvelope — Bridgefy 廣播驅動的頂層封包
+// 所有透過 Bridgefy SDK 傳送的資料都先包裝為此格式，
+// 接收端根據 type 決定是進行 Bloom Filter 比對還是事件處理。
+message MeshEnvelope {
+  EnvelopeType type = 1;   // 封包類型
+  bytes payload = 2;        // 內容（EVENT: MeshEvent bytes / BLOOM_FILTER: 事件 ID 列表）
+  string sender_id = 3;     // 發送者 UUID（Bridgefy userId）
+}

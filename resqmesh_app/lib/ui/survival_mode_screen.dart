@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../mesh/ble_manager.dart';
+import 'package:provider/provider.dart';
+import '../mesh/mesh_transport.dart';
+import '../mesh/mesh_event_handler.dart';
 import '../mesh/native_bridge.dart';
 import '../mesh/event_manager.dart';
 
@@ -35,16 +37,17 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   final List<String> _gattServerLogs = [];
   StreamSubscription? _gattSub;
 
-  final _bleManager = BleManager();
+  late final MeshTransport _transport;
   StreamSubscription? _bleSub;
   Timer? _statsTimer;
 
   @override
   void initState() {
     super.initState();
+    _transport = Provider.of<MeshTransport>(context, listen: false);
     _checkCapabilities();
     _loadStats();
-    _startBleListening();
+    _startMeshListening();
     _startGattListener();
     _statsTimer =
         Timer.periodic(const Duration(seconds: 3), (_) => _refreshDebug());
@@ -90,17 +93,15 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
     }
   }
 
-  void _startBleListening() {
-    // BLE 掃描已在 main 啟動時自動開始，這裡同步 UI 狀態
-    _isBleActive = _bleManager.isActive;
-    _bleSub = _bleManager.events.listen((event) {
+  void _startMeshListening() {
+    // Transport 已在 main 啟動時自動開始，這裡同步 UI 狀態
+    _isBleActive = _transport.isActive;
+    _bleSub = MeshEventHandler().events.listen((event) {
       if (!mounted) return;
       setState(() {
-        if (event.type == 'connected') _bleConnectedCount++;
-        if (event.type == 'received') {
-          _recentEvents.insert(0, '[BLE] 收到 ${event.data?.length ?? 0} bytes');
-          if (_recentEvents.length > 5) _recentEvents.removeLast();
-        }
+        _bleConnectedCount++;
+        _recentEvents.insert(0, '[Mesh] 收到 ${event.data.length} bytes');
+        if (_recentEvents.length > 5) _recentEvents.removeLast();
       });
     });
   }
@@ -181,14 +182,15 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
 
   Future<void> _toggleBle() async {
     if (_isBleActive) {
-      await _bleManager.stopScanning();
+      await _transport.stop();
       setState(() => _isBleActive = false);
     } else {
       // 確保前景服務啟動，防止背景被系統殺掉
       try {
         await NativeBridge.startMeshForegroundService();
       } catch (_) {}
-      await _bleManager.startScanning();
+      await _transport.initialize();
+      await _transport.start();
       setState(() => _isBleActive = true);
     }
   }
@@ -401,8 +403,8 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   }
 
   Widget _buildDebugPanel() {
-    final m = _bleManager;
-    final logs = m.debugLogs;
+    final s = _transport.stats;
+    final logs = s.debugLogs;
     final gattLogs = _gattServerLogs;
 
     return Container(
@@ -416,28 +418,14 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // BLE State
-          const Text('BLE State', style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold)),
+          // Transport State
+          const Text('Transport State', style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          _debugRow('scanning', '${m.isScanning}'),
-          _debugRow('active', '${m.isActive}'),
-          _debugRow('connecting', '${m.isConnecting}'),
-          _debugRow('scan cycles', '${m.scanCycleCount}'),
-          _debugRow('unique peers ever', '${m.uniquePeersEverSeen.length}'),
-          _debugRow('known (this cycle)', '${m.knownPeersCount}'),
-          _debugRow('cooldown', '${m.cooldownCount}'),
-          _debugRow('pending queue', '${m.pendingCount}'),
-          _debugRow('seenEvents (mem)', '${m.seenEventsCount}'),
-          _debugRow('sent total', '${m.syncedEventCount}'),
-          _debugRow('recv total', '${m.receivedEventCount}'),
-          if (m.uniquePeersEverSeen.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              'Peers: ${m.uniquePeersEverSeen.join(', ')}',
-              style: const TextStyle(color: Colors.white38, fontSize: 9, fontFamily: 'monospace'),
-              maxLines: 3, overflow: TextOverflow.ellipsis,
-            ),
-          ],
+          _debugRow('active', '${_transport.isActive}'),
+          _debugRow('connected peers', '${s.connectedPeers}'),
+          _debugRow('seenEvents (mem)', '${s.seenEventsCount}'),
+          _debugRow('sent total', '${s.sentCount}'),
+          _debugRow('recv total', '${s.receivedCount}'),
 
           const SizedBox(height: 8),
           const Divider(color: Colors.white12, height: 1),
@@ -464,10 +452,10 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
           const Divider(color: Colors.white12, height: 1),
           const SizedBox(height: 8),
 
-          // BLE Debug Logs
+          // Transport Debug Logs
           Row(
             children: [
-              const Text('BLE Central Logs', style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+              const Text('Transport Logs', style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold)),
               const Spacer(),
               Text('${logs.length} entries', style: const TextStyle(color: Colors.white38, fontSize: 10)),
             ],
@@ -488,7 +476,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                   else if (log.contains('SKIP')) c = Colors.orange;
                   else if (log.contains('SENT')) c = Colors.lightBlueAccent;
                   else if (log.contains('RECV')) c = Colors.purpleAccent;
-                  else if (log.contains('SCAN')) c = Colors.yellow;
+                  else if (log.contains('SCAN') || log.contains('BLOOM')) c = Colors.yellow;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 1),
                     child: Text(log, style: TextStyle(color: c, fontSize: 9, fontFamily: 'monospace'), maxLines: 2, overflow: TextOverflow.ellipsis),

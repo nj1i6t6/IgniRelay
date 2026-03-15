@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ui/survival_mode_screen.dart';
@@ -12,7 +13,9 @@ import 'ui/battery_optimization_guide.dart';
 import 'ui/medical_card_screen.dart';
 import 'db/database_helper.dart';
 import 'crypto/identity_manager.dart';
-import 'mesh/ble_manager.dart';
+import 'mesh/mesh_transport.dart';
+import 'mesh/mesh_event_handler.dart';
+import 'mesh/transport_factory.dart';
 import 'mesh/native_bridge.dart';
 
 void main() async {
@@ -29,30 +32,37 @@ void main() async {
     // 即使初始化失敗也讓 app 能啟動，不要黑屏
   }
 
-  runApp(const ResQMeshApp());
+  // 建立 MeshTransport 實例
+  final transport = TransportFactory.create();
+
+  runApp(ResQMeshApp(transport: transport));
 }
 
 class ResQMeshApp extends StatelessWidget {
-  const ResQMeshApp({super.key});
+  final MeshTransport transport;
+  const ResQMeshApp({super.key, required this.transport});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'ResQMesh',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        primaryColor: Colors.red[900],
-        scaffoldBackgroundColor: Colors.black,
-        colorScheme: const ColorScheme.dark(
-          primary: Colors.redAccent,
-          secondary: Colors.cyanAccent,
-          surface: Color(0xFF1a1a2e),
+    return Provider<MeshTransport>.value(
+      value: transport,
+      child: MaterialApp(
+        title: '烽傳 IgniRelay',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData.dark().copyWith(
+          primaryColor: Colors.red[900],
+          scaffoldBackgroundColor: Colors.black,
+          colorScheme: const ColorScheme.dark(
+            primary: Colors.redAccent,
+            secondary: Colors.cyanAccent,
+            surface: Color(0xFF1a1a2e),
+          ),
+          snackBarTheme: const SnackBarThemeData(
+            behavior: SnackBarBehavior.floating,
+          ),
         ),
-        snackBarTheme: const SnackBarThemeData(
-          behavior: SnackBarBehavior.floating,
-        ),
+        home: const _StartupRouter(),
       ),
-      home: const _StartupRouter(),
     );
   }
 }
@@ -69,9 +79,12 @@ class _StartupRouterState extends State<_StartupRouter> {
   bool _initialized = false;
   bool _showOnboarding = false;
 
+  late final MeshTransport _transport;
+
   @override
   void initState() {
     super.initState();
+    _transport = Provider.of<MeshTransport>(context, listen: false);
     _init();
   }
 
@@ -84,11 +97,11 @@ class _StartupRouterState extends State<_StartupRouter> {
       final prefs = await SharedPreferences.getInstance();
       final done = prefs.getBool('onboarding_done') ?? false;
 
-      // 權限通過後自動啟動 BLE Mesh 背景掃描
+      // 權限通過後自動啟動 Mesh Transport
       if (allGranted) {
-        // 不 await，讓 BLE 掃描在背景執行，避免阻塞 UI
-        BleManager().startScanning().catchError((e) {
-          debugPrint('[Init] BLE scanning failed: $e');
+        // 不 await，讓 mesh 在背景啟動，避免阻塞 UI
+        _transport.initialize().then((_) => _transport.start()).catchError((e) {
+          debugPrint('[Init] Mesh transport start failed: $e');
         });
 
         // Android: 自動掛載前景服務，防止系統殺掉後台
@@ -177,7 +190,7 @@ class _StartupRouterState extends State<_StartupRouter> {
               CircularProgressIndicator(color: Colors.redAccent),
               SizedBox(height: 16),
               Text(
-                'ResQMesh 啟動中...',
+                '烽傳 啟動中...',
                 style: TextStyle(color: Colors.white54),
               ),
             ],
@@ -228,14 +241,11 @@ class _MainTabControllerState extends State<MainTabController> {
     super.dispose();
   }
 
-  /// 監聽 BLE 收到的 SOS 事件，彈出警報
+  /// 監聯 Mesh 收到的 SOS 事件，彈出警報
   void _listenForSosAlerts() {
-    _bleSub = BleManager().events.listen((event) {
+    _bleSub = MeshEventHandler().events.listen((event) {
       if (!mounted) return;
-      if (event.type != 'received' || event.data == null) return;
-
-      // 嘗試解析事件資料以取得 urgency
-      _checkAndAlertSos(event.data!, event.deviceId);
+      _checkAndAlertSos(event.data, event.sourceNodeId);
     });
   }
 

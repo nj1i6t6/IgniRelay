@@ -51,3 +51,21 @@ class UrgencyLevel extends $pb.ProtobufEnum {
 
   const UrgencyLevel._($core.int v, $core.String n) : super(v, n);
 }
+
+class EnvelopeType extends $pb.ProtobufEnum {
+  static const EnvelopeType ENVELOPE_EVENT =
+      EnvelopeType._(0, 'ENVELOPE_EVENT');
+  static const EnvelopeType ENVELOPE_BLOOM_FILTER =
+      EnvelopeType._(1, 'ENVELOPE_BLOOM_FILTER');
+
+  static const $core.List<EnvelopeType> values = <EnvelopeType>[
+    ENVELOPE_EVENT,
+    ENVELOPE_BLOOM_FILTER,
+  ];
+
+  static final $core.Map<$core.int, EnvelopeType> _byValue =
+      $pb.ProtobufEnum.initByValue(values);
+  static EnvelopeType? valueOf($core.int value) => _byValue[value];
+
+  const EnvelopeType._($core.int v, $core.String n) : super(v, n);
+}
