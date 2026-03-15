@@ -12,3 +12,6 @@
 
 # Local backup of large files used during history rewrite
 /bigfile-backup/
+
+# Large binary assets in resqmesh_app
+/resqmesh_app/assets/maps/taiwan_resqmesh.mbtiles
