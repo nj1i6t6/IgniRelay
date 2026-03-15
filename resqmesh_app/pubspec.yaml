@@ -1,0 +1,65 @@
+name: resqmesh_app
+description: Project ResQMesh - Offline Mesh Emergency Rescue System
+publish_to: 'none'
+
+version: 0.1.7+8
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ── UI & Maps ─────────────────────────────────────────────
+  flutter_map: ^7.0.2
+  # Vector tile rendering for bundled MBTiles (OpenMapTiles schema)
+  vector_map_tiles: ^8.0.0
+  vector_map_tiles_mbtiles: ^1.2.0
+  vector_tile_renderer: ^5.2.1
+  vector_tile: ^2.0.1
+  mbtiles: ^0.4.2
+  latlong2: ^0.9.0
+  path_provider: ^2.1.4
+
+  # ── BLE Mesh Networking ────────────────────────────────────
+  flutter_blue_plus: ^2.2.1
+
+  # ── State Management & Utils ───────────────────────────────
+  provider: ^6.1.2
+  uuid: ^4.4.2
+  collection: ^1.18.0
+
+  # ── Storage ───────────────────────────────────────────────
+  sqflite: ^2.3.3+1
+  path: ^1.9.0
+  shared_preferences: ^2.2.3
+  # Native SQLite3 shared library (required by mbtiles on Android/iOS)
+  sqlite3: ^2.9.0
+  sqlite3_flutter_libs: ^0.5.24
+
+  # ── Cryptography ──────────────────────────────────────────
+  cryptography: ^2.7.0
+  crypto: ^3.0.3
+
+  # ── Protobuf ──────────────────────────────────────────────
+  protobuf: ^3.1.0
+  fixnum: ^1.1.0
+
+  # ── GPS Location ──────────────────────────────────────────
+  geolocator: ^11.1.0
+
+  # ── Permissions ───────────────────────────────────────────
+  permission_handler: ^11.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.2
+  protoc_plugin: ^21.1.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/maps/
+    - assets/style/

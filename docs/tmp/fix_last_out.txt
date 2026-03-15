@@ -1,0 +1,7 @@
+﻿Line 17: '*   `is_blacklisted` (BOOLEAN): 達到隔離門檻（weight ≥ 3.0）或手動封鎖後，拒絕建立 Socket 連線。'
+Actual: '*   `is_blacklisted` (BOOLEAN): 達到隔離門檻（weight ≥ 3.0）或手動封鎖後，拒絕建立 Socket 連線。'
+
+UIQA 騾子模式 occurrences:
+  L26: *   **騾子模式（Tier 1 Android 前台 / 背景掛 Foreground Service）**：電量達門檻，UI 主題切換，光暈擴大，宣示裝置正啟動 **Wi-Fi Aware (N
+  L28: *   **高能模式（iOS 前台 Tier 1）**：iOS 前台屬 Tier 1 節點，具備大檔傳輸能力，UI 主題同步切換顯示「高能模式」。平時以 **BLE** 發現周圍節點，遇大檔案（地圖 
+done

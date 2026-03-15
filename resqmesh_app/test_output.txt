@@ -1,0 +1,21 @@
+﻿00:00 +0: loading C:/Users/radio/Downloads/?啣?鞈?憭?(4)/CoReM/resqmesh_app/test/crdt_test.dart
+00:00 +0: C:/Users/radio/Downloads/?啣?鞈?憭?(4)/CoReM/resqmesh_app/test/crdt_test.dart: Hybrid Logical Clock (HLC) HLC should correctly compare timestamps
+00:00 +1: C:/Users/radio/Downloads/?啣?鞈?憭?(4)/CoReM/resqmesh_app/test/crdt_test.dart: Hybrid Logical Clock (HLC) HLC should correctly compare counters when timestamps match
+00:00 +2: C:/Users/radio/Downloads/?啣?鞈?憭?(4)/CoReM/resqmesh_app/test/crdt_test.dart: Hybrid Logical Clock (HLC) HLC merge should advance timestamp when other is greater
+00:00 +3: C:/Users/radio/Downloads/?啣?鞈?憭?(4)/CoReM/resqmesh_app/test/crdt_test.dart: Conflict Resolver (Double Spending) Earlier HLC should win
+00:00 +4: C:/Users/radio/Downloads/?啣?鞈?憭?(4)/CoReM/resqmesh_app/test/crdt_test.dart: Conflict Resolver (Double Spending) Tiebreaker uses urgency when HLC matches
+00:00 +5 -1: loading C:/Users/radio/Downloads/?啣?鞈?憭?(4)/CoReM/resqmesh_app/test/routing_test.dart [E]
+  Failed to load "C:/Users/radio/Downloads/?啣?鞈?憭?(4)/CoReM/resqmesh_app/test/routing_test.dart":
+  Compilation failed for testPath=C:/Users/radio/Downloads/?啣?鞈?憭?(4)/CoReM/resqmesh_app/test/routing_test.dart: lib/mesh/triage_queue.dart:12:9: Error: Type 'PriorityQueue' not found.
+    final PriorityQueue<MeshTask> _queue = PriorityQueue<MeshTask>((a, b) {
+          ^^^^^^^^^^^^^
+  lib/mesh/triage_queue.dart:12:9: Error: 'PriorityQueue' isn't a type.
+    final PriorityQueue<MeshTask> _queue = PriorityQueue<MeshTask>((a, b) {
+          ^^^^^^^^^^^^^
+  lib/mesh/triage_queue.dart:12:42: Error: Method not found: 'PriorityQueue'.
+    final PriorityQueue<MeshTask> _queue = PriorityQueue<MeshTask>((a, b) {
+                                           ^^^^^^^^^^^^^
+  .
+00:00 +5 -1: C:/Users/radio/Downloads/?啣?鞈?憭?(4)/CoReM/resqmesh_app/test/crypto_test.dart: Cryptography Ed25519 Signer should generate and verify valid signature
+00:00 +6 -1: C:/Users/radio/Downloads/?啣?鞈?憭?(4)/CoReM/resqmesh_app/test/crypto_test.dart: Cryptography Ed25519 Signer should reject tampered payload
+00:00 +7 -1: Some tests failed.

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r \"overflow\\\\|SingleChildScrollView\\\\|SizedBox\\\\|constraints\" lib/ui/*.dart)",
+      "Bash(grep -r \"MediaQuery\\\\|LayoutBuilder\\\\|SizedBox\\\\|IntrinsicHeight\\\\|IntrinsicWidth\" lib/ui/*.dart)",
+      "Bash(wc -l lib/ui/*.dart)",
+      "Bash(flutter analyze)",
+      "Bash(flutter build apk --release)",
+      "Bash(ls -la /c/Users/radio/Downloads/IDE/CoReM/resqmesh_app/build/app/outputs/flutter-apk/*.apk)",
+      "Bash(ls -la /c/Users/radio/Downloads/IDE/CoReM/resqmesh_app/build/app/outputs/apk/release/*.apk)",
+      "Bash(flutter devices)",
+      "Bash(flutter analyze:*)",
+      "Bash(flutter run:*)"
+    ]
+  }
+}

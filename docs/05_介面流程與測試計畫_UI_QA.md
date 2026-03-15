@@ -1,0 +1,81 @@
+# 介面流程與測試計畫 (UI/UX Flow & QA Testing Plan)
+## 系統：災難應急 Mesh 物資調度系統 (Project ResQMesh)
+
+### 1. 使用者介面與動線設計 (UI/UX Flow)
+
+以「應急、直覺、資訊分級」為準則，設計能在混亂場景一眼辨識的介面與動線。
+
+#### 1.1 App 端核心操作介面
+*   **Onboarding 與 e-KYC**：
+    *   在平時（有網路）預設需走完手機登入與實名綁定，獲取憑證；若無網路緊急啟動，則落入「受限訪客模式」，徽章標示為「未驗證 (Unverified)」。
+*   **身份與信任徽章視覺化 (Trust Badges)**：
+    *   頭像旁標配 Trust Ladder 等級徽章，讓資源索取者快速辨識來源可信度：
+        *   ⚫ **Level 0 — 灰色盾 (Gray)**：匿名，自動產生金鑰，未驗證。
+        *   🟤 **Level 1 — 銅色盾 (Bronze)**：手機號 SMS OTP 已驗證。
+        *   ⚪ **Level 2 — 銀色盾 (Silver)**：已獲 ≥3 個 Level-1 節點社群 Proof-of-Encounter 背書。
+        *   🟡 **Level 3 — 金色盾 (Gold)**：TW FidO 政府實名認證（可附加職業徽章，如醫護紅十字）。
+*   **SOS 請求分級表單 (Triage Input)**：
+    *   發起求助分為多階層按鈕：[一般物資需求] -> [醫療需求] -> 長按三秒解鎖：[SOS_RED: 生命危害 (大面積出血、被壓廢墟)]。
+    *   **警報聯動**：一旦發送 SOS_RED，周圍收到封包的手機會震動並顯示彈出視窗提示。
+*   **Dynamic Hazards 聯合作戰地圖（離線 OSM）**：
+    *   地圖引擎：`flutter_map` + `flutter_map_mbtiles`，底圖資料為 App 內建打包的 OpenStreetMap 全台 MBTiles 離線向量圖磚 (Asset Bundle)。
+    *   離線地圖模式下，允許使用者長按某街道，選擇圖釘：[🚧 道路受阻]、[🔥 嚴重火警]、[☣️ 毒氣外洩]。
+    *   建立後，此危險多邊形（`HazardData.center_lat/lng` + `radius_meters`）隨 Mesh 網路快速擴散，周遭設備地圖立即渲染對應的橙紅色閃爍 Polygon 禁止區塊。
+*   **中繼雷達與超級節點切換 (Mule/Super Node Mode)**：
+    *   **一般求生模式 (Tier 3/4)**：純黑畫面低耗電掛機，關閉耗電傳輸，僅依賴 BLE 進行求救或脈衝式接收。此模式下（不分平台），App 會給予 iOS 與 Android 使用者一致的強烈引導：「在進行物資媒合或緊急求救時，請保持螢幕常亮並停留在前台」，以突破作業系統背景的傳輸限制。
+    *   **騾子模式（Tier 1 Android 前台 / 背景掛 Foreground Service）**：電量達門檻，UI 主題切換，光暈擴大，宣示裝置正啟動 **Wi-Fi Aware (NAN)** 進行全功率廣域網橋接。為配合 Android 14+ 作業系統要求，進入騾子模式時，上方通知列會掛載醒目的「騾子模式運行中」常駐卡片，彰顯使用者正奉獻頻寬與電量。電量跌破 40% 時 UI 自動回退省電模式，此時介面會明確提示使用者：「已降級為省電模式。請充電至 60% 以上以恢復騾子模式」，避免使用者在 40% 邊界感到困惑。
+    *   **高能模式（iOS 前台 Tier 1）**：iOS 前台屬 Tier 1 節點，具備大檔傳輸能力，UI 主題同步切換顯示「高能模式」。平時以 **BLE** 發現周圍節點，遇大檔案（地圖 / 照片）需求時自動升級建立 **AWDL** 專用高速點對點傳輸通道。**注意：iOS 前台不擔任全天候 Data Mule 角色**，UI 不顯示「騾子模式」常駐別框；進入背景後自動降為 Tier 2 BLE 脈衝中繼。
+*   **Proof-of-Encounter 物理交收**：
+    *   **BLE 靠近與 4-PIN 解鎖 (自動)**：雙方設備靠近且藍牙交換到匹配資料時，前端自動跳出交割合約介面。供給方 (Provider) 畫面顯示隨機 **4 位數 PIN** 碼，需求方跳出輸入框。
+    *   **4-PIN 暴力破解與配對取消防護**：
+        *   連續輸入錯誤 **3 次**：按鈕鎖定 **30 秒**。
+        *   解鎖後，若**再次連續錯誤 3 次**（系統判定為惡意索取，啟動防禦）：強制**拒絕交割**。此時 **由 Provider 端的設備主動在背景簽發並廣播 `MATCH_CANCEL` 封包**（原因標記 `PIN_LOCKED`）；周圍節點核對 Provider 身份無誤後，將該物資的 `status` 提早回滾為 `AVAILABLE` 並清空 `matched_request_id`，釋放物資給其他真實災民。
+
+#### 1.2 中央 Web 戰情控制台
+*   戰情紅黑圖板，專注於 GIS (地理資訊系統)。
+*   即時呈現由垃圾車或公務車 (Hardware Data Mules) 帶回來的斷網孤島物資結構與危險阻擋區域。
+
+---
+
+### 2. QA 測試與防護演練 (Testing & Security Drills)
+
+測試範圍須包含物理極限、社會心理脆弱度以及系統穩定性。
+
+#### 2.1 暗黑森林與防偽造測試 (Security & Anti-Spoofing Test)
+*   **身份偽造攔截**：利用越獄設備竄改本機 SQLite 中發佈者的 Identity 與 Badge，驗證周遭 App 在接收此偽造廣播時，是否因簽章或公鑰不吻合而即刻捨棄封包。
+*   **去中心化隔離 (Quarantine) 演習**：模擬已驗證卻被盜用的設備狂發假 SOS。驗證周遭設備在**累計加權投票超過 3.0（> 3.0，不含）**時是否自動啟動免疫機制封殺該節點。
+*   **洗版風暴壓力測試 (Rate Limits)**：模擬 3 台惡意設備，以腳本每秒發出 100 筆假物資源需求。預期結果：網域內正常節點能在 10 秒內識別異常，將其列入 `is_blacklisted` 阻斷其 Socket 連線，保護正常封包流通。
+
+#### 2.2 檢傷路由霸權測試 (QoS & Priority Queue Test)
+*   設定群組互傳大型物資相片或批量清單 (`INFO` / `RESOURCE` 等級)。
+*   此時節點 A 觸發 `SOS_RED` (如大出血需要止血帶) 封包。
+*   預期結果：所有中斷點的底層傳輸 **(Wi-Fi Aware / AWDL / BLE)** 應立即中斷現有大型傳輸迴圈，優先傳遞 `SOS_RED` 封包至整個 Mesh 網，完成時間須控制在秒級。
+
+#### 2.3 實地超級節點騾子測試 (Data Mule Transit Test)
+*   **場景佈建**：建立相隔 1 公里、無訊號的兩個測試帳篷 (Island A 與 Island B)。
+*   **模擬行動**：安排一部帶有「Super Node 模式」機器的車輛，從 A 帳篷收集滿載數百筆 Event Logs，行駛並駛入 B 帳篷區。
+*   **預期結果**：在車輛靠近 B 區的幾十秒交會窗口內，大功率 WiFi Direct 能瞬間完成數千筆 Bloom Filter 核對，並把關鍵的動態危險圖層與 `SOS_YELLOW` 資訊傾銷至 B 帳篷的設備中。
+
+#### 2.4 系統邊界極限測試 (Limits & Recovery Drill)
+*   **時鐘失真恢復測試 (Time Drift)**：將設備時間回撥至 1970 年，測試其產生的封包是否能靠連線握手時的「交會強制校時協議」正確推進 `hlc_timestamp`，並維持 CRDT 合併的因果順序。驗收條件：回撥設備與正常設備合併後，事件因果序不出現顛倒。
+*   **儲存邊緣驅逐 (Eviction Limit)**：塞入 1GB 假資料觸發 SQLite 上限。驗證系統能優先清空 `ttl <= 0` 且 `urgency == INFO` 資料，且 `SOS_RED` 及 `Hazards_State` 的 PINNED 鎖存防線完整保留。
+*   **分塊傳輸拼裝 (Payload Chunking)**：發送單檔 500KB 的傷口照片，測試網路極度不穩狀態下 Chunk 快取重組的抗丟包能力。
+
+#### 2.5 信任梯級、安全強化與媒合機制測試
+*   **Trust Ladder 升級測試**：從 Level 0 依序升至 Level 1（SMS OTP）與 Level 2（3 節點背書），驗證每次升級後 `identity_level` 正確提升，`trust_score` 對應初始化，且全程共用同一金鑰對不變。
+*   **Quarantine 加權投票演習**：部署 1 台 Level 0（0.2票）+ 2 台 Level 1（各 0.5票）同時對同一目標投票，累計 = 1.2，**驗證不觸發**隔離。再加入 1 台 Level 2（0.8票），累計 = 2.0，仍不觸發。最後再加 1 台 Level 1（0.5票），累計 = 2.5，仍不觸發。加入最後 1 台 Level 2（0.8票），加上這最後一票 0.8 後，累計突破 3.0 門檻達到 3.3，**驗證立即觸發**隔離黑名單。
+*   **4-PIN 暴力破解與配對取消測試**：對同一 PIN 連續輸入錯誤，驗證第 3 次錯誤後介面強制鎖定 30 秒；30 秒過後重新解鎖，若再連續輸入錯誤 3 次，驗證系統立即取消本次媒合，還原物資狀態為 `AVAILABLE`，且雙方 UI 推回主畫面。
+*   **PENDING 動態防死鎖超時回滾測試**：建立一筆 `SOS_RED` 緊急交割媒合與一筆 `INFO` 一般媒合。故意讓 Provider 斷線失聯，驗證 Background Job 是否能在 30 分鐘精確將緊急物資的 `Materials_State.status` 從 `PENDING` 回滾為 `AVAILABLE`，並不被一般物資的 4 小時長度規定給死鎖卡住；且原 `MatchIntentData` Event Log 仍正確保留在帳本中以利追蹤。
+*   **傳輸 Tier 自動切換與降級互通測試**：
+    *   **場景 A (iOS 升級)**：兩台 iOS 進入前台，互相靠近，平時以 BLE 探索，發起大檔案（地圖）傳輸時，驗證系統能自動升級建立 AWDL 傳輸。
+    *   **場景 B (Android 掛通知)**：將 Android 螢幕關閉，驗證其掛載 `Foreground Service` 時，仍能透過 Wi-Fi Aware 轉發大封包。
+    *   **場景 C (跨系統降級)**：以一台 Android（Wi-Fi Aware）與一台 iOS 退入背景 (Core Bluetooth `bluetooth-central` / `peripheral`) 測試，驗證系統正確回落至唯一的跨系統 BLE 通道，完成 Bloom Filter 握手與 Protobuf 同步（約 5.85 KB），事件無遺漏。
+*   **匹配演算法正確性測試**：準備 3 個 Provider（相同 resource_type，不同距離 / urgency / trust_score 組合），1 個 Requester，驗證 Phase 1 過濾後僅保留類型相符候選，Phase 2 評分結果符合加權公式，最高分者獲得優先媒合。
+
+#### 2.6 離線地圖與 POI 靜態渲染測試 (Offline Map Rendering Test)
+*   **斷網讀取測試**：在飛航模式下開啟 App，驗證地圖能靠內建 `.mbtiles` Asset Bundle 正常載入 0-14 級縮放的所有底圖。
+*   **街道層級 POI 濾波還原測試**：將地圖放大至 Zoom > 14，驗證 App 前端能正確擷取 `poi` 圖層，並套用客製化渲染樣式：
+    *   驗證：醫院 (`hospital`) 等醫療設施必須強制標為最醒目的紅點 🔴。
+    *   驗證：警消單位 (`police`, `fire_station`) 必須標為藍點 🔵。
+    *   驗證：學校 (`school` 等) 必須標為避難橘點 🟠。
+    *   驗證：**屬性分離測試**：藥局 (`pharmacy` 🟣) 與 一般超市 (`grocery`, `supermarket` 🟢) 必須呈現不同的視覺樣式與顏色，確保醫療與民生物資點在畫面上不會混雜。

@@ -1,0 +1,86 @@
+{
+    "layers": {
+        "place": {
+            "minzoom": 0,
+            "maxzoom": 14
+        },
+        "boundary": {
+            "minzoom": 0,
+            "maxzoom": 14,
+            "simplify_below": 12,
+            "simplify_level": 0.0003,
+            "simplify_ratio": 2
+        },
+        "poi": {
+            "minzoom": 12,
+            "maxzoom": 14
+        },
+        "poi_detail": {
+            "minzoom": 14,
+            "maxzoom": 14,
+            "write_to": "poi"
+        },
+        "waterway": {
+            "minzoom": 8,
+            "maxzoom": 14,
+            "simplify_below": 12,
+            "simplify_level": 0.0003,
+            "simplify_ratio": 2
+        },
+        "transportation": {
+            "minzoom": 4,
+            "maxzoom": 14,
+            "simplify_below": 13,
+            "simplify_level": 0.0003
+        },
+        "transportation_name": {
+            "minzoom": 8,
+            "maxzoom": 14
+        },
+        "transportation_name_mid": {
+            "minzoom": 12,
+            "maxzoom": 14,
+            "write_to": "transportation_name"
+        },
+        "transportation_name_detail": {
+            "minzoom": 14,
+            "maxzoom": 14,
+            "write_to": "transportation_name"
+        },
+        "building": {
+            "minzoom": 13,
+            "maxzoom": 14
+        },
+        "water": {
+            "minzoom": 6,
+            "maxzoom": 14,
+            "simplify_below": 12,
+            "simplify_level": 0.0003,
+            "simplify_ratio": 2
+        },
+        "water_name": {
+            "minzoom": 14,
+            "maxzoom": 14
+        },
+        "water_name_detail": {
+            "minzoom": 14,
+            "maxzoom": 14,
+            "write_to": "water_name"
+        },
+        "park": {
+            "minzoom": 11,
+            "maxzoom": 14
+        }
+    },
+    "settings": {
+        "minzoom": 4,
+        "maxzoom": 14,
+        "basezoom": 14,
+        "include_ids": false,
+        "combine_below": 14,
+        "name": "ResQMesh Taiwan Offline Map",
+        "version": "1.0",
+        "description": "Highly compressed vector tiles for disaster relief, omitting non-essential data.",
+        "compress": "gzip"
+    }
+}

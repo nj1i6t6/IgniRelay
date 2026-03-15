@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>ResQMesh 地圖展示 (完美底圖 + 重點設施地標)</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 30px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+            font-family: sans-serif;
+            font-size: 14px;
+            z-index: 1000;
+        }
+
+        .legend-title {
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .legend-subtitle {
+            font-size: 12px;
+            color: #d00;
+            margin-bottom: 12px;
+            font-weight: bold;
+        }
+
+        .legend-item {
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            display: inline-block;
+            margin-right: 8px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="map"></div>
+    <div class="legend">
+        <div class="legend-title">🚨 ResQMesh 救災地標</div>
+        <div class="legend-subtitle">(※請將地圖放大至「街道層級」以載入點位)</div>
+        <div class="legend-item"><span class="legend-color" style="background:#cc0000;"></span>醫院 / 診所</div>
+        <div class="legend-item"><span class="legend-color" style="background:#0033cc;"></span>警消單位</div>
+        <div class="legend-item"><span class="legend-color" style="background:#ff9900;"></span>學校 (避難所)</div>
+        <div class="legend-item"><span class="legend-color" style="background:#cc00cc;"></span>藥局 (醫療物資)</div>
+        <div class="legend-item"><span class="legend-color" style="background:#00cc00;"></span>超市 / 便利商店</div>
+    </div>
+
+    <script>
+        // 1. 取得 TileServer-GL 內建的「完美地圖樣式 (Basic Preview)」
+        fetch('http://localhost:8080/styles/basic-preview/style.json')
+            .then(response => response.json())
+            .then(baseStyle => {
+
+                // 2. 初始化地圖，並定焦在高雄車站 (約 Zoom 14.5，足夠顯示所有細節)
+                const map = new maplibregl.Map({
+                    container: 'map',
+                    style: baseStyle,
+                    center: [120.302, 22.639], // 高雄車站
+                    zoom: 14.5,
+                    minZoom: 6,
+                    maxZoom: 18,
+                    hash: true // 讓網址列記住當前坐標
+                });
+
+                map.addControl(new maplibregl.NavigationControl());
+
+                map.on('load', () => {
+                    // 等待完美底圖載入完畢後，我們要「疊加」我們的救命圖標
+                    // 因為圖磚內預設的來源名稱是 "openmaptiles" (這是 planetiler 自動產生的)
+                    const sourceName = "openmaptiles";
+
+                    // 超市民生物資
+                    map.addLayer({
+                        "id": "resq-poi-shop",
+                        "type": "circle",
+                        "source": sourceName,
+                        "source-layer": "poi",
+                        "filter": ["in", "class", "grocery", "supermarket"],
+                        "paint": { "circle-color": "#00cc00", "circle-radius": 6, "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 }
+                    });
+
+                    // 藥局 (醫療物資)
+                    map.addLayer({
+                        "id": "resq-poi-pharmacy",
+                        "type": "circle",
+                        "source": sourceName,
+                        "source-layer": "poi",
+                        "filter": ["==", "class", "pharmacy"],
+                        "paint": { "circle-color": "#cc00cc", "circle-radius": 6, "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 }
+                    });
+
+                    // 學校
+                    map.addLayer({
+                        "id": "resq-poi-school",
+                        "type": "circle",
+                        "source": sourceName,
+                        "source-layer": "poi",
+                        "filter": ["in", "class", "school", "college", "university"],
+                        "paint": { "circle-color": "#ff9900", "circle-radius": 7, "circle-stroke-color": "#fff", "circle-stroke-width": 2 }
+                    });
+
+                    // 警消
+                    map.addLayer({
+                        "id": "resq-poi-police",
+                        "type": "circle",
+                        "source": sourceName,
+                        "source-layer": "poi",
+                        "filter": ["in", "class", "police", "fire_station"],
+                        "paint": { "circle-color": "#0033cc", "circle-radius": 8, "circle-stroke-color": "#fff", "circle-stroke-width": 2 }
+                    });
+
+                    // 醫院/診所 (最高優先)
+                    map.addLayer({
+                        "id": "resq-poi-hospital",
+                        "type": "circle",
+                        "source": sourceName,
+                        "source-layer": "poi",
+                        "filter": ["in", "class", "hospital", "clinic", "doctors"],
+                        "paint": { "circle-color": "#cc0000", "circle-radius": 10, "circle-stroke-color": "#fff", "circle-stroke-width": 2.5 }
+                    });
+
+                    // 加上醒目的名稱標籤 (只顯示救災相關的)
+                    map.addLayer({
+                        "id": "resq-poi-label",
+                        "type": "symbol",
+                        "source": sourceName,
+                        "source-layer": "poi",
+                        "filter": ["in", "class", "hospital", "clinic", "doctors", "police", "fire_station", "school", "pharmacy"],
+                        "layout": {
+                            // 使用 get name，確保有中文路名就抓中文
+                            "text-field": ["get", "name"],
+                            "text-size": 13,
+                            "text-offset": [0, 1.2],
+                            "text-anchor": "top",
+                            // 確保字體為底圖內建，避免亂碼
+                            "text-font": ["Noto Sans Regular"]
+                        },
+                        "paint": {
+                            "text-color": "#000000",
+                            "text-halo-color": "rgba(255, 255, 255, 0.9)",
+                            "text-halo-width": 2.5
+                        }
+                    });
+                });
+            });
+    </script>
+
+</body>
+
+</html>

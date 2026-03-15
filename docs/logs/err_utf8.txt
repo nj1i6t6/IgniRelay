@@ -1,0 +1,8 @@
+﻿ERR:\n Exception in thread "main" java.lang.IllegalArgumentException: data/sources/lake_centerline.shp.zip does not exist. Run with --download to fetch it
+	at com.onthegomap.planetiler.Planetiler.ensureInputFilesExist(Planetiler.java:1046)
+	at com.onthegomap.planetiler.Planetiler.run(Planetiler.java:843)
+	at org.openmaptiles.OpenMapTilesMain.run(OpenMapTilesMain.java:58)
+	at org.openmaptiles.OpenMapTilesMain.main(OpenMapTilesMain.java:18)
+	at com.onthegomap.planetiler.Main.lambda$static$1(Main.java:52)
+	at com.onthegomap.planetiler.Main.main(Main.java:116)
+

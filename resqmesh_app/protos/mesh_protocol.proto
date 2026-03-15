@@ -1,0 +1,153 @@
+syntax = "proto3";
+package resqmesh;
+
+// 定義事件型別
+enum EventType {
+  RESOURCE_REGISTER = 0;   // 物資登記
+  REQUEST_BROADCAST = 1;   // 需求廣播 (含 QoS)
+  MATCH_INTENT      = 2;   // 意向匹配
+  PHYSICAL_HANDSHAKE= 3;   // 物理核銷交割
+  HAZARD_MARKER     = 4;   // 動態危險圖層標記
+  QUARANTINE_VOTE   = 5;   // 惡意節點檢舉投票 (去中心化隔離)
+  MATCH_CANCEL      = 6;   // 釋放配對 (PIN 解鎖失敗取消)
+}
+
+// 檢傷及優先級定義 (QoS & Triage)
+enum UrgencyLevel {
+  INFO        = 0; // 一般資訊 (最低優先)
+  RESOURCE    = 1; // 物資交換
+  SOS_YELLOW  = 2; // 求援 - 非立即生命危險
+  SOS_RED     = 3; // 求援 - 立即生命危險 (具有路由搶佔權)
+}
+
+// 核心 Event Log 結構
+message MeshEvent {
+  string event_id = 1;           // UUID / SHA-256 Hash
+  bytes sender_pub_key = 2;      // 發送者 Ed25519 Public Key (固定 32 bytes)
+  uint32 identity_level = 3;     // 信任等級 (0=匿名, 1=手機驗證, 2=社群背書, 3=政府實名)
+  EventType type = 4;            // 事件類型
+  UrgencyLevel urgency = 5;      // 優先權重
+
+  // 混合邏輯時鐘 (HLC)
+  int64 hlc_timestamp = 6;       // HLC 物理時間部分 (Unix ms)
+  int64 hlc_counter = 7;         // HLC 邏輯計數器 
+
+  int32 ttl = 8;                 // 剩餘存活跳數
+
+  // 接收位置快照 (Received Location Snapshot)
+  double received_lat = 13;      // 接收機的緯度
+  double received_lng = 14;      // 接收機的經度
+
+  // 分塊傳輸機制 (Chunking)
+  int32 chunk_index = 9;         // 當前區塊索引 (若無分塊為 0)
+  int32 total_chunks = 10;       // 總區塊數 (若無分塊為 1)
+
+  bytes payload = 11;            // 序列化的具體業務資料 (見下方 Sub-Message 定義)
+
+  bytes signature = 12;          // Ed25519 私鑰簽章 (固定 64 bytes)
+}
+
+// Bloom Filter 同步握手封包
+message BloomFilterSync {
+  bytes filter_data = 1;
+  int32 num_hash_funcs = 2;      // 固定值: 7
+  int32 capacity = 3;            // 一般節點預設 5000
+}
+
+// 物資登記 (EventType.RESOURCE_REGISTER)
+message ResourceData {
+  string resource_id = 1;        // 物資唯一 ID
+  string resource_type = 2;      // 物資類型代碼 ("WATER" / "GENERATOR")
+  string description = 3;        // 文字補充說明
+  float quantity = 4;            // 數量
+  string unit = 5;               // 單位
+  float max_range_meters = 6;    // Provider 願意移動的最大服務半徑 (公尺)
+  double lat = 7;                // Provider 目前緯度
+  double lng = 8;                // Provider 目前經度
+  int64 expires_at = 9;          // 物資有效期限 (Unix ms, 0 = 無期限)
+}
+
+// 需求廣播 (EventType.REQUEST_BROADCAST)
+message RequestData {
+  string request_id = 1;         // 需求唯一 ID
+  string resource_type = 2;      // 所需物資類型代碼
+  string description = 3;        // 補充說明
+  float quantity_needed = 4;     // 需求數量
+  UrgencyLevel urgency = 5;      // 緊急度
+  double lat = 6;                // Requester 目前緯度
+  double lng = 7;                // Requester 目前經度
+  float max_range_meters = 8;    // Requester 願意等候的最大服務半徑 (公尺)
+}
+
+// 媒合意向 (EventType.MATCH_INTENT)
+message MatchIntentData {
+  string request_id = 1;         // 對應需求 ID
+  string resource_id = 2;        // 對應物資 ID
+  bytes requester_pub_key = 3;   // Requester 公鑰 (32 bytes)
+  bytes provider_pub_key = 4;    // Provider 公鑰 (32 bytes)
+  float match_score = 5;         // 計算得出的媒合分數 (0~100)
+  int64 match_expires_at = 6;    // Match 超時時間戳
+}
+
+// 物理交割憑證 (EventType.PHYSICAL_HANDSHAKE)
+message PhysicalHandshakeData {
+  string resource_id = 1;        // 物資 ID
+  string request_id = 2;         // 需求 ID
+  bytes requester_pub_key = 3;   // Requester 公鑰 (32 bytes)
+  bytes provider_pub_key = 4;    // Provider 公鑰 (32 bytes)
+  bytes requester_signature = 5; // Requester 對本次交割的 Ed25519 簽章
+  bytes provider_signature = 6;  // Provider 對本次交割的 Ed25519 簽章
+  string method = 7;             // 交割方式: "QR_CODE" / "BLE" / "PIN_4DIGIT"
+}
+
+// 動態危險標記 (EventType.HAZARD_MARKER)
+message HazardData {
+  string hazard_id = 1;          // 危險標記唯一 ID
+  string hazard_type = 2;        // "ROADBLOCK" / "FIRE" / "CHEMICAL" / "FLOOD"
+  uint32 severity = 3;           // 嚴重度 1~5
+  double center_lat = 4;         // 中心點緯度
+  double center_lng = 5;         // 中心點經度
+  float radius_meters = 6;       // 影響半徑 (公尺)
+  int64 observed_at = 7;         // 觀察時間 (Unix ms)
+}
+
+// 惡意節點檢舉投票 (EventType.QUARANTINE_VOTE)
+message QuarantineVoteData {
+  bytes target_pub_key = 1;      // 被檢舉節點的公鑰 (32 bytes)
+  string reason = 2;             // 檢舉原因代碼
+  float vote_weight = 3;         // 發票方的投票權重 (由 identity_level 決定: 0.2/0.5/0.8/1.0)
+}
+
+// 釋放配對 (EventType.MATCH_CANCEL)
+message MatchCancelData {
+  string request_id = 1;   // 要取消的需求 ID
+  string resource_id = 2;  // 要釋放的物資 ID
+  string reason = 3;       // 取消原因代碼
+}
+
+// 醫療卡摘要 (附加在 SOS 廣播 payload 中，僅包含用戶授權的欄位)
+message MedicalSummary {
+  optional string name = 1;              // 姓名
+  optional int32  age = 2;               // 年齡
+  optional int32  height_cm = 3;         // 身高 (公分)
+  optional int32  weight_kg = 4;         // 體重 (公斤)
+  optional string blood_type = 5;        // 血型 (A+, A-, B+, B-, AB+, AB-, O+, O-)
+  repeated string conditions = 6;        // 醫療狀況 (如 diabetes, epilepsy)
+  repeated AllergyEntry allergies = 7;   // 過敏原與反應
+  repeated string medications = 8;       // 目前正在服用的藥物
+  optional EmergencyContact emergency_contact = 9; // 緊急聯絡人
+  optional bool   organ_donor = 10;      // 器官捐贈意願
+  optional string primary_language = 11; // 主要語言
+}
+
+// 過敏原條目
+message AllergyEntry {
+  string allergen = 1;   // 過敏原名稱
+  string reaction = 2;   // 過敏反應描述
+}
+
+// 緊急聯絡人
+message EmergencyContact {
+  string phone = 1;      // 電話號碼
+  string relation = 2;   // 與用戶的關係
+}

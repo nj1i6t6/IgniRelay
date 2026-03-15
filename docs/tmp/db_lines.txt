@@ -1,0 +1,97 @@
+1: # 資料庫與資料結構設計 (Database Schema Design)
+2: ## 系統：災難應急 Mesh 物資調度系統 (Project ResQMesh)
+3: 
+4: 系統雙主軸：以 SQLite 儲存本機離線中繼資料，並以 PostgreSQL 構築雲端全知視角。
+5: 
+6: ### 1. 手機端本地資料庫 (Local DB - SQLite / Room)
+7: 
+8: #### Table: `Local_Users` (節點身分與信任矩陣)
+9: *   `pub_key` (BLOB, Primary Key): Ed25519 公鑰，固定 32 bytes。**禁止使用 TEXT 型別。**
+10: *   `alias` (TEXT)
+11: *   `identity_level` (INTEGER): Trust Ladder 等級。0=匿名 / 1=手機號驗證 / 2=社群背書 / 3=政府實名。**取代舊版 `is_verified` 欄位。**
+12: *   `badges` (TEXT): JSON Array，職業徽章，如 `["NURSE", "FIREFIGHTER"]`，升級 Trust Level 時由服務端核發。
+13: *   `trust_score` (INTEGER): 信任分數，因應後續 Quarantine Vote (0.2 / 0.5 / 0.8 / 1.0) 權重對齊需求，升級時對應的滿分基準應為：Level 0=20 / Level 1=50 / Level 2=80 / Level 3=100。這可確保浮點數權重 (0.5) 與此整數基底 (50) 在前端演算法能保持完美的倍率對照。
+14: *   `rate_limit_counter` (INTEGER): 當前時間窗內已廣播次數（上限 20 次/小時）。
+15: *   `rate_limit_window_start` (INTEGER): 當前計數窗口起始時間標記。**禁止使用易受竄改的絕對系統時間 (Unix timestamp)！**，建議採用裝置開機運行時長（如 Android `SystemClock.elapsedRealtime()`）或直接綁定 HLC counter 來進行每小時重置，以防惡意用戶調快手機時間繞過。
+16: *   `quarantine_votes_weight` (REAL): 收到的隔離投票累計**加權票數**（浮點數，**超過 3.0（> 3.0，不含）**觸發隔離）。**取代舊版整數 `quarantine_votes_received` 欄位。**
+17: *   `is_blacklisted` (BOOLEAN): 達到隔離門檻（weight ≥ 3.0）或手動封鎖後，拒絕建立 Socket 連線。
+18: 
+19: #### Table: `Event_Logs` (所有 Mesh 事件溯源核心)
+20: *   `event_id` (TEXT, Primary Key)
+21: *   `sender_pub_key` (BLOB, Foreign Key): Ed25519 公鑰，32 bytes。**禁止使用 TEXT 型別。**
+22: *   `identity_level` (INTEGER): 發送方的 Trust Ladder 等級（0–3），隨封包一併記錄。
+23: *   `event_type` (INTEGER): 0=資源, 1=REQUEST_BROADCAST (需求與SOS), 2=匹配, 3=交割, 4=危險, 5=檢舉隔離, 6=配對取消。
+24: *   `urgency` (INTEGER): QoS 優先分級（0=INFO, 1=RESOURCE, 2=SOS_YELLOW, 3=SOS_RED）。
+25: *   `hlc_timestamp` (INTEGER): HLC 物理時間部分（Unix ms。註：SQLite 官方的 INTEGER 型別本身就具有 8-byte 64-bit 有號整數的長度，可完美儲存 Protobuf 傳來的 int64，不會發生精度溢位）。
+26: *   `hlc_counter` (INTEGER): HLC 邏輯計數器，防斷電時鐘歸零造成的因果錯亂。**取代舊版 `timestamp` + `logical_counter` 雙欄位。**（同上，精度為 64-bit int）。
+27: *   `ttl` (INTEGER)
+28: *   `received_lat` (REAL): **接收位置快照** —接收此封包當下，本機的緯度。由接收方自動嵌入，用於 Adaptive Geo-Fencing 的常規距離衰減計算揀變點，防止搬運途中節點將合法封包錯殺。
+29: *   `received_lng` (REAL): 接收時點本機經度。
+30: *   `node_tier` (INTEGER): 轉發此封包時，本機當時的 Tier 等級快照（0=硬體騾子 / 1=Tier1 / 2=Tier2 / 3=Tier3）。用於事後審計與驗證 Mule 豁免行為的後聊檢查。
+31: *   `chunk_index` (INTEGER), `total_chunks` (INTEGER): 大物件分塊記載。
+32: *   `payload` (BLOB): 實際內容（Protobuf 序列化的 Sub-Message）。
+33: *   `signature` (BLOB): Ed25519 私鑰防偽簽章，64 bytes。
+34: *   `is_synced` (BOOLEAN): 是否已成功上傳至雲端。
+35: 
+36: #### Table: `Materials_State` (物資狀態投影表 CRDT)
+37: *   `resource_id` (TEXT, Primary Key)
+38: *   `status` (TEXT): AVAILABLE, PENDING, LOCKED, CONSUMED。
+39: *   `hlc_timestamp` (INTEGER): HLC 物理時間部分（Unix ms），用於 Double-Spending 衝突排解。**取代舊版誤稱的 `vector_clock` 欄位。**
+40: *   `hlc_counter` (INTEGER): HLC 邏輯計數器部分，防時鐘斷電歸零造成的因果錯亂。
+41: *   `matched_request_id` (TEXT): 目前媒合中的需求 ID（僅 PENDING / LOCKED 狀態有效，其餘為 NULL）。
+42: *   `match_expires_at` (INTEGER): PENDING 超時時間戳（Unix ms）。為防範供給方斷電失聯導致物資無限期卡死 (Lock Deadlock)，到期長度將依 urgency 動態縮短（如醫療物資 30 分鐘，一般物資 4 小時），時間一到便由 Background Job 自動回滾為 AVAILABLE。
+43: 
+44: #### Table: `Hazards_State` (動態危險圖層投影表)
+45: *   `hazard_id` (TEXT, Primary Key)
+46: *   `type` (TEXT): 如 ROADBLOCK (路斷), CHEMICAL (化學外洩), FIRE (火災)。
+47: *   `severity` (INTEGER)
+48: *   `lat` (REAL), `lng` (REAL)
+49: *   `radius` (REAL): 影響半徑。
+50: *   `reported_by` (TEXT): 匯報者公鑰 (具備權威徽章優先取信)。
+51: *   `created_at` (INTEGER)
+52: 
+53: ---
+54: 
+55: ### 2. 雲端中央資料庫 (Cloud DB - PostgreSQL + PostGIS)
+56: 
+57: #### Table: `Global_Events`
+58: 對應手機端 `Event_Logs`，作為 Audit Log 與溯源基準。
+59: 
+60: #### Table: `Global_Materials`
+61: 由 Event 狀態計算出全域的物資，供戰情儀表板查詢。
+62: 
+63: #### Table: `Global_Requests` (緊急救援請求矩陣)
+64: *   `request_id` (UUID, Primary Key)
+65: *   `requester_pub_key` (VARCHAR): （注意：手機地端的 BLOB 型別拋轉上雲時，需由後端統一進行 Base64 或 Hex String 轉換儲存，避免映射錯誤）
+66: *   `urgency_level` (INTEGER): 存放 SOS_YELLOW / SOS_RED。
+67: *   `geom` (GEOMETRY(Point, 4326)): GIS 空間查詢必備。
+68: *   `resolved_status` (VARCHAR): 標記政府是否已派兵救援。
+69: 
+70: #### Table: `Threat_Intel_Blacklist` (威脅情資黑名單)
+71: 記錄全球判定的洗版/惡意發佈假訊息之 Device Pub_Key，由 Gateway 下發至離線災區進行隔絕。
+72: 
+73: ### 3. 資料維護與 CRDT 衝突管理
+74: *   **Double-Spending 排解**：若同一物資在孤島兩地各自產生 `Pending_Match`，依以下優先序決定歸屬（完全決定性，不存在模糊地帶）：
+75:     1.  比較 `hlc_timestamp`：數值**較小**者（較早發生）勝出。
+76:     2.  若 `hlc_timestamp` 相同，比較 `hlc_counter`：數值較小者勝出。
+77:     3.  若仍相同（極低機率碰撞），比較需求方的 `urgency`：`SOS_RED` > `SOS_YELLOW` > `RESOURCE`。
+78:     4.  最終 tiebreaker：比較需求方 `pub_key` 的字典序（確保決定性，**不使用可操控的 `trust_score`**）。
+79: *   **PENDING 超時回滾 (Timeout Rollback)**：Background Job 定期掃描 `Materials_State`，將 `status == PENDING` 且 `match_expires_at < now()` 的記錄強制更新回 `AVAILABLE`，並將 `matched_request_id` 清空。針對提供者裝置可能沒電失聯的極端卡死盲區，超時設定依緊急度動態調整（如醫療急需半小時即放行）。原 `MatchIntentData` Event Log **保留在帳本中不刪除**（Event Sourcing 原則）。
+80: *   **主動配對取消回滾 (Match Cancel Revert)**：基於防止惡意 Denial of Service 攻擊的設計，MATCH_CANCEL 必須由當事任一方取得授權發出。
+81:     *   **權限檢核邏輯**：當節點收到 `MATCH_CANCEL` 事件包時，需找出原始 `MatchIntentData`。若本次 `MATCH_CANCEL` 封包外層的 `MeshEvent.sender_pub_key` 等於 Provider 或 Requester 任何一方的公鑰，才允許取消；若為第三方公鑰則判定為非法篡改，直接丟棄。
+82:     *   **PIN 解鎖失敗防禦發動**：在 4-Digit PIN 交割場景中，若判定需求方解鎖連錯超限（如連續出錯鎖定），**必須由 Provider（供給方）的手機自動在背景用自身私鑰簽發並廣播 MATCH_CANCEL 封包**（原因標記 `PIN_LOCKED`），而非依賴可能為攻擊者的 Requester 來發布。
+83:     *   **狀態回滾**：周圍節點驗證合規後，立即將該物資的 `status` 從 `PENDING` 或 `LOCKED` 強制提早回滾為 `AVAILABLE`，並清空 `matched_request_id`，讓該物資重新釋放回 Mesh 市場供其他人配對。
+84: *   **冷熱資料驅逐 (Data Eviction)**：當 SQLite 日誌檔超過水位線（500MB），啟動資料驅逐。按優先級淘汰 `ttl <= 0` 且 `urgency == INFO` 者。`SOS_RED` 事件及 `Hazards_State` 強制標定為 **PINNED**，未成功同步至雲端前嚴格禁止刪除。面對極端大量 `SOS_RED` 的狀況，驅逐演算法將納入 `Verified_by_Authority` 權重判定，優先保留由政府實名或官方徽章背書的 SOS 封包。
+85: *   **圖層衰減機制**：動態危害具備生命週期，如 `FIRE` 類型 48 小時無更新封包則 `severity` 自動降一級；降至 0 後標記為 inactive 但不刪除，供歷史溯源。
+86: 
+87: ---
+88: 
+89: #### Table: `GeoContext_Cache` (地理環境快取表)
+90: 為避免 GeoContext Resolver 每次發布物資時都重複查詢 MBTiles，將解析結果持久化至本地 SQLite 快取。位置移動超過 2 公里後，由背景服務自動觸發重新解析並更新此表。
+91: *   `id` (INTEGER, Primary Key): 固定值 1（此表永遠只有一筆記錄）。
+92: *   `lat` (REAL): 解析當時的緯度。
+93: *   `lng` (REAL): 解析當時的經度。
+94: *   `environment_type` (TEXT): 環境分類結果。`URBAN`（市區）/ `SUBURBAN`（郊區農村）/ `RURAL_MOUNTAIN`（深山荒野）。
+95: *   `suggested_range_meters` (REAL): 根據環境類型計算出的建議預設服務半徑（公尺）：市區=1000 / 郊區=5000 / 深山=15000。
+96: *   `resolved_at` (INTEGER): 解析時間（HLC timestamp，Unix ms）。用於判斷快取是否過期。
+97: *   `nearest_place_class` (TEXT): 解析時查到的最近 `place` 圖層聚落類型（如 `city`/`village`/`hamlet`），供 UI 參考顯示（「你目前在**山區**，建議半徑 15 公里」）。

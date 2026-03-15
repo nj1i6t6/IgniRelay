@@ -1,0 +1,192 @@
+{
+  "version": 8,
+  "name": "ResQMesh Dark",
+  "sources": {
+    "openmaptiles": {
+      "type": "vector",
+      "url": "mbtiles://resqmesh"
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": { "background-color": "#1a1a2e" }
+    },
+    {
+      "id": "landcover",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "landcover",
+      "paint": { "fill-color": "#1e2e1e", "fill-opacity": 0.4 }
+    },
+    {
+      "id": "landuse",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "landuse",
+      "paint": { "fill-color": "#22223a", "fill-opacity": 0.5 }
+    },
+    {
+      "id": "park",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "park",
+      "paint": { "fill-color": "#1a2e1a", "fill-opacity": 0.5 }
+    },
+    {
+      "id": "water",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "water",
+      "paint": { "fill-color": "#16213e", "fill-opacity": 0.9 }
+    },
+    {
+      "id": "waterway",
+      "type": "line",
+      "source": "openmaptiles",
+      "source-layer": "waterway",
+      "paint": { "line-color": "#16213e", "line-width": 1.5 }
+    },
+    {
+      "id": "building",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "building",
+      "minzoom": 13,
+      "paint": { "fill-color": "#2d2d44", "fill-opacity": 0.8 }
+    },
+    {
+      "id": "transportation",
+      "type": "line",
+      "source": "openmaptiles",
+      "source-layer": "transportation",
+      "paint": {
+        "line-color": "#3a3a5c",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 14, 2, 16, 4]
+      }
+    },
+    {
+      "id": "transportation_name",
+      "type": "symbol",
+      "source": "openmaptiles",
+      "source-layer": "transportation_name",
+      "minzoom": 13,
+      "layout": {
+        "text-field": "{name:zh}",
+        "text-size": 10,
+        "symbol-placement": "line",
+        "text-font": ["Open Sans Regular"]
+      },
+      "paint": { "text-color": "#8888aa", "text-halo-color": "#1a1a2e", "text-halo-width": 1 }
+    },
+    {
+      "id": "place_labels",
+      "type": "symbol",
+      "source": "openmaptiles",
+      "source-layer": "place",
+      "layout": {
+        "text-field": "{name:zh}",
+        "text-size": ["interpolate", ["linear"], ["zoom"], 5, 8, 14, 14],
+        "text-font": ["Open Sans Regular"]
+      },
+      "paint": { "text-color": "#ccccdd", "text-halo-color": "#1a1a2e", "text-halo-width": 1.5 }
+    },
+
+    {
+      "id": "resq-poi-shop",
+      "type": "circle",
+      "source": "openmaptiles",
+      "source-layer": "poi",
+      "minzoom": 15,
+      "filter": ["in", "class", "grocery", "supermarket"],
+      "paint": {
+        "circle-color": "#33cc33",
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 15, 4, 18, 8],
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 1.5,
+        "circle-opacity": 0.9
+      }
+    },
+    {
+      "id": "resq-poi-pharmacy",
+      "type": "circle",
+      "source": "openmaptiles",
+      "source-layer": "poi",
+      "minzoom": 14,
+      "filter": ["==", "class", "pharmacy"],
+      "paint": {
+        "circle-color": "#cc33cc",
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 14, 4, 18, 8],
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 1.5,
+        "circle-opacity": 0.9
+      }
+    },
+    {
+      "id": "resq-poi-school",
+      "type": "circle",
+      "source": "openmaptiles",
+      "source-layer": "poi",
+      "minzoom": 13,
+      "filter": ["in", "class", "school", "college", "university"],
+      "paint": {
+        "circle-color": "#ff9900",
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 5, 18, 10],
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 2,
+        "circle-opacity": 0.9
+      }
+    },
+    {
+      "id": "resq-poi-police",
+      "type": "circle",
+      "source": "openmaptiles",
+      "source-layer": "poi",
+      "minzoom": 13,
+      "filter": ["in", "class", "police", "fire_station"],
+      "paint": {
+        "circle-color": "#3366ff",
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 6, 18, 12],
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 2,
+        "circle-opacity": 0.9
+      }
+    },
+    {
+      "id": "resq-poi-hospital",
+      "type": "circle",
+      "source": "openmaptiles",
+      "source-layer": "poi",
+      "minzoom": 12,
+      "filter": ["in", "class", "hospital", "clinic", "doctors"],
+      "paint": {
+        "circle-color": "#ff3333",
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 6, 18, 14],
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 2.5,
+        "circle-opacity": 0.95
+      }
+    },
+    {
+      "id": "resq-poi-label",
+      "type": "symbol",
+      "source": "openmaptiles",
+      "source-layer": "poi",
+      "minzoom": 14,
+      "filter": ["in", "class", "hospital", "clinic", "doctors", "police", "fire_station", "school", "pharmacy"],
+      "layout": {
+        "text-field": "{name:zh}",
+        "text-size": 12,
+        "text-offset": [0, 1.3],
+        "text-anchor": "top",
+        "text-font": ["Open Sans Regular"]
+      },
+      "paint": {
+        "text-color": "#ffffff",
+        "text-halo-color": "rgba(26, 26, 46, 0.9)",
+        "text-halo-width": 2
+      }
+    }
+  ]
+}

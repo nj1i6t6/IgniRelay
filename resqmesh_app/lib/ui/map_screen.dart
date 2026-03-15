@@ -1,0 +1,2004 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:mbtiles/mbtiles.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:vector_map_tiles/vector_map_tiles.dart';
+import 'package:vector_map_tiles_mbtiles/vector_map_tiles_mbtiles.dart';
+import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
+import '../mesh/mbtiles_loader.dart';
+import '../mesh/event_manager.dart';
+import '../mesh/poi_query.dart';
+import '../db/database_helper.dart';
+import 'resqmesh_sprites.dart';
+import 'resqmesh_theme.dart';
+import 'triage_input.dart';
+import 'map_layer_settings.dart';
+
+class MapScreen extends StatefulWidget {
+  const MapScreen({super.key});
+
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
+
+class _MapScreenState extends State<MapScreen>
+    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  final MapController _mapController = MapController();
+  late final AnimationController _refreshSpinCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 800),
+  );
+  bool _isRefreshing = false;
+  // 預設台灣中心，GPS 取得後會更新
+  LatLng _center = const LatLng(23.97, 120.97);
+  final _eventManager = EventManager();
+
+  // ── 地圖底圖 ──
+  bool _mbtilesLoading = true;
+  bool _mbtilesAvailable = false;
+  String? _mbtilesError;
+  MbTiles? _mbTiles;
+  MbTilesVectorTileProvider? _tileProvider;
+  TileProviders? _tileProviders;
+  vtr.Theme? _mapTheme;
+  SpriteStyle? _spriteStyle;
+  PoiQuery? _poiQuery;
+
+  // ── GPS 定位 ──
+  LatLng? _userLocation;
+  StreamSubscription<Position>? _positionStream;
+  double _gpsAccuracy = 0;
+
+  // ── Overlays ──
+  List<Polygon> _hazardPolygons = [];
+  List<Marker> _hazardCenterMarkers = [];
+  List<Map<String, dynamic>> _hazardData = [];
+  List<Marker> _eventMarkers = [];
+  Timer? _refreshTimer;
+  bool _showLegend = false;
+  String _myReporterHex = '';
+
+  // ── 圖層設定 ──
+  final MapLayerSettings _layerSettings = MapLayerSettings();
+  int _themeGeneration = 0;
+
+  // ── 危險標記模式 ──
+  bool _isMarkingMode = false;
+  LatLng? _markCenter;
+  double _markRadius = 200.0;
+  String _markType = 'ROADBLOCK';
+  double _markSeverity = 3.0;
+  final _markDescCtrl = TextEditingController();
+  bool _markPublishing = false;
+  String? _editingHazardId; // 非 null = 編輯模式
+
+
+  // ── SOS 狀態追蹤 ──
+  String? _activeSosEventId;
+  int _activeSosUrgency = 0;
+  String _activeSosDesc = '';
+
+  static const _hazardTypes = {
+    'ROADBLOCK': ('道路封閉', Icons.block, Colors.orange),
+    'FIRE': ('火災', Icons.local_fire_department, Colors.red),
+    'CHEMICAL': ('化學/毒氣', Icons.warning_amber, Colors.yellow),
+    'FLOOD': ('水災/淹水', Icons.water, Colors.blue),
+    'BUILDING': ('建物倒塌', Icons.domain_disabled, Colors.brown),
+    'LANDSLIDE': ('土石流', Icons.landscape, Colors.grey),
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _initMBTiles();
+    _initGPS();
+    _initReporterHex();
+    _loadOverlays();
+    // 每 15 秒自動刷新 overlay (危險區域 + Mesh 事件)
+    _refreshTimer =
+        Timer.periodic(const Duration(seconds: 15), (_) => _loadOverlays());
+    // 監聽圖層設定變化
+    _layerSettings.addListener(_onLayerSettingsChanged);
+  }
+
+  @override
+  void dispose() {
+    _refreshSpinCtrl.dispose();
+    _poiQuery?.dispose();
+    _mbTiles?.dispose();
+    _positionStream?.cancel();
+    _refreshTimer?.cancel();
+    _markDescCtrl.dispose();
+    _layerSettings.removeListener(_onLayerSettingsChanged);
+    _layerSettings.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initReporterHex() async {
+    _myReporterHex = await _eventManager.getReporterHex();
+  }
+
+  void _onLayerSettingsChanged() {
+    _rebuildTheme();
+    _loadHazards();
+  }
+
+  void _rebuildTheme() {
+    if (!_mbtilesAvailable || _mbTiles == null) return;
+    final theme =
+        buildResQMeshTheme(disabledPoi: _layerSettings.disabledPoiIds);
+    SpriteStyle? sprites;
+    try {
+      sprites = buildResQMeshSprites();
+    } catch (e) {
+      debugPrint('[Map] rebuildTheme sprite 失敗 (非致命): $e');
+    }
+    // 重建 TileProviders → VectorTileLayer 用新 Key 完整重建
+    final provider = MbTilesVectorTileProvider(mbtiles: _mbTiles!);
+    if (mounted) {
+      setState(() {
+        _tileProvider = provider;
+        _tileProviders = TileProviders({'openmaptiles': provider});
+        _mapTheme = theme;
+        _spriteStyle = sprites;
+        _themeGeneration++;
+      });
+    }
+  }
+
+  // ── MBTiles 離線地圖初始化 ─────────────────────────────────────
+
+  Future<void> _initMBTiles() async {
+    try {
+      final available = await MBTilesLoader.isAvailable();
+      if (!available) {
+        debugPrint('[Map] MBTiles NOT available');
+        if (mounted) {
+          setState(() {
+            _mbtilesLoading = false;
+            _mbtilesError = '找不到離線地圖檔案 (taiwan_resqmesh.mbtiles)';
+          });
+        }
+        return;
+      }
+
+      final path = await MBTilesLoader.getLocalPath();
+      await MBTilesLoader.sanitizeMetadata(path);
+
+      // 複製 POI 詳情資料庫（首次啟動）
+      final poiDbPath = await _ensurePoiDetailsDb();
+
+      final mbTiles = MbTiles(mbtilesPath: path, gzip: true);
+      final provider = MbTilesVectorTileProvider(mbtiles: mbTiles);
+      final theme = buildResQMeshTheme();
+
+      // sprites 載入失敗不應阻止地圖渲染
+      SpriteStyle? sprites;
+      try {
+        sprites = buildResQMeshSprites();
+      } catch (e) {
+        debugPrint('[Map] Sprite 載入失敗 (非致命): $e');
+      }
+
+      // 驗證 tile 資料是否可讀取
+      // MBTiles 使用 TMS 座標系 (Y 軸翻轉): tmsY = (2^z - 1) - xyzY
+      // 台灣中心 z10/x859/y442(XYZ) → z10/x859/y581(TMS)
+      String tileTestResult = 'untested';
+      int tileTestBytes = 0;
+      try {
+        final tmsY = ((1 << 10) - 1) - 442; // = 581
+        final testTile = mbTiles.getTile(z: 10, x: 859, y: tmsY);
+        if (testTile != null) {
+          tileTestBytes = testTile.length;
+          tileTestResult = 'OK ${testTile.length}B';
+        } else {
+          // 也試試直接用 XYZ Y 看看（如果 MBTiles 是 XYZ 編碼）
+          final testTileXyz = mbTiles.getTile(z: 10, x: 859, y: 442);
+          if (testTileXyz != null) {
+            tileTestBytes = testTileXyz.length;
+            tileTestResult = 'OK(xyz) ${testTileXyz.length}B';
+          } else {
+            tileTestResult = 'NULL z10/859/tms$tmsY+xyz442';
+          }
+        }
+      } catch (e) {
+        tileTestResult = 'ERR: $e';
+      }
+
+      // 取得檔案大小
+      final fileSize = File(path).lengthSync();
+      final fileSizeMB = (fileSize / 1024 / 1024).toStringAsFixed(1);
+
+      debugPrint(
+          '[Map] MBTiles ready: path=$path, size=${fileSizeMB}MB, '
+          'zoom=${provider.minimumZoom}-${provider.maximumZoom}, '
+          'theme=${theme.layers.length} layers, sprites=${sprites != null ? "OK" : "NULL"}, '
+          'tileTest=$tileTestResult');
+
+      if (mounted) {
+        setState(() {
+          _mbTiles = mbTiles;
+          _poiQuery = PoiQuery(mbtilesPath: path, poiDetailsPath: poiDbPath);
+          _tileProvider = provider;
+          _tileProviders = TileProviders({'openmaptiles': provider});
+          _mapTheme = theme;
+          _spriteStyle = sprites;
+          _mbtilesAvailable = true;
+
+        });
+      }
+    } catch (e, stack) {
+      debugPrint('[Map] MBTiles init error: $e\n$stack');
+      if (mounted) {
+        setState(() => _mbtilesError = '地圖載入失敗: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _mbtilesLoading = false);
+    }
+  }
+
+  /// 複製 poi_details.db 到 app 文件目錄（首次啟動）
+  static Future<String?> _ensurePoiDetailsDb() async {
+    const assetPath = 'assets/maps/poi_details.db';
+    const fileName = 'poi_details.db';
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final target = File('${dir.path}/$fileName');
+      if (!target.existsSync()) {
+        final data = await rootBundle.load(assetPath);
+        final bytes =
+            data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+        await target.writeAsBytes(bytes, flush: true);
+        debugPrint('[Map] POI details DB copied: ${target.lengthSync()} bytes');
+      }
+      return target.path;
+    } catch (e) {
+      debugPrint('[Map] POI details DB not available: $e');
+      return null; // 退化模式：只有基本 POI 資訊
+    }
+  }
+
+  // ── 台灣範圍判定 ────────────────────────────────────────────────────
+
+  /// 檢查座標是否在台灣 MBTiles 範圍內（含外島緩衝）
+  bool _isInTaiwanBounds(LatLng loc) {
+    return loc.latitude >= 20.5 &&
+        loc.latitude <= 26.8 &&
+        loc.longitude >= 117.9 &&
+        loc.longitude <= 123.1;
+  }
+  // ── GPS 定位 ────────────────────────────────────────────────────
+
+  Future<void> _initGPS() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        debugPrint('[GPS] Location service disabled');
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        debugPrint('[GPS] Permission denied');
+        return;
+      }
+
+      // 取得初始位置
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      ).timeout(const Duration(seconds: 10), onTimeout: () {
+        throw TimeoutException('GPS timeout');
+      });
+
+      if (mounted) {
+        final loc = LatLng(pos.latitude, pos.longitude);
+        setState(() {
+          _userLocation = loc;
+          _gpsAccuracy = pos.accuracy;
+        });
+        // 只在 GPS 位置落在台灣離線地圖範圍內才移動視角
+        if (_isInTaiwanBounds(loc)) {
+          setState(() => _center = loc);
+          _mapController.move(loc, 15.0);
+        }
+      }
+
+      // 持續監聽位置變化
+      _positionStream = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 10, // 移動 10m 才更新
+        ),
+      ).listen((pos) {
+        if (mounted) {
+          setState(() {
+            _userLocation = LatLng(pos.latitude, pos.longitude);
+            _gpsAccuracy = pos.accuracy;
+          });
+        }
+      });
+    } catch (e) {
+      debugPrint('[GPS] Init error: $e');
+    }
+  }
+
+  // ── 載入 Overlay 圖層 (危險區域 + Mesh 事件標記) ────────────────
+
+  Future<void> _loadOverlays() async {
+    await Future.wait([_loadHazards(), _loadEventMarkers()]);
+  }
+
+  /// 帶旋轉動畫的重新整理
+  Future<void> _refreshWithSpin() async {
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    _refreshSpinCtrl.repeat();
+    try {
+      // 至少轉滿一圈 (800ms)，載入較久則繼續轉
+      await Future.wait([
+        _loadOverlays(),
+        Future.delayed(const Duration(milliseconds: 800)),
+      ]);
+    } finally {
+      _refreshSpinCtrl.stop();
+      _refreshSpinCtrl.reset();
+      if (mounted) setState(() => _isRefreshing = false);
+    }
+  }
+
+  Future<void> _loadHazards() async {
+    if (!_layerSettings.showHazards) {
+      if (mounted) {
+        setState(() {
+          _hazardPolygons = [];
+          _hazardCenterMarkers = [];
+          _hazardData = [];
+        });
+      }
+      return;
+    }
+    final hazards = await _eventManager.getActiveHazards();
+    final polygons = <Polygon>[];
+    final centerMarkers = <Marker>[];
+    final filteredData = <Map<String, dynamic>>[];
+
+    for (final h in hazards) {
+      final lat = (h['lat'] as num?)?.toDouble();
+      final lng = (h['lng'] as num?)?.toDouble();
+      final radius = (h['radius'] as num?)?.toDouble() ?? 200.0;
+      final severity = (h['severity'] as int?) ?? 3;
+      final type = h['type'] as String? ?? '';
+      final confirmCount = (h['confirm_count'] as int?) ?? 1;
+      final reportedBy = h['reported_by'] as String? ?? '';
+      if (lat == null || lng == null) continue;
+
+      final isMine = reportedBy == _myReporterHex;
+
+      // 篩選：不顯示他人的 / confirm_count 不夠
+      if (!isMine && !_layerSettings.showOtherHazards) continue;
+      if (!isMine && confirmCount < _layerSettings.minConfirmCount) continue;
+
+      Color color;
+      switch (type) {
+        case 'FIRE':
+          color = Colors.red;
+        case 'FLOOD':
+          color = Colors.blue;
+        case 'CHEMICAL':
+          color = Colors.yellow;
+        case 'BUILDING':
+          color = Colors.brown;
+        case 'LANDSLIDE':
+          color = Colors.grey;
+        default:
+          color = Colors.orange;
+      }
+      if (severity >= 4) color = Colors.red;
+
+      // 圓形多邊形 (36 邊) 取代菱形
+      final points = _circlePolygonPoints(lat, lng, radius);
+
+      // 未驗證 (confirm=1) 用虛線邊框，已驗證用實線
+      polygons.add(Polygon(
+        points: points,
+        color: color.withValues(alpha: confirmCount >= 2 ? 0.25 : 0.12),
+        borderColor: color,
+        borderStrokeWidth: confirmCount >= 3 ? 3.0 : 2.0,
+        pattern: confirmCount < 2
+            ? const StrokePattern.dotted()
+            : const StrokePattern.solid(),
+      ));
+
+      filteredData.add(h);
+
+      // 中心標記（含確認人數 badge）
+      final (typeLabel, typeIcon, _) =
+          _hazardTypes[type] ?? ('未知', Icons.help, Colors.grey);
+      centerMarkers.add(Marker(
+        point: LatLng(lat, lng),
+        width: 44,
+        height: 44,
+        child: GestureDetector(
+          onTap: () => _showHazardInfo(h),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.85),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isMine ? Colors.greenAccent : Colors.white,
+                    width: isMine ? 2.5 : 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                        color: color.withValues(alpha: 0.5), blurRadius: 6),
+                  ],
+                ),
+                child: Icon(typeIcon, color: Colors.white, size: 18),
+              ),
+              if (confirmCount > 1)
+                Positioned(
+                  right: -4,
+                  top: -4,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange, width: 1),
+                    ),
+                    child: Text(
+                      '×$confirmCount',
+                      style: const TextStyle(
+                          color: Colors.orange,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ));
+    }
+
+    if (mounted) {
+      setState(() {
+        _hazardPolygons = polygons;
+        _hazardCenterMarkers = centerMarkers;
+        _hazardData = filteredData;
+      });
+    }
+  }
+
+  /// 產生圓形多邊形頂點
+  static List<LatLng> _circlePolygonPoints(
+      double lat, double lng, double radiusM,
+      {int segments = 36}) {
+    final latR = lat * pi / 180;
+    final latDelta = radiusM / 111320.0;
+    final lngDelta = radiusM / (111320.0 * cos(latR));
+    return List.generate(segments, (i) {
+      final a = 2 * pi * i / segments;
+      return LatLng(lat + latDelta * sin(a), lng + lngDelta * cos(a));
+    });
+  }
+
+  Future<void> _loadEventMarkers() async {
+    final db = await DatabaseHelper().database;
+    // 載入最近 24 小時的 Mesh 事件，含座標（排除 hazardMarker，它有獨立圖層）
+    final cutoff = DateTime.now().millisecondsSinceEpoch - (24 * 3600 * 1000);
+    final events = await db.query(
+      'Event_Logs',
+      where:
+          'hlc_timestamp > ? AND received_lat IS NOT NULL AND received_lng IS NOT NULL AND event_type != ?',
+      whereArgs: [cutoff, EventType.hazardMarker],
+      orderBy: 'urgency DESC, hlc_timestamp DESC',
+      limit: 100,
+    );
+
+    final markers = <Marker>[];
+    for (final evt in events) {
+      final lat = (evt['received_lat'] as num?)?.toDouble();
+      final lng = (evt['received_lng'] as num?)?.toDouble();
+      final urgency = (evt['urgency'] as int?) ?? 0;
+      final eventType = (evt['event_type'] as int?) ?? 0;
+      if (lat == null || lng == null || lat == 0 || lng == 0) continue;
+
+      Color markerColor;
+      IconData markerIcon;
+      double markerSize;
+      String tooltip;
+
+      switch (urgency) {
+        case 3: // SOS_RED
+          markerColor = Colors.red;
+          markerIcon = Icons.sos;
+          markerSize = 36;
+          tooltip = 'SOS 緊急求救';
+          break;
+        case 2: // SOS_YELLOW
+          markerColor = Colors.amber;
+          markerIcon = Icons.warning_amber;
+          markerSize = 32;
+          tooltip = '求助';
+          break;
+        case 1: // RESOURCE
+          markerColor = Colors.green;
+          markerIcon =
+              eventType == 0 ? Icons.inventory_2 : Icons.volunteer_activism;
+          markerSize = 28;
+          tooltip = '物資';
+          break;
+        default: // INFO
+          markerColor = Colors.cyan;
+          markerIcon = Icons.info_outline;
+          markerSize = 24;
+          tooltip = '資訊';
+      }
+
+      // 解讀 payload 取得描述
+      final payload = evt['payload'] as Uint8List?;
+      String desc = '';
+      if (payload != null) {
+        try {
+          desc = String.fromCharCodes(payload);
+          if (desc.length > 40) desc = '${desc.substring(0, 40)}...';
+        } catch (_) {}
+      }
+
+      markers.add(Marker(
+        point: LatLng(lat, lng),
+        width: markerSize + 4,
+        height: markerSize + 4,
+        child: _EventMarkerIcon(
+          icon: markerIcon,
+          color: markerColor,
+          size: markerSize,
+          tooltip: '$tooltip${desc.isNotEmpty ? '\n$desc' : ''}',
+          isSOS: urgency >= 2,
+        ),
+      ));
+    }
+
+    if (mounted) setState(() => _eventMarkers = markers);
+  }
+
+  // ── POI / 危險區域 點擊 ──────────────────────────────────────────
+
+  Future<void> _onMapTap(TapPosition tapPosition, LatLng latlng) async {
+    // 標記模式：點擊 = 移動標記中心
+    if (_isMarkingMode) {
+      setState(() => _markCenter = latlng);
+      return;
+    }
+
+    // 檢查是否點到危險區域（由中心標記的 GestureDetector 處理）
+    // 這裡只處理 POI 查詢
+    if (_poiQuery == null) return;
+    final zoom = _mapController.camera.zoom;
+    if (zoom < 12) return;
+
+    final poi = await _poiQuery!.queryNearestPoi(latlng, zoom);
+    if (poi == null || !mounted) return;
+    _showPoiInfoSheet(poi);
+  }
+
+  void _showPoiInfoSheet(Map<String, String> poi) {
+    final name = poi['name'] ?? '';
+    final cls = poi['class'] ?? '';
+    final sub = poi['subclass'] ?? '';
+    final phone = poi['phone'] ?? '';
+    final hours = poi['opening_hours'] ?? '';
+    final houseNo = poi['housenumber'] ?? '';
+    final street = poi['addr_street'] ?? '';
+    final city = poi['addr_city'] ?? '';
+    final district = poi['addr_district'] ?? '';
+    final addrFull = poi['addr_full'] ?? '';
+
+    // 組合地址：優先使用 addr:full，否則拼接
+    String address = '';
+    if (addrFull.isNotEmpty) {
+      address = addrFull;
+    } else {
+      final parts = <String>[];
+      if (city.isNotEmpty) parts.add(city);
+      if (district.isNotEmpty) parts.add(district);
+      if (street.isNotEmpty) parts.add(street);
+      if (houseNo.isNotEmpty) parts.add('${houseNo}號');
+      address = parts.join('');
+    }
+
+    // 類別名稱映射
+    String category = _poiCategoryLabel(cls, sub);
+
+    // 類別顏色
+    Color categoryColor = _poiCategoryColor(cls, sub);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a2e),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 拖曳指示器
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            // 名稱 + 類別標籤
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: categoryColor.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: categoryColor, width: 1),
+                  ),
+                  child: Text(
+                    category,
+                    style: TextStyle(color: categoryColor, fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // 資訊列表
+            if (address.isNotEmpty)
+              _poiInfoRow(Icons.location_on, '地址', address),
+            if (phone.isNotEmpty) _poiInfoRow(Icons.phone, '電話', phone),
+            if (hours.isNotEmpty) _poiHoursWidget(hours),
+            // 如果三項都空，顯示提示
+            if (address.isEmpty && phone.isEmpty && hours.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('（此地點未提供詳細資訊）',
+                    style: TextStyle(color: Colors.white38, fontSize: 13)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _poiInfoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Colors.white54, size: 18),
+          const SizedBox(width: 10),
+          Text('$label  ',
+              style: const TextStyle(color: Colors.white54, fontSize: 13)),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 營業時間 widget：解析 OSM opening_hours 格式，每行一組，星期英轉中
+  Widget _poiHoursWidget(String raw) {
+    final lines = _formatOpeningHours(raw);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.access_time, color: Colors.white54, size: 18),
+          const SizedBox(width: 10),
+          const Text('營業  ',
+              style: TextStyle(color: Colors.white54, fontSize: 13)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: lines
+                  .map((l) => Padding(
+                        padding: const EdgeInsets.only(bottom: 3),
+                        child: Text(l,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 13)),
+                      ))
+                  .toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 解析 OSM opening_hours 字串，回傳格式化的行列表
+  /// 例: "Mo-Tu 09:00-12:00,15:30-17:30; We 09:00-12:00; Su off"
+  /// →  ["週一～週二  09:00-12:00, 15:30-17:30",
+  ///     "週三        09:00-12:00",
+  ///     "週日        公休"]
+  static List<String> _formatOpeningHours(String raw) {
+    // 星期英轉中對照
+    const dayMap = {
+      'Mo': '週一',
+      'Tu': '週二',
+      'We': '週三',
+      'Th': '週四',
+      'Fr': '週五',
+      'Sa': '週六',
+      'Su': '週日',
+      'PH': '國定假日',
+    };
+
+    String translateDays(String s) {
+      var result = s;
+      // 先處理 "-" 連接的範圍 (Mo-Fr → 週一～週五)
+      result = result.replaceAllMapped(
+        RegExp(r'\b(Mo|Tu|We|Th|Fr|Sa|Su)\s*-\s*(Mo|Tu|We|Th|Fr|Sa|Su)\b'),
+        (m) => '${dayMap[m[1]] ?? m[1]!}～${dayMap[m[2]] ?? m[2]!}',
+      );
+      // 再處理 "," 分隔的多日 (Mo,We → 週一、週三)
+      result = result.replaceAllMapped(
+        RegExp(r'\b(Mo|Tu|We|Th|Fr|Sa|Su)\b'),
+        (m) => dayMap[m[0]] ?? m[0]!,
+      );
+      result = result.replaceAll(RegExp(r'PH\b'), '國定假日');
+      return result;
+    }
+
+    // 以 ";" 分割不同時段規則
+    final rules =
+        raw.split(';').map((r) => r.trim()).where((r) => r.isNotEmpty);
+    final lines = <String>[];
+
+    for (final rule in rules) {
+      // "off" 轉 "公休"
+      var formatted =
+          rule.replaceAll(RegExp(r'\boff\b', caseSensitive: false), '公休');
+      formatted = translateDays(formatted);
+      // 美化: 在日期與時間之間統一為兩個空格，逗號後加空格
+      formatted = formatted.replaceAll(',', ', ');
+      lines.add(formatted.trim());
+    }
+
+    return lines.isEmpty ? [raw] : lines;
+  }
+
+  String _poiCategoryLabel(String cls, String sub) {
+    if (cls == 'hospital' || sub == 'hospital') return '醫院';
+    if (sub == 'clinic' || sub == 'doctors') return '診所';
+    if (sub == 'nursing_home') return '護理之家';
+    if (cls == 'pharmacy' || sub == 'pharmacy') return '藥局';
+    if (sub == 'police') return '警察局';
+    if (sub == 'fire_station') return '消防隊';
+    if (sub == 'school' || sub == 'kindergarten') return '學校';
+    if (sub == 'college' || sub == 'university') return '大學';
+    if (sub == 'supermarket') return '超市';
+    if (sub == 'convenience') return '便利商店';
+    if (sub == 'mall' || sub == 'department_store') return '商場';
+    if (sub == 'fuel') return '加油站';
+    if (sub == 'restaurant') return '餐廳';
+    if (sub == 'cafe') return '咖啡廳';
+    if (sub == 'bank') return '銀行';
+    if (sub == 'post_office') return '郵局';
+    if (sub == 'place_of_worship') return '宗教場所';
+    if (sub == 'parking') return '停車場';
+    if (cls == 'shop') return '商店';
+    return sub.isNotEmpty ? sub : cls;
+  }
+
+  Color _poiCategoryColor(String cls, String sub) {
+    if (cls == 'hospital' ||
+        sub == 'hospital' ||
+        sub == 'clinic' ||
+        sub == 'doctors' ||
+        sub == 'nursing_home') return Colors.red;
+    if (cls == 'pharmacy' || sub == 'pharmacy') return Colors.purple;
+    if (sub == 'police' || sub == 'fire_station')
+      return const Color(0xFF3366ff);
+    if (sub == 'school' ||
+        sub == 'kindergarten' ||
+        sub == 'college' ||
+        sub == 'university') return Colors.orange;
+    if (sub == 'supermarket' || sub == 'convenience') return Colors.green;
+    return Colors.cyan;
+  }
+
+  Future<void> _onMapLongPress(TapPosition tapPosition, LatLng latlng) async {
+    if (_isMarkingMode) return; // 已在標記模式
+    setState(() {
+      _isMarkingMode = true;
+      _markCenter = latlng;
+      _markRadius = 200.0;
+      _markType = 'ROADBLOCK';
+      _markSeverity = 3.0;
+      _markDescCtrl.clear();
+      _markPublishing = false;
+      _editingHazardId = null;
+    });
+  }
+
+  void _exitMarkingMode() {
+    setState(() {
+      _isMarkingMode = false;
+      _markCenter = null;
+      _editingHazardId = null;
+    });
+  }
+
+  /// 發布或更新危險標記（含附近重複檢查）
+  Future<void> _publishOrUpdateMark() async {
+    if (_markCenter == null) return;
+    setState(() => _markPublishing = true);
+
+    try {
+      // ── 編輯模式 ──
+      if (_editingHazardId != null) {
+        await _eventManager.updateHazard(
+          _editingHazardId!,
+          type: _markType,
+          severity: _markSeverity.round(),
+          lat: _markCenter!.latitude,
+          lng: _markCenter!.longitude,
+          radiusMeters: _markRadius,
+          description: _markDescCtrl.text,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('危險標記已更新'), backgroundColor: Colors.green),
+          );
+        }
+        _exitMarkingMode();
+        _loadOverlays();
+        return;
+      }
+
+      // ── 新建模式：先查附近是否已有同類型回報 ──
+      final nearby = await _eventManager.findNearbyHazard(
+        _markCenter!.latitude,
+        _markCenter!.longitude,
+        _markType,
+        searchRadius: _markRadius + 300, // 允許一些重疊
+      );
+
+      if (nearby != null && mounted) {
+        final dist = (nearby['_distance'] as double).round();
+        final cnt = (nearby['confirm_count'] as int?) ?? 1;
+        final (typeLabel, _, _) =
+            _hazardTypes[_markType] ?? ('未知', Icons.help, Colors.grey);
+        final action = await showDialog<String>(
+          context: context,
+          builder: (_) => AlertDialog(
+            backgroundColor: const Color(0xFF1a1a2e),
+            title: Row(children: [
+              const Icon(Icons.people, color: Colors.orange),
+              const SizedBox(width: 8),
+              const Text('附近已有回報',
+                  style: TextStyle(color: Colors.white, fontSize: 16)),
+            ]),
+            content: Text(
+              '距離 ${dist}m 處已有「$typeLabel」回報\n'
+              '目前已有 $cnt 人確認\n\n'
+              '你可以「確認」來增加可信度，\n或建立全新標記。',
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, 'new'),
+                child: const Text('建立新標記',
+                    style: TextStyle(color: Colors.white54)),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.pop(context, 'confirm'),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                icon: const Icon(Icons.check, color: Colors.white, size: 18),
+                label:
+                    const Text('確認回報', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+
+        if (action == 'confirm') {
+          await _eventManager.confirmHazard(nearby['hazard_id'] as String);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                    '已確認「${_hazardTypes[_markType]?.$1 ?? _markType}」回報 (+1)'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+          _exitMarkingMode();
+          _loadOverlays();
+          return;
+        }
+        // action == 'new' 或 null (取消) → 繼續建立
+        if (action == null) {
+          setState(() => _markPublishing = false);
+          return;
+        }
+      }
+
+      // ── 發布新標記 ──
+      await _eventManager.publishHazard(
+        type: _markType,
+        severity: _markSeverity.round(),
+        lat: _markCenter!.latitude,
+        lng: _markCenter!.longitude,
+        radiusMeters: _markRadius,
+        description: _markDescCtrl.text,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('危險標記已發布至 Mesh'), backgroundColor: Colors.orange),
+        );
+      }
+      _exitMarkingMode();
+      _loadOverlays();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('發布失敗: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _markPublishing = false);
+    }
+  }
+
+  // ── 危險標記詳情面板 ──────────────────────────────────────────
+
+  void _showHazardInfo(Map<String, dynamic> h) {
+    final type = h['type'] as String? ?? '';
+    final severity = (h['severity'] as int?) ?? 3;
+    final radius = (h['radius'] as num?)?.toDouble() ?? 200.0;
+    final confirmCount = (h['confirm_count'] as int?) ?? 1;
+    final desc = h['description'] as String? ?? '';
+    final reportedBy = h['reported_by'] as String? ?? '';
+    final createdAt = (h['created_at'] as int?) ?? 0;
+    final hazardId = h['hazard_id'] as String? ?? '';
+    final isMine = reportedBy == _myReporterHex;
+
+    final (typeLabel, typeIcon, typeColor) =
+        _hazardTypes[type] ?? ('未知', Icons.help, Colors.grey);
+
+    // 時間顯示
+    String timeAgo = '';
+    if (createdAt > 0) {
+      final diff = DateTime.now().millisecondsSinceEpoch - createdAt;
+      final mins = diff ~/ 60000;
+      if (mins < 60) {
+        timeAgo = '$mins 分鐘前';
+      } else if (mins < 1440) {
+        timeAgo = '${mins ~/ 60} 小時前';
+      } else {
+        timeAgo = '${mins ~/ 1440} 天前';
+      }
+    }
+
+    // 可信度標籤
+    String credLabel;
+    Color credColor;
+    if (confirmCount >= 5) {
+      credLabel = '確信';
+      credColor = Colors.greenAccent;
+    } else if (confirmCount >= 3) {
+      credLabel = '可信';
+      credColor = Colors.lightGreen;
+    } else if (confirmCount >= 2) {
+      credLabel = '有附議';
+      credColor = Colors.orange;
+    } else {
+      credLabel = '未驗證';
+      credColor = Colors.white38;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a2e),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            // 標題行
+            Row(children: [
+              Icon(typeIcon, color: typeColor, size: 24),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(typeLabel,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold)),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: credColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: credColor, width: 1),
+                ),
+                child: Text('$credLabel ×$confirmCount',
+                    style: TextStyle(color: credColor, fontSize: 11)),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            // 嚴重度條
+            Row(children: [
+              const Text('嚴重度  ',
+                  style: TextStyle(color: Colors.white54, fontSize: 13)),
+              ...List.generate(
+                5,
+                (i) => Icon(
+                  Icons.circle,
+                  size: 12,
+                  color: i < severity
+                      ? (severity >= 4 ? Colors.red : Colors.orange)
+                      : Colors.white12,
+                ),
+              ),
+              Text('  ($severity/5)',
+                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            ]),
+            const SizedBox(height: 6),
+            Text('影響範圍: ${radius.round()}m',
+                style: const TextStyle(color: Colors.white54, fontSize: 13)),
+            if (desc.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text('描述: $desc',
+                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
+            ],
+            if (timeAgo.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text('回報時間: $timeAgo',
+                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            ],
+            if (isMine)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('👤 你的回報',
+                    style: TextStyle(
+                        color: Colors.greenAccent[400], fontSize: 12)),
+              ),
+            const SizedBox(height: 16),
+            // 操作按鈕
+            Row(children: [
+              if (isMine) ...[
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _enterEditMode(h);
+                    },
+                    icon: const Icon(Icons.edit, size: 16),
+                    label: const Text('編輯'),
+                    style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange,
+                        side: const BorderSide(color: Colors.orange)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await _deleteHazardConfirm(hazardId);
+                    },
+                    icon: const Icon(Icons.delete, size: 16),
+                    label: const Text('解除'),
+                    style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red)),
+                  ),
+                ),
+              ] else ...[
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await _eventManager.confirmHazard(hazardId);
+                      _loadOverlays();
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                                '已確認「$typeLabel」回報 (${confirmCount + 1}人)'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    },
+                    icon:
+                        const Icon(Icons.check, color: Colors.white, size: 18),
+                    label: const Text('確認此回報',
+                        style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange),
+                  ),
+                ),
+              ],
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _enterEditMode(Map<String, dynamic> h) {
+    setState(() {
+      _isMarkingMode = true;
+      _editingHazardId = h['hazard_id'] as String?;
+      _markCenter = LatLng(
+        (h['lat'] as num).toDouble(),
+        (h['lng'] as num).toDouble(),
+      );
+      _markRadius = (h['radius'] as num?)?.toDouble() ?? 200.0;
+      _markType = h['type'] as String? ?? 'ROADBLOCK';
+      _markSeverity = ((h['severity'] as int?) ?? 3).toDouble();
+      _markDescCtrl.text = h['description'] as String? ?? '';
+      _markPublishing = false;
+    });
+  }
+
+  Future<void> _deleteHazardConfirm(String hazardId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a2e),
+        title: const Text('解除危險標記？',
+            style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: const Text('解除後此標記將從地圖上移除。',
+            style: TextStyle(color: Colors.white70, fontSize: 14)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('解除', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _eventManager.deleteHazard(hazardId);
+      _loadOverlays();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('危險標記已解除'), backgroundColor: Colors.green),
+        );
+      }
+    }
+  }
+
+  // ── 圖層控制面板 ──────────────────────────────────────────────
+
+  void _showLayerControlSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a2e),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => MapLayerControlSheet(settings: _layerSettings),
+    );
+  }
+
+  Future<void> _onTriageSubmit(int urgency, String desc,
+      {bool attachMedicalCard = false}) async {
+    try {
+      final eventId = await _eventManager.publishEvent(
+        urgency: urgency,
+        description: desc,
+        lat: _userLocation?.latitude,
+        lng: _userLocation?.longitude,
+        attachMedicalCard: attachMedicalCard,
+      );
+      if (mounted) {
+        // 追蹤 SOS 狀態（urgency >= 2 為 SOS 等級）
+        if (urgency >= 2) {
+          setState(() {
+            _activeSosEventId = eventId;
+            _activeSosUrgency = urgency;
+            _activeSosDesc = desc;
+          });
+        }
+        final labels = ['資訊', '物資需求', '求助 (黃)', '緊急求救 (紅)'];
+        final colors = [
+          Colors.blue[700],
+          Colors.green[700],
+          Colors.orange[700],
+          Colors.red[700]
+        ];
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('已廣播 ${labels[urgency]}：$desc'),
+            backgroundColor: colors[urgency],
+          ),
+        );
+        _loadOverlays(); // 即時刷新事件標記
+      }
+    } on RateLimitException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: Colors.orange),
+        );
+      }
+    }
+  }
+
+  /// 取消 SOS 求救
+  Future<void> _cancelSos() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a2e),
+        title: const Text('取消求救', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          '確定要取消 SOS 求救訊號嗎？\n取消後其他裝置會收到通知。',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('返回'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('確定取消', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    try {
+      // 發布取消事件到 Mesh 網路
+      await _eventManager.publishEvent(
+        urgency: 0, // INFO level
+        description: '【SOS 已取消】$_activeSosDesc',
+        lat: _userLocation?.latitude,
+        lng: _userLocation?.longitude,
+      );
+      setState(() {
+        _activeSosEventId = null;
+        _activeSosUrgency = 0;
+        _activeSosDesc = '';
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('SOS 已取消'),
+            backgroundColor: Colors.grey[700],
+          ),
+        );
+        _loadOverlays();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('取消失敗: $e'), backgroundColor: Colors.red[700]),
+        );
+      }
+    }
+  }
+
+  void _centerOnUser() {
+    if (_userLocation != null) {
+      _mapController.moveAndRotate(_userLocation!, 15.0, 0.0);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('GPS 尚未定位，請確認已開啟位置服務'),
+            backgroundColor: Colors.orange),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('離線戰術地圖',
+            style: TextStyle(color: Colors.white, fontSize: 16)),
+        backgroundColor: Colors.black87,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.layers, color: Colors.white),
+            onPressed: _showLayerControlSheet,
+            tooltip: '圖層控制',
+          ),
+          IconButton(
+            icon: const Icon(Icons.legend_toggle, color: Colors.white),
+            onPressed: () => setState(() => _showLegend = !_showLegend),
+            tooltip: '圖例',
+          ),
+          IconButton(
+            icon: AnimatedBuilder(
+              animation: _refreshSpinCtrl,
+              builder: (_, child) => Transform.rotate(
+                angle: _refreshSpinCtrl.value * 2 * 3.14159265,
+                child: child,
+              ),
+              child: const Icon(Icons.refresh, color: Colors.white),
+            ),
+            onPressed: _refreshWithSpin,
+            tooltip: '重新整理',
+          ),
+        ],
+      ),
+      body: _mbtilesLoading
+          ? _buildLoadingScreen()
+          : !_mbtilesAvailable
+              ? _buildErrorScreen()
+              : _buildMapView(),
+      floatingActionButton: _isMarkingMode
+          ? null
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 定位按鈕
+                FloatingActionButton.small(
+                  heroTag: 'gps',
+                  backgroundColor: _userLocation != null
+                      ? Colors.blueAccent
+                      : Colors.grey[700],
+                  onPressed: _centerOnUser,
+                  child: Icon(
+                    _userLocation != null
+                        ? Icons.my_location
+                        : Icons.location_searching,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // SOS 求救按鈕（根據狀態切換）
+                _activeSosEventId != null
+                    ? FloatingActionButton.extended(
+                        heroTag: 'sos',
+                        backgroundColor: _activeSosUrgency >= 3
+                            ? Colors.red[800]
+                            : Colors.orange[800],
+                        onPressed: _cancelSos,
+                        icon:
+                            const Icon(Icons.check_circle, color: Colors.white),
+                        label: Text(
+                          'SOS 已發送  ✕ 取消',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.95),
+                            fontSize: 13,
+                          ),
+                        ),
+                      )
+                    : FloatingActionButton.extended(
+                        heroTag: 'sos',
+                        backgroundColor: Colors.redAccent,
+                        onPressed: () {
+                          showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: const Color(0xFF1a1a2e),
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(20)),
+                            ),
+                            builder: (ctx) =>
+                                TriageInputWidget(onSubmit: _onTriageSubmit),
+                          );
+                        },
+                        icon: const Icon(Icons.sos, color: Colors.white),
+                        label: const Text('求救 SOS',
+                            style: TextStyle(color: Colors.white)),
+                      ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildMapView() {
+    // 建立用戶位置 Marker
+    final List<Marker> locationMarkers = [];
+    if (_userLocation != null) {
+      locationMarkers.add(Marker(
+        point: _userLocation!,
+        width: 26,
+        height: 26,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.blue,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.blue.withValues(alpha: 0.5),
+                blurRadius: 12,
+                spreadRadius: 4,
+              ),
+            ],
+          ),
+        ),
+      ));
+    }
+
+    // 建立精度圈
+    final List<CircleMarker> accuracyCircles = [];
+    if (_userLocation != null && _gpsAccuracy > 0) {
+      accuracyCircles.add(CircleMarker(
+        point: _userLocation!,
+        radius: _gpsAccuracy,
+        useRadiusInMeter: true,
+        color: Colors.blue.withValues(alpha: 0.1),
+        borderColor: Colors.blue.withValues(alpha: 0.3),
+        borderStrokeWidth: 1,
+      ));
+    }
+
+    // 預覽多邊形（標記模式）
+    final List<Polygon> previewPolygons = [];
+    if (_isMarkingMode && _markCenter != null) {
+      final (_, _, previewColor) =
+          _hazardTypes[_markType] ?? ('', Icons.help, Colors.orange);
+      previewPolygons.add(Polygon(
+        points: _circlePolygonPoints(
+          _markCenter!.latitude,
+          _markCenter!.longitude,
+          _markRadius,
+        ),
+        color: previewColor.withValues(alpha: 0.18),
+        borderColor: previewColor,
+        borderStrokeWidth: 2.5,
+        pattern: const StrokePattern.dotted(),
+      ));
+    }
+
+    // 預覽中心標記
+    final List<Marker> previewMarkers = [];
+    if (_isMarkingMode && _markCenter != null) {
+      previewMarkers.add(Marker(
+        point: _markCenter!,
+        width: 40,
+        height: 40,
+        child: const Icon(Icons.location_on, color: Colors.white, size: 36),
+      ));
+    }
+
+    return Stack(
+      children: [
+        FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: _center,
+            initialZoom: 15.0,
+            minZoom: 6.0,
+            maxZoom: 18.0,
+            onTap: _onMapTap,
+            onLongPress: _onMapLongPress,
+          ),
+          children: [
+            // 1. 離線向量圖磚底圖 (含自動 POI 顯示)
+            if (_tileProviders != null && _mapTheme != null)
+              VectorTileLayer(
+                key: ValueKey('vt_$_themeGeneration'),
+                tileProviders: _tileProviders!,
+                theme: _mapTheme!,
+                // sprites 暫時停用：sprite atlas PNG 解碼會觸發
+                // Codec failed to produce an image 未處理例外，
+                // 導致整個 tile 載入管線中斷 (tileset=null)
+                sprites: null,
+                layerMode: VectorTileLayerMode.vector,
+              ),
+            // 2. GPS 精度圈
+            if (accuracyCircles.isNotEmpty)
+              CircleLayer(circles: accuracyCircles),
+            // 3. 危險區域覆蓋層
+            if (_hazardPolygons.isNotEmpty)
+              PolygonLayer(polygons: _hazardPolygons),
+            // 3.5 預覽標記多邊形
+            if (previewPolygons.isNotEmpty)
+              PolygonLayer(polygons: previewPolygons),
+            // 4. 危險區域中心標記
+            if (_hazardCenterMarkers.isNotEmpty)
+              MarkerLayer(markers: _hazardCenterMarkers),
+            // 4.5 預覽中心點
+            if (previewMarkers.isNotEmpty) MarkerLayer(markers: previewMarkers),
+            // 5. Mesh 事件標記
+            if (_eventMarkers.isNotEmpty) MarkerLayer(markers: _eventMarkers),
+            // 6. 用戶位置
+            if (locationMarkers.isNotEmpty)
+              MarkerLayer(markers: locationMarkers),
+          ],
+        ),
+
+        // 長按提示（非標記模式時顯示）
+        if (!_isMarkingMode)
+          Positioned(
+            bottom: 80,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Text(
+                  '長按地圖 → 標記危險區域',
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+            ),
+          ),
+        // 標記模式控制面板
+        if (_isMarkingMode) _buildMarkingPanel(),
+        // 圖例面板
+        if (_showLegend && !_isMarkingMode) _buildLegendPanel(),
+      ],
+    );
+  }
+
+  // ── 標記模式控制面板 ─────────────────────────────────────────────
+
+  Widget _buildMarkingPanel() {
+    final (typeLabel, _, typeColor) =
+        _hazardTypes[_markType] ?? ('未知', Icons.help, Colors.grey);
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1a1a2e).withValues(alpha: 0.97),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── 標題 + 取消 ──
+            Row(children: [
+              const Icon(Icons.warning_amber, color: Colors.orange, size: 22),
+              const SizedBox(width: 8),
+              Text(
+                _editingHazardId != null ? '編輯危險標記' : '標記危險區域',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: _exitMarkingMode,
+                icon: const Icon(Icons.close, color: Colors.white38),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ]),
+            const Text('  點擊地圖可移動標記位置',
+                style: TextStyle(color: Colors.white38, fontSize: 11)),
+            const SizedBox(height: 10),
+
+            // ── 危險類型選擇 ──
+            SizedBox(
+              height: 38,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: _hazardTypes.entries.map((entry) {
+                  final (label, icon, color) = entry.value;
+                  final selected = _markType == entry.key;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      avatar: Icon(icon, color: color, size: 16),
+                      label: Text(label),
+                      selected: selected,
+                      selectedColor: color.withValues(alpha: 0.3),
+                      backgroundColor: Colors.white10,
+                      labelStyle: TextStyle(
+                        color: selected ? color : Colors.white70,
+                        fontSize: 12,
+                      ),
+                      side:
+                          BorderSide(color: selected ? color : Colors.white24),
+                      onSelected: (_) => setState(() => _markType = entry.key),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // ── 嚴重程度 ──
+            Row(children: [
+              const Text(' 嚴重度',
+                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+              Expanded(
+                child: Slider(
+                  value: _markSeverity,
+                  min: 1,
+                  max: 5,
+                  divisions: 4,
+                  activeColor: typeColor,
+                  inactiveColor: Colors.white12,
+                  label: '${_markSeverity.round()}',
+                  onChanged: (v) => setState(() => _markSeverity = v),
+                ),
+              ),
+              Text('${_markSeverity.round()}/5',
+                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            ]),
+
+            // ── 影響半徑 ──
+            Row(children: [
+              const Text(' 半徑',
+                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+              Expanded(
+                child: Slider(
+                  value: _markRadius,
+                  min: 50,
+                  max: 2000,
+                  divisions: 39,
+                  activeColor: Colors.orange,
+                  inactiveColor: Colors.white12,
+                  label: '${_markRadius.round()}m',
+                  onChanged: (v) => setState(() => _markRadius = v),
+                ),
+              ),
+              Text('${_markRadius.round()}m',
+                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            ]),
+
+            // ── 描述 ──
+            SizedBox(
+              height: 40,
+              child: TextField(
+                controller: _markDescCtrl,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: '簡述狀況 (選填)',
+                  hintStyle:
+                      const TextStyle(color: Colors.white24, fontSize: 13),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: Colors.white24),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: Colors.orange),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ── 發布按鈕 ──
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton.icon(
+                onPressed: _markPublishing ? null : _publishOrUpdateMark,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: _markPublishing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : Icon(
+                        _editingHazardId != null
+                            ? Icons.save
+                            : Icons.cell_tower,
+                        color: Colors.white,
+                        size: 20),
+                label: Text(
+                  _editingHazardId != null ? '更新標記' : '發布至 Mesh',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingScreen() {
+    return Container(
+      color: const Color(0xFFF2EFE9),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(color: Colors.redAccent),
+            const SizedBox(height: 16),
+            const Text('正在載入離線地圖...', style: TextStyle(color: Colors.black54)),
+            const SizedBox(height: 8),
+            const Text(
+              '(首次啟動解壓 201MB 地圖需要一點時間)',
+              style: TextStyle(color: Colors.black38, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorScreen() {
+    return Container(
+      color: const Color(0xFFF2EFE9),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.map_outlined, color: Colors.black26, size: 64),
+            const SizedBox(height: 16),
+            const Text('離線地圖不可用',
+                style: TextStyle(color: Colors.black54, fontSize: 18)),
+            const SizedBox(height: 8),
+            Text(
+              _mbtilesError ?? '未知錯誤',
+              style: const TextStyle(color: Colors.black38, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '請確認 assets/maps/taiwan_resqmesh.mbtiles 已正確打包',
+              style: TextStyle(color: Colors.black26, fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () {
+                setState(() {
+                  _mbtilesLoading = true;
+                  _mbtilesError = null;
+                });
+                _initMBTiles();
+              },
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              label: const Text('重試', style: TextStyle(color: Colors.white)),
+              style:
+                  ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegendPanel() {
+    return Positioned(
+      top: 8,
+      right: 8,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.black12),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15), blurRadius: 8)
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('🚨 救災地標 (離線圖磚)',
+                style: TextStyle(
+                    color: Colors.black87,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13)),
+            const SizedBox(height: 4),
+            const Text('放大至街道層級可載入點位',
+                style: TextStyle(color: Colors.red, fontSize: 10)),
+            const Divider(color: Colors.black12, height: 16),
+            _legendItem(Colors.red, '醫院/診所'),
+            _legendItem(const Color(0xFF3366ff), '警消單位'),
+            _legendItem(Colors.orange, '學校 (避難所)'),
+            _legendItem(Colors.purple, '藥局 (醫療物資)'),
+            _legendItem(Colors.green, '超市/便利商店'),
+            const Divider(color: Colors.black12, height: 16),
+            const Text('Mesh 事件',
+                style: TextStyle(
+                    color: Colors.black54,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11)),
+            _legendItem(Colors.red, 'SOS 緊急求救', icon: Icons.sos),
+            _legendItem(Colors.amber, '求助', icon: Icons.warning_amber),
+            _legendItem(Colors.green, '物資', icon: Icons.inventory_2),
+            _legendItem(Colors.cyan, '資訊', icon: Icons.info_outline),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _legendItem(Color color, String label, {IconData? icon}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          icon != null
+              ? Icon(icon, color: color, size: 14)
+              : Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.black26, width: 1),
+                  ),
+                ),
+          const SizedBox(width: 8),
+          Text(label,
+              style: const TextStyle(color: Colors.black87, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 事件標記圖示 (帶呼吸動畫的 SOS 標記)
+class _EventMarkerIcon extends StatefulWidget {
+  final IconData icon;
+  final Color color;
+  final double size;
+  final String tooltip;
+  final bool isSOS;
+
+  const _EventMarkerIcon({
+    required this.icon,
+    required this.color,
+    required this.size,
+    required this.tooltip,
+    this.isSOS = false,
+  });
+
+  @override
+  State<_EventMarkerIcon> createState() => _EventMarkerIconState();
+}
+
+class _EventMarkerIconState extends State<_EventMarkerIcon>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isSOS) {
+      _controller = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1200),
+      )..repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget marker = Tooltip(
+      message: widget.tooltip,
+      child: Container(
+        decoration: BoxDecoration(
+          color: widget.color,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: [
+            BoxShadow(color: widget.color.withValues(alpha: 0.6), blurRadius: 8)
+          ],
+        ),
+        child: Icon(widget.icon, color: Colors.white, size: widget.size * 0.55),
+      ),
+    );
+
+    if (widget.isSOS && _controller != null) {
+      return AnimatedBuilder(
+        animation: _controller!,
+        builder: (_, child) => Opacity(
+          opacity: 0.6 + _controller!.value * 0.4,
+          child: Transform.scale(
+            scale: 0.9 + _controller!.value * 0.15,
+            child: child,
+          ),
+        ),
+        child: marker,
+      );
+    }
+    return marker;
+  }
+}

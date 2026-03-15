@@ -1,0 +1,30 @@
+﻿=== Line 18 ===
+'*   **F_APP_01 �h�h�Ũ����إ� (Trust Ladder)**�G�������ұĺ��i���|���Ŭ[�c�A�U���Ŧ@�ΦP�@ Ed25519 ���_��A�ɯŮɴN�a���� `identity_level` ���A�����s���ͪ��_�C\n'
+=== Line 19 ===
+'    *   **Level 0 �X �ΦW (Gray Badge)**�GApp �w�ˮɦ۰ʲ��� Ed25519 ���_��A�L�ݺ��s�u�ADay 1 �i�ΡCQuarantine Vote �v�� 0.2�C\n'
+=== Line 20 ===
+'    *   **Level 1 �X ��������� (Bronze Badge)**�G�z�L�ӷ~ SMS OTP �A�ȡ]�p Twilio / AWS SNS�^���Ҫ����A�ݤ@���ʺ��s�u�C�@���������@�˸m�A�j�T���� Sybil ���������CQuarantine Vote �v�� 0.5�C\n'
+=== Line 21 ===
+python : Traceback (most recent ca
+ll last):
+位於 線路:1 字元:1
++ python docs\tmp\find_srs.py 2>&1
+ | Out-File -FilePath docs\tmp\srs
+_ou ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : Not 
+   Specified: (Traceback (most r  
+  ecent call last)::String) [],   
+  RemoteException
+    + FullyQualifiedErrorId : Nat 
+   iveCommandError
+ 
+  File "C:\Users\radio\Downloads\C
+oReM\docs\tmp\find_srs.py", line 9
+, in <module>
+    print(repr(lines[i]))
+    ~~~~~^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'cp950' codec 
+can't encode character '\u2265' in
+ position 45: illegal multibyte se
+quence

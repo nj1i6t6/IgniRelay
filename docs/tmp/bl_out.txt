@@ -1,0 +1,5 @@
+﻿Found segment: 'is_blacklisted` (BOOLEAN): 達到隔離門檻（weight ≥ 3.0）或手動封鎖後，拒絕建立 Socket 連線。\n\n#### Table: `Event_Logs` (所有 Mesh 事件溯源核心)\n*   `ev'
+old_seg not found, trying with repr match...
+old_seg repr: 'is_blacklisted` (BOOLEAN): 達到隔離門殳（weight ≥ 3.0）'
+actual repr: 'is_blacklisted` (BOOLEAN): 達到隔離門檻（weight ≥ 3.0）或手動封鎖'
+done

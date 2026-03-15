@@ -1,0 +1,28 @@
+﻿
+=== is_blacklisted in 04_��Ʈw�W���P���A�P�B_DB.md ===
+python : Traceback (most recent ca
+ll last):
+位於 線路:1 字元:1
++ python docs\tmp\check_lines.py 2
+>&1 | Out-File -FilePath docs\tmp\
+che ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~
+    + CategoryInfo          : Not 
+   Specified: (Traceback (most r  
+  ecent call last)::String) [],   
+  RemoteException
+    + FullyQualifiedErrorId : Nat 
+   iveCommandError
+ 
+  File "C:\Users\radio\Downloads\C
+oReM\docs\tmp\check_lines.py", lin
+e 13, in <module>
+    print(f"  L{i+1}: {line.strip(
+)}")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^
+UnicodeEncodeError: 'cp950' codec 
+can't encode character '\u2265' in
+ position 53: illegal multibyte se
+quence
