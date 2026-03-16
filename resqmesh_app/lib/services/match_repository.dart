@@ -1,8 +1,10 @@
 import 'dart:typed_data';
 import '../db/database_helper.dart';
+import '../geo/village_geofence.dart';
 import '../mesh/event_manager.dart';
 import '../crypto/identity_manager.dart';
 import '../proto/mesh_protocol.pb.dart' as pb;
+import 'location_service.dart';
 
 /// 媒合相關資料查詢 (Repository 層)
 /// 負責 DB 讀取和 Protobuf 解碼，不含業務邏輯
@@ -156,6 +158,110 @@ class MatchRepository {
     }
     return results;
   }
+
+  /// 查詢同里/同鄉鎮的他人供給與需求（社區動態）
+  ///
+  /// 篩選邏輯：
+  /// - sender_pub_key != 自己
+  /// - event_type = RESOURCE_REGISTER 或 REQUEST_BROADCAST
+  /// - 24 小時內
+  /// - origin_lat/origin_lng 與我同里（物資）或同鄉鎮（SOS）
+  Future<List<CommunityItem>> getCommunityItems({int limit = 50}) async {
+    final pubKeyBytes = await _identity.getPublicKeyBytes();
+    final myPubKey = Uint8List.fromList(pubKeyBytes);
+    final db = await _db.database;
+    final cutoff24h =
+        DateTime.now().millisecondsSinceEpoch - (24 * 3600 * 1000);
+
+    final rows = await db.query(
+      'Event_Logs',
+      where:
+          'sender_pub_key != ? AND (event_type = ? OR event_type = ?) AND hlc_timestamp > ?',
+      whereArgs: [
+        myPubKey,
+        EventType.resourceRegister,
+        EventType.requestBroadcast,
+        cutoff24h,
+      ],
+      orderBy: 'urgency DESC, hlc_timestamp DESC',
+      limit: limit,
+    );
+
+    final myLoc = LocationService().currentLocation;
+    final results = <CommunityItem>[];
+
+    for (final row in rows) {
+      final eventType = (row['event_type'] as int?) ?? 0;
+      final payload = row['payload'] as Uint8List?;
+      if (payload == null) continue;
+
+      final isSupply = eventType == EventType.resourceRegister;
+      final originLat = (row['origin_lat'] as num?)?.toDouble();
+      final originLng = (row['origin_lng'] as num?)?.toDouble();
+
+      // 地理圍欄篩選：有座標時檢查是否同里
+      if (originLat != null && originLng != null && myLoc != null) {
+        final urgency = (row['urgency'] as int?) ?? 0;
+        bool? inZone;
+        if (urgency >= 2) {
+          // SOS 等級 → 鄉鎮範圍
+          inZone = await VillageGeofence.isSameTownshipZone(
+              originLat, originLng, myLoc.latitude, myLoc.longitude);
+        } else {
+          // 一般物資 → 同里範圍
+          inZone = await VillageGeofence.isSameVillageZone(
+              originLat, originLng, myLoc.latitude, myLoc.longitude);
+        }
+        // inZone == null → 查不到里（離島/缺漏），放行
+        // inZone == false → 不同區域，跳過
+        if (inZone == false) continue;
+      }
+
+      if (isSupply) {
+        try {
+          final rd = pb.ResourceData.fromBuffer(payload);
+          results.add(CommunityItem(
+            eventId: (row['event_id'] as String?) ?? '',
+            isSupply: true,
+            resourceType: rd.resourceType,
+            quantity: rd.quantity,
+            description: rd.description,
+            urgency: (row['urgency'] as int?) ?? 0,
+            identityLevel: (row['identity_level'] as int?) ?? 0,
+            timestamp: (row['hlc_timestamp'] as int?) ?? 0,
+            lat: rd.lat != 0 ? rd.lat : null,
+            lng: rd.lng != 0 ? rd.lng : null,
+          ));
+        } catch (_) {
+          continue;
+        }
+      } else {
+        try {
+          final rd = pb.RequestData.fromBuffer(payload);
+          if (rd.resourceType.isEmpty) continue;
+          final descParts = rd.description.split('|');
+          final note =
+              descParts.length > 1 ? descParts.sublist(1).join('|') : '';
+
+          results.add(CommunityItem(
+            eventId: (row['event_id'] as String?) ?? '',
+            isSupply: false,
+            resourceType: rd.resourceType,
+            quantity: rd.quantityNeeded,
+            description: note,
+            urgency: (row['urgency'] as int?) ?? 0,
+            identityLevel: (row['identity_level'] as int?) ?? 0,
+            timestamp: (row['hlc_timestamp'] as int?) ?? 0,
+            lat: rd.lat != 0 ? rd.lat : null,
+            lng: rd.lng != 0 ? rd.lng : null,
+          ));
+        } catch (_) {
+          continue;
+        }
+      }
+    }
+    return results;
+  }
 }
 
 // ── 資料模型 ─────────────────────────────────────────────────────
@@ -221,5 +327,32 @@ class MyPublish {
     required this.title,
     required this.subtitle,
     required this.timestamp,
+  });
+}
+
+/// 社區動態項目（他人透過 Mesh 同步過來的供給/需求）
+class CommunityItem {
+  final String eventId;
+  final bool isSupply;
+  final String resourceType;
+  final double quantity;
+  final String description;
+  final int urgency;
+  final int identityLevel;
+  final int timestamp;
+  final double? lat;
+  final double? lng;
+
+  const CommunityItem({
+    required this.eventId,
+    required this.isSupply,
+    required this.resourceType,
+    required this.quantity,
+    required this.description,
+    required this.urgency,
+    required this.identityLevel,
+    required this.timestamp,
+    this.lat,
+    this.lng,
   });
 }

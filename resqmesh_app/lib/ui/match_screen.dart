@@ -24,6 +24,7 @@ class _MatchScreenState extends State<MatchScreen>
   final _locationService = LocationService();
   List<MatchEntry> _matches = [];
   List<MyPublish> _myPublishes = [];
+  List<CommunityItem> _communityItems = [];
   bool _loading = true;
   String? _error;
   String? _gpsWarning;
@@ -49,12 +50,10 @@ class _MatchScreenState extends State<MatchScreen>
   }
 
   Future<void> _initAndLoad() async {
-    // GPS 初始化不阻塞資料載入：並行執行
     final gpsFuture = _locationService.init();
     final dataFuture = _loadAll();
     await Future.wait([gpsFuture, dataFuture]);
 
-    // 檢查 GPS 狀態，顯示警告
     if (mounted) {
       setState(() {
         _gpsWarning = _locationService.unavailableReason;
@@ -62,7 +61,6 @@ class _MatchScreenState extends State<MatchScreen>
     }
   }
 
-  /// 帶旋轉動畫的重新整理
   Future<void> _refreshWithSpin() async {
     if (_isRefreshing) return;
     setState(() => _isRefreshing = true);
@@ -89,10 +87,12 @@ class _MatchScreenState extends State<MatchScreen>
         _repo.getAvailableSupplies(),
         _repo.getRequests(),
         _repo.getMyPublishes(),
+        _repo.getCommunityItems(),
       ]);
       final supplies = results[0] as List<DecodedSupply>;
       final requests = results[1] as List<DecodedRequest>;
       final publishes = results[2] as List<MyPublish>;
+      final community = results[3] as List<CommunityItem>;
 
       final matches = _matchService.computeMatches(supplies, requests);
 
@@ -100,6 +100,7 @@ class _MatchScreenState extends State<MatchScreen>
         setState(() {
           _matches = matches;
           _myPublishes = publishes;
+          _communityItems = community;
           _loading = false;
         });
       }
@@ -220,7 +221,6 @@ class _MatchScreenState extends State<MatchScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 登記物資供給
             FloatingActionButton.extended(
               heroTag: 'supply',
               backgroundColor: Colors.green[700],
@@ -235,7 +235,6 @@ class _MatchScreenState extends State<MatchScreen>
                   const Text('登記物資供給', style: TextStyle(color: Colors.white)),
             ),
             const SizedBox(height: 12),
-            // 發布物資需求
             FloatingActionButton.extended(
               heroTag: 'request',
               backgroundColor: Colors.redAccent,
@@ -275,14 +274,17 @@ class _MatchScreenState extends State<MatchScreen>
       );
     }
 
-    if (_myPublishes.isEmpty && _matches.isEmpty) {
+    if (_myPublishes.isEmpty &&
+        _matches.isEmpty &&
+        _communityItems.isEmpty) {
       return _buildEmpty();
     }
 
     return ListView(
-      padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 140),
+      padding:
+          const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 140),
       children: [
-        // 我的發布區段
+        // ── 我的發布 ──
         if (_myPublishes.isNotEmpty) ...[
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
@@ -296,7 +298,7 @@ class _MatchScreenState extends State<MatchScreen>
           const SizedBox(height: 16),
           const Divider(color: Colors.white12),
         ],
-        // 媒合結果區段
+        // ── 媒合結果 ──
         if (_matches.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -315,8 +317,40 @@ class _MatchScreenState extends State<MatchScreen>
             ),
           ),
           ..._matches.map((m) => _buildMatchCard(m)),
+          const SizedBox(height: 16),
+          const Divider(color: Colors.white12),
         ],
-        if (_myPublishes.isNotEmpty && _matches.isEmpty)
+        // ── 社區動態（同里/同鄉鎮他人的供給與需求）──
+        if (_communityItems.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.people, color: Colors.cyanAccent, size: 18),
+                const SizedBox(width: 6),
+                const Text('社區動態',
+                    style: TextStyle(
+                        color: Colors.cyanAccent,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
+                const SizedBox(width: 8),
+                Text('${_communityItems.length} 筆',
+                    style:
+                        const TextStyle(color: Colors.white38, fontSize: 12)),
+              ],
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text('同區域其他用戶透過 Mesh 同步的供給與需求',
+                style: TextStyle(color: Colors.white30, fontSize: 11)),
+          ),
+          ..._communityItems.map((item) => _buildCommunityCard(item)),
+        ],
+        // ── 空狀態提示 ──
+        if (_myPublishes.isNotEmpty &&
+            _matches.isEmpty &&
+            _communityItems.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
             child: Center(
@@ -347,6 +381,8 @@ class _MatchScreenState extends State<MatchScreen>
       ),
     );
   }
+
+  // ── 我的發布卡片 ──────────────────────────────────────────────
 
   Widget _buildMyPublishCard(MyPublish pub) {
     final time = DateTime.fromMillisecondsSinceEpoch(pub.timestamp);
@@ -426,7 +462,6 @@ class _MatchScreenState extends State<MatchScreen>
                 ],
               ),
             ),
-            // 取消按鈕
             IconButton(
               icon: const Icon(Icons.cancel_outlined,
                   color: Colors.redAccent, size: 22),
@@ -439,7 +474,6 @@ class _MatchScreenState extends State<MatchScreen>
     );
   }
 
-  /// 確認取消發布
   Future<void> _confirmCancelPublish(MyPublish pub) async {
     final displayTitle = getReadableName(pub.title);
     final confirm = await showDialog<bool>(
@@ -486,22 +520,23 @@ class _MatchScreenState extends State<MatchScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('取消失敗: $e'), backgroundColor: Colors.red[700]),
+          SnackBar(
+              content: Text('取消失敗: $e'), backgroundColor: Colors.red[700]),
         );
       }
     }
   }
 
+  // ── 媒合結果卡片 ────────────────────────────────────────────────
+
   Widget _buildMatchCard(MatchEntry entry) {
     final urgencyColor = _urgencyColor(entry.urgency);
     final readableName = getReadableName(entry.resourceType);
 
-    // 滿足率標籤
     final pct = (entry.fulfillmentRatio * 100).toInt();
     final fulfillColor = pct >= 80 ? Colors.greenAccent : Colors.orange;
-    final fulfillLabel = pct >= 80 ? '✅ $pct%' : '⚠️ $pct%';
+    final fulfillLabel = pct >= 80 ? '$pct%' : '$pct%';
 
-    // 配送方向描述
     String deliveryLabel;
     IconData deliveryIcon;
     Color deliveryColor;
@@ -515,7 +550,6 @@ class _MatchScreenState extends State<MatchScreen>
       deliveryIcon = Icons.delivery_dining;
       deliveryColor = Colors.greenAccent;
     } else {
-      // PICKUP + CAN_GO
       deliveryLabel = '需求者自行前往';
       deliveryIcon = Icons.directions_walk;
       deliveryColor = Colors.blueAccent;
@@ -571,7 +605,6 @@ class _MatchScreenState extends State<MatchScreen>
                     ),
                   ),
                   const SizedBox(width: 6),
-                  // 滿足率標籤
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -596,13 +629,13 @@ class _MatchScreenState extends State<MatchScreen>
                 ],
               ),
               const SizedBox(height: 8),
-              // 數量資訊 + 距離
               Row(
                 children: [
                   Flexible(
                     child: Text(
                       '供給: ${entry.supplyQty.toInt()} 份  ←→  需求: ${entry.requestQty.toInt()} 份',
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 12),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -624,7 +657,6 @@ class _MatchScreenState extends State<MatchScreen>
                 ],
               ),
               const SizedBox(height: 4),
-              // 需求描述
               Text(
                 '需求: ${getReadableName(entry.requestDesc)}',
                 style: const TextStyle(color: Colors.white, fontSize: 14),
@@ -644,7 +676,8 @@ class _MatchScreenState extends State<MatchScreen>
                   const Spacer(),
                   Icon(Icons.verified_user, size: 13, color: Colors.grey[400]),
                   Text(' L${entry.identityLevel}',
-                      style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+                      style:
+                          TextStyle(color: Colors.grey[400], fontSize: 12)),
                   const SizedBox(width: 8),
                   const Icon(Icons.navigation, color: Colors.white38, size: 16),
                 ],
@@ -662,5 +695,245 @@ class _MatchScreenState extends State<MatchScreen>
           builder: (_) => NavigationScreen(match: entry),
         ))
         .then((_) => _loadAll());
+  }
+
+  // ── 社區動態卡片 ────────────────────────────────────────────────
+
+  Widget _buildCommunityCard(CommunityItem item) {
+    final time = DateTime.fromMillisecondsSinceEpoch(item.timestamp);
+    final timeStr =
+        '${time.month}/${time.day} ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    final readableName = getReadableName(item.resourceType);
+    final isSupply = item.isSupply;
+    final urgencyColor = _urgencyColor(item.urgency);
+
+    final typeColor = isSupply ? Colors.tealAccent : Colors.orangeAccent;
+    final typeLabel = isSupply ? '有人可提供' : '有人需要';
+    final typeIcon = isSupply ? Icons.volunteer_activism : Icons.front_hand;
+    final actionLabel = isSupply ? '我需要' : '我可以提供';
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      color: const Color(0xFF12122a),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: typeColor.withValues(alpha: 0.25)),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => _showCommunityResponseDialog(item),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: typeColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(typeIcon, color: typeColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: typeColor.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(typeLabel,
+                              style: TextStyle(
+                                  color: typeColor,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: urgencyColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(_urgencyLabel(item.urgency),
+                              style: TextStyle(
+                                  color: urgencyColor, fontSize: 9)),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(timeStr,
+                            style: const TextStyle(
+                                color: Colors.white30, fontSize: 10)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$readableName  ${item.quantity.toInt()} 份',
+                      style:
+                          const TextStyle(color: Colors.white, fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (item.description.isNotEmpty)
+                      Text(item.description,
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 11),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+              // 回應按鈕
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: typeColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(actionLabel,
+                    style: TextStyle(
+                        color: typeColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 回應社區動態項目的確認對話框
+  Future<void> _showCommunityResponseDialog(CommunityItem item) async {
+    final readableName = getReadableName(item.resourceType);
+    final isSupply = item.isSupply;
+    final qtyController =
+        TextEditingController(text: item.quantity.toInt().toString());
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1a1a2e),
+          title: Text(
+            isSupply ? '確認需求數量' : '確認提供數量',
+            style: const TextStyle(color: Colors.white),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isSupply
+                    ? '有人可以提供「$readableName」${item.quantity.toInt()} 份'
+                    : '有人需要「$readableName」${item.quantity.toInt()} 份',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                isSupply ? '您需要幾份？' : '您可以提供幾份？',
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: qtyController,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(color: Colors.white, fontSize: 18),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: Colors.white10,
+                  hintText: '數量',
+                  hintStyle: const TextStyle(color: Colors.white30),
+                  suffixText: '份',
+                  suffixStyle: const TextStyle(color: Colors.white54),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(
+                backgroundColor:
+                    isSupply ? Colors.orangeAccent : Colors.tealAccent,
+                foregroundColor: Colors.black,
+              ),
+              child: Text(isSupply ? '確認需求' : '確認提供'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final qty = int.tryParse(qtyController.text) ?? 0;
+    if (qty <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('數量必須大於 0'),
+            backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    final loc = _locationService.currentLocation;
+
+    try {
+      if (isSupply) {
+        // 對方有供給 → 我發布需求
+        await _eventManager.publishRequest(
+          resourceType: item.resourceType,
+          quantity: qty,
+          note: '回應社區供給',
+          maxRangeMeters: 5000,
+          mobilityMode: 'CAN_GO',
+          lat: loc?.latitude,
+          lng: loc?.longitude,
+        );
+      } else {
+        // 對方有需求 → 我登記供給
+        await _eventManager.publishSupply(
+          resourceType: item.resourceType,
+          quantity: qty,
+          maxRangeMeters: 5000,
+          deliveryMode: 'PICKUP',
+          lat: loc?.latitude,
+          lng: loc?.longitude,
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                isSupply ? '已發布需求 $qty 份「$readableName」' : '已登記供給 $qty 份「$readableName」'),
+            backgroundColor: Colors.green[700],
+          ),
+        );
+        _loadAll();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('發布失敗: $e'), backgroundColor: Colors.red[700]),
+        );
+      }
+    }
   }
 }
