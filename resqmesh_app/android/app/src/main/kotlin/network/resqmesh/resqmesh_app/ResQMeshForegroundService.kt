@@ -11,7 +11,6 @@ import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import java.util.UUID
 
 /**
  * ResQMesh 後台 Foreground Service
@@ -24,10 +23,10 @@ class ResQMeshForegroundService : Service() {
         private const val CHANNEL_ID = "resqmesh_data_mule"
         private const val NOTIFICATION_ID = 1001
 
-        private val RESQMESH_SERVICE_UUID = UUID.fromString("f47a7b20-2d0a-11ee-be56-0242ac120002")
-        private val EVENT_CHAR_UUID = UUID.fromString("f47a7b21-2d0a-11ee-be56-0242ac120002")
-        private val BLOOM_CHAR_UUID = UUID.fromString("f47a7b22-2d0a-11ee-be56-0242ac120002")
-        private val CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+        // 共享 Bloom Filter 快取（由 MainActivity 透過 MethodChannel 更新）
+        @Volatile
+        @JvmStatic
+        var sharedBloomBytes: ByteArray = ByteArray(0)
     }
 
     private var bleAdvertiser: BluetoothLeAdvertiser? = null
@@ -137,7 +136,14 @@ class ResQMeshForegroundService : Service() {
                 device: BluetoothDevice, requestId: Int,
                 offset: Int, characteristic: BluetoothGattCharacteristic
             ) {
-                gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, ByteArray(0))
+                val responseBytes = when (characteristic.uuid) {
+                    ResQMeshConstants.BLOOM_CHAR_UUID -> {
+                        val bloom = sharedBloomBytes
+                        if (offset < bloom.size) bloom.copyOfRange(offset, bloom.size) else ByteArray(0)
+                    }
+                    else -> ByteArray(0)
+                }
+                gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, responseBytes)
             }
             override fun onDescriptorWriteRequest(
                 device: BluetoothDevice, requestId: Int,
@@ -152,21 +158,21 @@ class ResQMeshForegroundService : Service() {
         })
 
         // Build and add service
-        val service = BluetoothGattService(RESQMESH_SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+        val service = BluetoothGattService(ResQMeshConstants.SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
         val eventChar = BluetoothGattCharacteristic(
-            EVENT_CHAR_UUID,
+            ResQMeshConstants.EVENT_CHAR_UUID,
             BluetoothGattCharacteristic.PROPERTY_READ or
                 BluetoothGattCharacteristic.PROPERTY_WRITE or
                 BluetoothGattCharacteristic.PROPERTY_NOTIFY,
             BluetoothGattCharacteristic.PERMISSION_READ or BluetoothGattCharacteristic.PERMISSION_WRITE
         )
         eventChar.addDescriptor(BluetoothGattDescriptor(
-            CCCD_UUID,
+            ResQMeshConstants.CCCD_UUID,
             BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
         ))
         service.addCharacteristic(eventChar)
         service.addCharacteristic(BluetoothGattCharacteristic(
-            BLOOM_CHAR_UUID,
+            ResQMeshConstants.BLOOM_CHAR_UUID,
             BluetoothGattCharacteristic.PROPERTY_READ,
             BluetoothGattCharacteristic.PERMISSION_READ
         ))
@@ -189,7 +195,7 @@ class ResQMeshForegroundService : Service() {
 
         val data = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
-            .addServiceUuid(android.os.ParcelUuid(RESQMESH_SERVICE_UUID))
+            .addServiceUuid(android.os.ParcelUuid(ResQMeshConstants.SERVICE_UUID))
             .build()
 
         advertiseCallback = object : AdvertiseCallback() {

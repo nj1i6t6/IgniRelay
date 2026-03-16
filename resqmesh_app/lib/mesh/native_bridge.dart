@@ -7,6 +7,15 @@ class NativeBridge {
   static const EventChannel _eventChannel =
       EventChannel('network.resqmesh/events');
 
+  /// 共享的 Native EventChannel broadcast stream
+  /// （EventChannel 只能 receiveBroadcastStream 一次，這裡用 asBroadcastStream 共享）
+  static Stream<dynamic>? _sharedEventStream;
+  static Stream<dynamic> get nativeEventStream {
+    _sharedEventStream ??=
+        _eventChannel.receiveBroadcastStream().asBroadcastStream();
+    return _sharedEventStream!;
+  }
+
   /// 啟動 Android Tier 1 Data Mule 模式（掛載 Foreground Service）
   static Future<bool> startAndroidDataMuleMode() async {
     try {
@@ -35,6 +44,20 @@ class NativeBridge {
       await _channel.invokeMethod('stopAllServices');
     } on PlatformException catch (e) {
       debugPrint("Failed to stop services: '${e.message}'.");
+    }
+  }
+
+  /// 更新 Native GATT Server 的 Bloom Filter 快取
+  /// 當 Central 讀取 Bloom Characteristic 時會回傳此資料
+  static Future<bool> updateBloomFilter(Uint8List bloomBytes) async {
+    try {
+      final bool result = await _channel.invokeMethod('updateBloomFilter', {
+        'bloom': bloomBytes,
+      });
+      return result;
+    } on PlatformException catch (e) {
+      debugPrint("Failed to update bloom filter: '${e.message}'.");
+      return false;
     }
   }
 
@@ -211,15 +234,14 @@ class NativeBridge {
   /// ??靘 GATT Server ?漱?仿?霅???
   /// ?鈭辣?澆?嚗'type': 'handoff_result', 'resourceId': ..., 'success': true/false}
   static Stream<Map<String, dynamic>> get handoffEvents {
-    return _eventChannel.receiveBroadcastStream().where((event) {
+    return nativeEventStream.where((event) {
       return event is Map && event['type'] == 'handoff_result';
     }).map((event) => Map<String, dynamic>.from(event));
   }
 
   /// ??靘摨惜??Mesh Events (Protobuf bytes stream)
   static Stream<List<int>> get incomingMeshEvents {
-    return _eventChannel
-        .receiveBroadcastStream()
+    return nativeEventStream
         .where((event) => event is List)
         .map((event) => List<int>.from(event));
   }

@@ -1,14 +1,19 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'ble_manager.dart';
+import 'event_manager.dart';
 import 'mesh_transport.dart';
 import 'mesh_event_handler.dart';
+import 'native_bridge.dart';
+import 'triage_queue.dart';
 
-/// NativeBleTransport — 包裝現有 BleManager 為 MeshTransport 介面
+/// NativeBleTransport — 完整的自研 BLE Mesh Transport
 ///
-/// 這是過渡用的包裝層，讓現有 flutter_blue_plus BLE 實作
-/// 可以透過 MeshTransport 抽象介面被上層使用。
-/// 未來 Bridgefy 穩定後可完全替換。
+/// 整合雙角色：
+/// - Central（flutter_blue_plus 掃描）：由 BleManager 處理
+/// - Peripheral（Native GATT Server）：由 NativeBridge EventChannel 接收
+///
+/// 兩條路徑收到的資料都統一交給 MeshEventHandler 處理。
 class NativeBleTransport implements MeshTransport {
   static final NativeBleTransport _instance = NativeBleTransport._internal();
   factory NativeBleTransport() => _instance;
@@ -17,17 +22,18 @@ class NativeBleTransport implements MeshTransport {
   final BleManager _bleManager = BleManager();
   final MeshEventHandler _eventHandler = MeshEventHandler();
 
-  // Stream controllers (橋接 BleManager 的事件)
+  // Stream controllers (橋接 BleManager + GATT Server 的事件)
   final _dataController = StreamController<MeshDataReceived>.broadcast();
   final _peerConnectedController = StreamController<String>.broadcast();
   final _peerDisconnectedController = StreamController<String>.broadcast();
   final _stateController = StreamController<TransportState>.broadcast();
 
   StreamSubscription? _bleEventSub;
+  StreamSubscription? _gattServerDataSub;
+  StreamSubscription? _gattServerPeerSub;
 
   @override
   Future<void> initialize() async {
-    // BleManager 不需要額外初始化（FlutterBluePlus 自動偵測）
     _stateController.add(TransportState.stopped);
   }
 
@@ -35,7 +41,7 @@ class NativeBleTransport implements MeshTransport {
   Future<void> start() async {
     _stateController.add(TransportState.starting);
 
-    // 訂閱 BleManager 事件，橋接到 MeshTransport streams
+    // ── 1. 訂閱 BleManager 事件（Central 角色）──
     _bleEventSub?.cancel();
     _bleEventSub = _bleManager.events.listen((event) {
       switch (event.type) {
@@ -45,7 +51,6 @@ class NativeBleTransport implements MeshTransport {
         case 'received':
           if (event.data != null) {
             final data = Uint8List.fromList(event.data!);
-            // 交給共用 MeshEventHandler 處理
             _eventHandler.handleIncomingData(data, event.deviceId);
             _dataController.add(MeshDataReceived(event.deviceId, data));
           }
@@ -56,7 +61,43 @@ class NativeBleTransport implements MeshTransport {
       }
     });
 
+    // ── 2. 訂閱 GATT Server EventChannel（Peripheral 角色接收 Central 寫入）──
+    _gattServerDataSub?.cancel();
+    _gattServerDataSub =
+        NativeBridge.nativeEventStream.where((event) {
+      return event is Map && event['type'] == 'ble_data';
+    }).listen((event) {
+      final map = Map<String, dynamic>.from(event);
+      final deviceId = map['device'] as String? ?? 'unknown';
+      final dataList = map['data'];
+      if (dataList is List && dataList.isNotEmpty) {
+        final data = Uint8List.fromList(List<int>.from(dataList));
+        debugPrint(
+            '[NativeBLE] GATT Server received ${data.length}B from $deviceId');
+        _eventHandler.handleIncomingData(data, deviceId);
+        _dataController.add(MeshDataReceived(deviceId, data));
+      }
+    });
+
+    // ── 3. 訂閱 GATT Server Peer 連線事件 ──
+    _gattServerPeerSub?.cancel();
+    _gattServerPeerSub =
+        NativeBridge.nativeEventStream.where((event) {
+      return event is Map && event['type'] == 'ble_peer';
+    }).listen((event) {
+      final map = Map<String, dynamic>.from(event);
+      final deviceId = map['device'] as String? ?? 'unknown';
+      final state = map['state'] as String? ?? '';
+      if (state == 'connected') {
+        _peerConnectedController.add(deviceId);
+      } else {
+        _peerDisconnectedController.add(deviceId);
+      }
+    });
+
+    // ── 4. 啟動 Central 掃描 + Peripheral 廣播 ──
     await _bleManager.startScanning();
+    await NativeBridge.startBleAdvertising([], 0);
     _stateController.add(TransportState.running);
   }
 
@@ -65,21 +106,42 @@ class NativeBleTransport implements MeshTransport {
     await _bleManager.stopScanning();
     await _bleEventSub?.cancel();
     _bleEventSub = null;
+    await _gattServerDataSub?.cancel();
+    _gattServerDataSub = null;
+    await _gattServerPeerSub?.cancel();
+    _gattServerPeerSub = null;
     _stateController.add(TransportState.stopped);
   }
 
   @override
   Future<String> broadcast(Uint8List data) async {
-    // NativeBLE 沒有真正的 broadcast（靠 GATT 連線推送）
-    // 資料放入 TriageQueue，由 BleManager 的 _connectAndSync 消費
-    debugPrint('[NativeBLE] broadcast ${data.length}B → queued for GATT sync');
+    // 解碼 wire payload 取得 eventId，放入 TriageQueue
+    // BleManager 的 _connectAndSync 會在下次掃描連線時消費推送
+    final decoded = MeshEventHandler.decodeWirePayload(data);
+    if (decoded != null) {
+      EventManager().queue.enqueue(
+        MeshTask(decoded.eventId, decoded.urgency, data),
+      );
+      debugPrint(
+          '[NativeBLE] broadcast ${decoded.eventId.substring(0, 8)}.. urg=${decoded.urgency} → TriageQueue');
+      return decoded.eventId;
+    }
+    debugPrint('[NativeBLE] broadcast ${data.length}B → decode failed');
     return 'native-ble-${DateTime.now().millisecondsSinceEpoch}';
   }
 
   @override
   Future<String> sendToNode(String nodeId, Uint8List data) async {
-    // NativeBLE 無法定向傳送，等待下次 GATT 連線時推送
-    debugPrint('[NativeBLE] sendToNode $nodeId ${data.length}B → queued');
+    // BLE GATT 無法定向傳送，同樣放入 TriageQueue 等待下次遇到該節點
+    final decoded = MeshEventHandler.decodeWirePayload(data);
+    if (decoded != null) {
+      EventManager().queue.enqueue(
+        MeshTask(decoded.eventId, decoded.urgency, data),
+      );
+      debugPrint(
+          '[NativeBLE] sendToNode $nodeId ${decoded.eventId.substring(0, 8)}.. → TriageQueue');
+      return decoded.eventId;
+    }
     return 'native-ble-${DateTime.now().millisecondsSinceEpoch}';
   }
 
@@ -101,15 +163,21 @@ class NativeBleTransport implements MeshTransport {
   @override
   TransportStats get stats => TransportStats(
         sentCount: _bleManager.syncedEventCount,
-        receivedCount: _bleManager.receivedEventCount,
+        receivedCount:
+            _bleManager.receivedEventCount + _eventHandler.receivedEventCount,
         connectedPeers: _bleManager.knownPeersCount,
         seenEventsCount: _bleManager.seenEventsCount,
-        debugLogs: List.unmodifiable(_bleManager.debugLogs),
+        debugLogs: List.unmodifiable([
+          ..._bleManager.debugLogs,
+          ..._eventHandler.debugLogs,
+        ]),
       );
 
   @override
   void dispose() {
     _bleEventSub?.cancel();
+    _gattServerDataSub?.cancel();
+    _gattServerPeerSub?.cancel();
     _dataController.close();
     _peerConnectedController.close();
     _peerDisconnectedController.close();

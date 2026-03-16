@@ -24,12 +24,6 @@ class MainActivity : FlutterActivity() {
         private const val METHOD_CHANNEL = "network.resqmesh/native"
         private const val EVENT_CHANNEL = "network.resqmesh/events"
         private const val TAG = "ResQMesh"
-
-        private val RESQMESH_SERVICE_UUID = UUID.fromString("f47a7b20-2d0a-11ee-be56-0242ac120002")
-        private val EVENT_CHAR_UUID = UUID.fromString("f47a7b21-2d0a-11ee-be56-0242ac120002")
-        private val BLOOM_CHAR_UUID = UUID.fromString("f47a7b22-2d0a-11ee-be56-0242ac120002")
-        private val HANDSHAKE_CHAR_UUID = UUID.fromString("f47a7b23-2d0a-11ee-be56-0242ac120002")
-        private val CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
 
     private var bleAdvertiser: BluetoothLeAdvertiser? = null
@@ -37,6 +31,9 @@ class MainActivity : FlutterActivity() {
     private var advertiseCallback: AdvertiseCallback? = null
     private var nativeEventSink: EventChannel.EventSink? = null
     private var dataMuleServiceRunning = false
+    // Bloom Filter 快取（由 Dart 端推送更新）
+    @Volatile
+    private var localBloomBytes: ByteArray = ByteArray(0)
     // 交接 PIN 狀態
     private var handoffResourceId: String? = null
     private var handoffPinHash: String? = null
@@ -156,6 +153,16 @@ class MainActivity : FlutterActivity() {
                         val opened = openManufacturerPowerSettings()
                         result.success(opened)
                     }
+                    "updateBloomFilter" -> {
+                        val bytes = call.argument<ByteArray>("bloom")
+                        if (bytes != null) {
+                            localBloomBytes = bytes
+                            // 同步更新 ForegroundService 的共享快取
+                            ResQMeshForegroundService.sharedBloomBytes = bytes
+                            Log.d(TAG, "Bloom filter updated: ${bytes.size} bytes")
+                        }
+                        result.success(true)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -207,7 +214,7 @@ class MainActivity : FlutterActivity() {
                 }
 
                 // 判斷是否為交接 PIN 驗證請求
-                if (characteristic.uuid == HANDSHAKE_CHAR_UUID && handoffPinHash != null) {
+                if (characteristic.uuid == ResQMeshConstants.HANDSHAKE_CHAR_UUID && handoffPinHash != null) {
                     val receivedStr = String(value, Charsets.UTF_8)
                     if (receivedStr.startsWith("VERIFY|")) {
                         val parts = receivedStr.split("|")
@@ -243,8 +250,16 @@ class MainActivity : FlutterActivity() {
                 device: BluetoothDevice, requestId: Int,
                 offset: Int, characteristic: BluetoothGattCharacteristic
             ) {
-                // Return empty bloom filter bytes
-                gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, ByteArray(0))
+                val responseBytes = when (characteristic.uuid) {
+                    ResQMeshConstants.BLOOM_CHAR_UUID -> {
+                        // 回傳本機 Bloom Filter（由 Dart 定期推送）
+                        val bloom = localBloomBytes
+                        if (offset < bloom.size) bloom.copyOfRange(offset, bloom.size) else ByteArray(0)
+                    }
+                    else -> ByteArray(0)
+                }
+                gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, responseBytes)
+                Log.d(TAG, "Read request: uuid=${characteristic.uuid}, offset=$offset, resp=${responseBytes.size}B")
             }
 
             override fun onDescriptorWriteRequest(
@@ -260,32 +275,32 @@ class MainActivity : FlutterActivity() {
         })
 
         // Build ResQMesh primary service
-        val service = BluetoothGattService(RESQMESH_SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+        val service = BluetoothGattService(ResQMeshConstants.SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
 
         // Event characteristic (read/write/notify)
         val eventChar = BluetoothGattCharacteristic(
-            EVENT_CHAR_UUID,
+            ResQMeshConstants.EVENT_CHAR_UUID,
             BluetoothGattCharacteristic.PROPERTY_READ or
                 BluetoothGattCharacteristic.PROPERTY_WRITE or
                 BluetoothGattCharacteristic.PROPERTY_NOTIFY,
             BluetoothGattCharacteristic.PERMISSION_READ or BluetoothGattCharacteristic.PERMISSION_WRITE
         )
         eventChar.addDescriptor(BluetoothGattDescriptor(
-            CCCD_UUID,
+            ResQMeshConstants.CCCD_UUID,
             BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
         ))
         service.addCharacteristic(eventChar)
 
         // Bloom filter characteristic (read-only)
         service.addCharacteristic(BluetoothGattCharacteristic(
-            BLOOM_CHAR_UUID,
+            ResQMeshConstants.BLOOM_CHAR_UUID,
             BluetoothGattCharacteristic.PROPERTY_READ,
             BluetoothGattCharacteristic.PERMISSION_READ
         ))
 
         // Handshake characteristic (read/write)
         service.addCharacteristic(BluetoothGattCharacteristic(
-            HANDSHAKE_CHAR_UUID,
+            ResQMeshConstants.HANDSHAKE_CHAR_UUID,
             BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_WRITE,
             BluetoothGattCharacteristic.PERMISSION_READ or BluetoothGattCharacteristic.PERMISSION_WRITE
         ))
@@ -317,7 +332,7 @@ class MainActivity : FlutterActivity() {
 
         val data = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
-            .addServiceUuid(android.os.ParcelUuid(RESQMESH_SERVICE_UUID))
+            .addServiceUuid(android.os.ParcelUuid(ResQMeshConstants.SERVICE_UUID))
             .build()
 
         advertiseCallback = object : AdvertiseCallback() {
