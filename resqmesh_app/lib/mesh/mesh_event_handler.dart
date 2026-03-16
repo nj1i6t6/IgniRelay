@@ -4,7 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:fixnum/fixnum.dart' as fixnum;
 import '../crdt/hlc.dart';
 import '../db/database_helper.dart';
+import '../geo/village_geofence.dart';
 import '../proto/mesh_protocol.pb.dart' as pb;
+import '../services/location_service.dart';
+import 'mesh_router.dart';
 import 'mesh_transport.dart';
 
 /// 事件類型常數（供 wire payload 解碼使用）
@@ -16,6 +19,7 @@ class EventType {
   static const int hazardMarker = 4;
   static const int quarantineVote = 5;
   static const int matchCancel = 6;
+  static const int fireAlarmRf = 7;
 }
 
 /// Wire payload 解碼結果
@@ -29,6 +33,9 @@ class WirePayload {
   final int ttl;
   final double? lat;
   final double? lng;
+  final double? originLat;
+  final double? originLng;
+  final int identityLevel;
   final List<int>? signature;
   final List<int>? senderPubKey;
 
@@ -42,6 +49,9 @@ class WirePayload {
     this.ttl = 9,
     this.lat,
     this.lng,
+    this.originLat,
+    this.originLng,
+    this.identityLevel = 0,
     this.signature,
     this.senderPubKey,
   });
@@ -112,6 +122,30 @@ class MeshEventHandler {
       }
       _seenEvents.add(evtId);
 
+      // ── Zone-Based 地理圍欄路由判斷 ─────────────────────────────
+      // 僅當封包帶有原始座標時判斷；無座標（舊版或本機事件）直接通過。
+      if (decoded.originLat != null && decoded.originLng != null) {
+        final myLoc = LocationService().currentLocation;
+        if (myLoc != null) {
+          final shouldForward = await MeshRouter.shouldForwardPacket(
+            urgency: decoded.urgency,
+            eventType: decoded.eventType,
+            originLat: decoded.originLat!,
+            originLng: decoded.originLng!,
+            myLat: myLoc.latitude,
+            myLng: myLoc.longitude,
+            maxRangeMeters: 5000.0,
+            senderIdentityLevel: decoded.identityLevel,
+            isHardwareMule: false,
+            isAndroidTier1Foreground: false,
+          );
+          if (!shouldForward) {
+            _dlog('RECV ROUTE_DROP ${evtId.substring(0, 8)}.. (out of zone)');
+            return;
+          }
+        }
+      }
+
       // 合併 HLC（確保時間同步）
       if (decoded.hlcTimestamp > 0) {
         HLC.merge(HLC(decoded.hlcTimestamp, decoded.hlcCounter));
@@ -137,6 +171,8 @@ class MeshEventHandler {
           'ttl': decoded.ttl > 0 ? decoded.ttl - 1 : 9,
           'received_lat': decoded.lat,
           'received_lng': decoded.lng,
+          'origin_lat': decoded.originLat,
+          'origin_lng': decoded.originLng,
           'node_tier': 2,
           'chunk_index': 0,
           'total_chunks': 1,
@@ -221,6 +257,8 @@ class MeshEventHandler {
     int ttl = 10,
     double? lat,
     double? lng,
+    double? originLat,
+    double? originLng,
   }) {
     final meshEvent = pb.MeshEvent()
       ..eventId = eventId
@@ -240,6 +278,8 @@ class MeshEventHandler {
     }
     if (lat != null) meshEvent.receivedLat = lat;
     if (lng != null) meshEvent.receivedLng = lng;
+    if (originLat != null) meshEvent.originLat = originLat;
+    if (originLng != null) meshEvent.originLng = originLng;
     return meshEvent.writeToBuffer();
   }
 
@@ -259,6 +299,9 @@ class MeshEventHandler {
           ttl: meshEvent.ttl,
           lat: meshEvent.receivedLat,
           lng: meshEvent.receivedLng,
+          originLat: meshEvent.originLat != 0 ? meshEvent.originLat : null,
+          originLng: meshEvent.originLng != 0 ? meshEvent.originLng : null,
+          identityLevel: meshEvent.identityLevel,
           signature: meshEvent.signature,
           senderPubKey: meshEvent.senderPubKey,
         );

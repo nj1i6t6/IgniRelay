@@ -30,6 +30,8 @@ class MeshEvent extends $pb.GeneratedMessage {
     $core.List<$core.int>? signature,
     $core.double? receivedLat,
     $core.double? receivedLng,
+    $core.double? originLat,
+    $core.double? originLng,
   }) {
     final $result = create();
     if (eventId != null) $result.eventId = eventId;
@@ -46,6 +48,8 @@ class MeshEvent extends $pb.GeneratedMessage {
     if (signature != null) $result.signature = signature;
     if (receivedLat != null) $result.receivedLat = receivedLat;
     if (receivedLng != null) $result.receivedLng = receivedLng;
+    if (originLat != null) $result.originLat = originLat;
+    if (originLng != null) $result.originLng = originLng;
     return $result;
   }
 
@@ -87,6 +91,10 @@ class MeshEvent extends $pb.GeneratedMessage {
         protoName: 'received_lat')
     ..a<$core.double>(14, 'receivedLng', $pb.PbFieldType.OD,
         protoName: 'received_lng')
+    ..a<$core.double>(15, 'originLat', $pb.PbFieldType.OD,
+        protoName: 'origin_lat')
+    ..a<$core.double>(16, 'originLng', $pb.PbFieldType.OD,
+        protoName: 'origin_lng')
     ..hasRequiredFields = false;
 
   @$core.override
@@ -196,6 +204,20 @@ class MeshEvent extends $pb.GeneratedMessage {
   @$pb.TagNumber(14)
   set receivedLng($core.double v) {
     $_setDouble(13, v);
+  }
+
+  @$pb.TagNumber(15)
+  $core.double get originLat => $_getN(14);
+  @$pb.TagNumber(15)
+  set originLat($core.double v) {
+    $_setDouble(14, v);
+  }
+
+  @$pb.TagNumber(16)
+  $core.double get originLng => $_getN(15);
+  @$pb.TagNumber(16)
+  set originLng($core.double v) {
+    $_setDouble(15, v);
   }
 }
 
@@ -1226,5 +1248,77 @@ class MeshEnvelope extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   set senderId($core.String v) {
     $_setString(2, v);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FireAlarmRfData (433MHz 煙霧偵測器 RF 信號)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class FireAlarmRfData extends $pb.GeneratedMessage {
+  factory FireAlarmRfData({
+    $core.String? detectorBrand,
+    $core.int? rssi,
+    $core.double? stationLat,
+    $core.double? stationLng,
+  }) {
+    final $result = create();
+    if (detectorBrand != null) $result.detectorBrand = detectorBrand;
+    if (rssi != null) $result.rssi = rssi;
+    if (stationLat != null) $result.stationLat = stationLat;
+    if (stationLng != null) $result.stationLng = stationLng;
+    return $result;
+  }
+
+  FireAlarmRfData._() : super();
+
+  factory FireAlarmRfData.fromBuffer($core.List<$core.int> i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('FireAlarmRfData',
+      package: const $pb.PackageName('resqmesh'), createEmptyInstance: create)
+    ..aOS(1, 'detectorBrand', protoName: 'detector_brand')
+    ..a<$core.int>(2, 'rssi', $pb.PbFieldType.O3)
+    ..a<$core.double>(3, 'stationLat', $pb.PbFieldType.OD,
+        protoName: 'station_lat')
+    ..a<$core.double>(4, 'stationLng', $pb.PbFieldType.OD,
+        protoName: 'station_lng')
+    ..hasRequiredFields = false;
+
+  @$core.override
+  FireAlarmRfData createEmptyInstance() => create();
+  static FireAlarmRfData create() => FireAlarmRfData._();
+  @$core.override
+  FireAlarmRfData clone() => FireAlarmRfData()..mergeFromMessage(this);
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$pb.TagNumber(1)
+  $core.String get detectorBrand => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set detectorBrand($core.String v) {
+    $_setString(0, v);
+  }
+
+  @$pb.TagNumber(2)
+  $core.int get rssi => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set rssi($core.int v) {
+    $_setSignedInt32(1, v);
+  }
+
+  @$pb.TagNumber(3)
+  $core.double get stationLat => $_getN(2);
+  @$pb.TagNumber(3)
+  set stationLat($core.double v) {
+    $_setDouble(2, v);
+  }
+
+  @$pb.TagNumber(4)
+  $core.double get stationLng => $_getN(3);
+  @$pb.TagNumber(4)
+  set stationLng($core.double v) {
+    $_setDouble(3, v);
   }
 }

@@ -261,6 +261,8 @@ class BridgefyTransport with BridgefyDelegate implements MeshTransport {
         'hlc_counter',
         'received_lat',
         'received_lng',
+        'origin_lat',
+        'origin_lng',
       ],
       where: 'hlc_timestamp > ?',
       whereArgs: [cutoff24h],
@@ -288,6 +290,8 @@ class BridgefyTransport with BridgefyDelegate implements MeshTransport {
           hlcCounter: (evt['hlc_counter'] as int?) ?? 0,
           lat: (evt['received_lat'] as num?)?.toDouble(),
           lng: (evt['received_lng'] as num?)?.toDouble(),
+          originLat: (evt['origin_lat'] as num?)?.toDouble(),
+          originLng: (evt['origin_lng'] as num?)?.toDouble(),
         );
 
         // 用 mesh 模式定向回傳給請求者

@@ -14,6 +14,7 @@ class EventType extends $pb.ProtobufEnum {
   static const EventType HAZARD_MARKER = EventType._(4, 'HAZARD_MARKER');
   static const EventType QUARANTINE_VOTE = EventType._(5, 'QUARANTINE_VOTE');
   static const EventType MATCH_CANCEL = EventType._(6, 'MATCH_CANCEL');
+  static const EventType FIRE_ALARM_RF = EventType._(7, 'FIRE_ALARM_RF');
 
   static const $core.List<EventType> values = <EventType>[
     RESOURCE_REGISTER,
@@ -23,6 +24,7 @@ class EventType extends $pb.ProtobufEnum {
     HAZARD_MARKER,
     QUARANTINE_VOTE,
     MATCH_CANCEL,
+    FIRE_ALARM_RF,
   ];
 
   static final $core.Map<$core.int, EventType> _byValue =

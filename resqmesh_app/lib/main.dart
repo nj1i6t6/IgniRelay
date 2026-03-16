@@ -13,10 +13,12 @@ import 'ui/battery_optimization_guide.dart';
 import 'ui/medical_card_screen.dart';
 import 'db/database_helper.dart';
 import 'crypto/identity_manager.dart';
+import 'geo/village_geofence.dart';
 import 'mesh/mesh_transport.dart';
 import 'mesh/mesh_event_handler.dart';
 import 'mesh/transport_factory.dart';
 import 'mesh/native_bridge.dart';
+import 'services/location_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +29,12 @@ void main() async {
 
     // 2. 初始化 Identity（含金鑰持久化、HLC nodeId 設定）
     await IdentityManager().initialize();
+
+    // 3. 初始化村里地理圍欄資料庫（複製 assets → 裝置本機）
+    await VillageGeofence.init();
+
+    // 4. 初始化 GPS 定位（供 Zone-Based 路由判斷使用）
+    LocationService().init(); // 不 await，GPS 冷啟動耗時，背景進行
   } catch (e) {
     debugPrint('[Main] Critical init error: $e');
     // 即使初始化失敗也讓 app 能啟動，不要黑屏

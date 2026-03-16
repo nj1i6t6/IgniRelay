@@ -21,7 +21,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -39,6 +39,13 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE Hazards_State ADD COLUMN description TEXT');
       await db
           .execute('ALTER TABLE Hazards_State ADD COLUMN updated_at INTEGER');
+    }
+    if (oldVersion < 4) {
+      // v4: Event_Logs 新增事件原始創建者座標（用於 Zone-Based 地理圍欄路由）
+      await db.execute(
+          'ALTER TABLE Event_Logs ADD COLUMN origin_lat REAL');
+      await db.execute(
+          'ALTER TABLE Event_Logs ADD COLUMN origin_lng REAL');
     }
   }
 
@@ -72,6 +79,8 @@ class DatabaseHelper {
         ttl INTEGER NOT NULL,
         received_lat REAL,
         received_lng REAL,
+        origin_lat REAL,
+        origin_lng REAL,
         node_tier INTEGER NOT NULL,
         chunk_index INTEGER,
         total_chunks INTEGER,
