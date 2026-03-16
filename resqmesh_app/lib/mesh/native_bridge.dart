@@ -7,7 +7,7 @@ class NativeBridge {
   static const EventChannel _eventChannel =
       EventChannel('network.resqmesh/events');
 
-  /// ?? Android Tier 1 Data Mule 璅∪? (?? Foreground Service ??WiFi Aware)
+  /// 啟動 Android Tier 1 Data Mule 模式（掛載 Foreground Service）
   static Future<bool> startAndroidDataMuleMode() async {
     try {
       final bool result = await _channel.invokeMethod('startDataMuleMode');
@@ -38,7 +38,7 @@ class NativeBridge {
     }
   }
 
-  /// 隢??? iOS AWDL (??Android WiFi Aware) ?喲之瑼?
+  /// 高頻寬傳輸請求（保留介面，目前回傳 false）
   static Future<bool> requestHighBandwidthTransfer(
       String peerMac, List<int> payload) async {
     try {
@@ -64,16 +64,6 @@ class NativeBridge {
     }
   }
 
-  /// ?亥岷鋆蔭?臬?舀 WiFi Aware (Android API 26+)
-  static Future<bool> isWifiAwareSupported() async {
-    try {
-      final bool supported =
-          await _channel.invokeMethod('isWifiAwareSupported');
-      return supported;
-    } on PlatformException {
-      return false;
-    }
-  }
 
   /// ?? BLE 撱?嚗???鋆蔭?賜?暹蝭暺?
   static Future<bool> startBleAdvertising(

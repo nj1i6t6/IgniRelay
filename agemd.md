@@ -7,7 +7,7 @@ Project **ResQMesh** is a highly resilient, decentralized Mobile Ad-hoc Network 
 The system enables stranded civilians to form offline peer-to-peer (P2P) mesh networks using their mobile devices to broadcast SOS distress signals, share dynamic hazard maps, and match essential supplies (e.g., generators, water).
 
 ## 2. Core Technological Stack
-* **Transport Layer (Cross-Platform)**: Native Wi-Fi Aware (NAN) for Android, AWDL for iOS (Large Files), and Universal BLE for discovery and fallback cross-platform routing. Nearby Connections API is deprecated.
+* **Transport Layer (Cross-Platform)**: BLE Mesh (GATT dual-role, Custom Service UUID) for all cross-brand phone-to-phone and phone-to-hardware-node communication. Wi-Fi Aware (NAN) and AWDL are removed; all transport is BLE-only. Nearby Connections API is deprecated.
 * **Data Serialization**: Protocol Buffers (Protobuf). **JSON is strictly prohibited** for mesh transport.
 * **Local Storage & State**: SQLite/Room with Hybrid CRDT (Conflict-free Replicated Data Type) implementations.
 * **Backend Gateway**: PostgreSQL + PostGIS (for geospatial heatmaps), receiving batch event logs from edge nodes (Data Mules) when they eventually reach internet-connected zones.
@@ -15,7 +15,7 @@ The system enables stranded civilians to form offline peer-to-peer (P2P) mesh ne
 ## 3. Core Architectural Pillars
 * **Store-and-Forward Routing**: Every smartphone acts as a mobile database. Data routing relies on Priority-Driven Epidemic Routing heavily mitigated by Bloom Filters (to prevent duplicate transmissions/broadcast storms).
 * **Event Sourcing**: System state is not mutating. It is an immutable append-only ledger of `Event_Logs`. The `Materials_State` is a materialized view derived from these logs.
-* **Heterogeneous Nodes (Data Mules)**: Devices are not equal. **Tier 1 Android devices (WiFi Aware NAN capable) automatically escalate into "Super Node" mode on first launch if battery ≥ 40%**, broadcasting at maximum power and acting as high-capacity "Data Mules." They automatically downgrade back to Tier 2 when battery drops below 40% to preserve minimum SOS capability. If recharged, the device must reach **≥ 60%** before re-escalating to Super Node mode (hysteresis design to prevent frequent switching). Note: charging is NOT a requirement — disaster scenarios assume power grid failure.
+* **Heterogeneous Nodes (Data Mules)**: Devices are not equal. **Tier 1 Android devices (running Foreground Service, battery ≥ 40%) automatically escalate into "Super Node" mode**, broadcasting at maximum BLE power and acting as high-capacity "Data Mules." They automatically downgrade back to Tier 2 when battery drops below 40%. If recharged, the device must reach **≥ 60%** before re-escalating (hysteresis design). Note: charging is NOT a requirement — disaster scenarios assume power grid failure.
 
 ## 4. Extreme Edge-Case Defenses (The "Dark Forest" Rules)
 As an AI contributing to this codebase, you must ALWAYS account for the following extreme parameters in your logic:

@@ -22,7 +22,6 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   // 模式
   bool _isDataMule = false;
   bool _isBleActive = false;
-  bool _isWifiAwareSupported = false;
   int _batteryLevel = -1;
 
   // 統計
@@ -55,22 +54,14 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
 
   Future<void> _checkCapabilities() async {
     int battery = -1;
-    bool wifiAware = false;
     try {
       battery = await NativeBridge.getBatteryLevel();
     } catch (_) {
-      // Native bridge 未實作，使用預設值
       battery = -1;
-    }
-    try {
-      wifiAware = await NativeBridge.isWifiAwareSupported();
-    } catch (_) {
-      wifiAware = false;
     }
     if (mounted) {
       setState(() {
         _batteryLevel = battery;
-        _isWifiAwareSupported = wifiAware;
       });
     }
   }
@@ -171,7 +162,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('WiFi Aware 服務未就緒（需要實機支援）\nBLE 層仍持續運作中'),
+              content: Text('Data Mule 服務啟動失敗\nBLE Mesh 層仍持續運作中'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -255,27 +246,6 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                       child: Text(
                         '電量: $_batteryLevel%',
                         style: TextStyle(color: batteryColor, fontSize: 13),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Icon(
-                      _isWifiAwareSupported ? Icons.wifi : Icons.wifi_off,
-                      color: _isWifiAwareSupported
-                          ? Colors.greenAccent
-                          : Colors.grey,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        _isWifiAwareSupported ? 'WiFi Aware ✓' : 'WiFi Aware 不支援',
-                        style: TextStyle(
-                          color: _isWifiAwareSupported
-                              ? Colors.greenAccent
-                              : Colors.grey,
-                          fontSize: 13,
-                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),

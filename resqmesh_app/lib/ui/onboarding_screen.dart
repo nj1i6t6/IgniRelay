@@ -143,7 +143,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
               const SizedBox(height: 12),
               const Text(
-                '無網路時仍可透過 BLE / WiFi Aware 組成 Mesh 網路，\n即時傳遞求救與物資配對訊息。',
+                '無網路時仍可透過 BLE Mesh 組成自組織網路，\n即時傳遞求救與物資配對訊息。',
                 textAlign: TextAlign.center,
                 style:
                     TextStyle(color: Colors.white54, fontSize: 14, height: 1.6),

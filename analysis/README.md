@@ -14,7 +14,7 @@
 ### 1. `resqmesh_app` (終端行動應用程式 - Mobile Edge)
 這是在災區實際運作的核心，每一個安裝此 App 的手機都是一個自治的資料節點。
 * **開發框架**：Flutter (Dart) 3.2.0+，支援跨平台 (iOS/Android)。
-* **通訊層 (Transport Layer)**：核心依賴 `flutter_blue_plus` 進行低功耗藍牙 (BLE) 的去中心化節點發現與廣播；並透過 `Native Bridge` 介接 Android 的 Wi-Fi Aware (NAN) 以支援高載量的點對點傳輸。
+* **通訊層 (Transport Layer)**：核心依賴 `flutter_blue_plus` 進行低功耗藍牙 (BLE) 的去中心化節點發現與廣播；採雙角色 GATT（Peripheral + Central 同時運作）實現跨品牌 BLE Mesh。Wi-Fi Aware (NAN) 已移除，手機端一律使用 BLE。
 * **地理資訊與離線地圖**：整合 `flutter_map`、`vector_map_tiles` 與 `mbtiles` 渲染套件。能在完全無網路的狀態下，依賴打包好的 SQLite MBTiles 向量地圖，並以 `latlong2` 提供無網格化的精細地圖與戰術座標導航。
 * **資料儲存與同步**：使用 `sqflite` 作為本地資料庫，實作基於 Hybrid Logical Clocks (HLC) 的 **CRDT (Conflict-free Replicated Data Type)** 以解決多節點在離線異步讀寫產生的資料衝突 (`database_helper.dart`)。所有的變更皆為 Immutable Append-only 的 `Event_Logs` 日誌。
 * **資料序列化**：強制使用 Protocol Buffers (protobuf) 取代佔用龐大頻寬的 JSON 格式，將每一分 Mesh 頻寬極致壓縮 (`event_serializer.dart`)。

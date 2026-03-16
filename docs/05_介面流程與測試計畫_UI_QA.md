@@ -49,12 +49,12 @@
 #### 2.2 檢傷路由霸權測試 (QoS & Priority Queue Test)
 *   設定群組互傳大型物資相片或批量清單 (`INFO` / `RESOURCE` 等級)。
 *   此時節點 A 觸發 `SOS_RED` (如大出血需要止血帶) 封包。
-*   預期結果：所有中斷點的底層傳輸 **(Wi-Fi Aware / AWDL / BLE)** 應立即中斷現有大型傳輸迴圈，優先傳遞 `SOS_RED` 封包至整個 Mesh 網，完成時間須控制在秒級。
+*   預期結果：所有中斷點的底層傳輸 **(BLE Mesh)** 應立即中斷現有大型傳輸迴圈，優先傳遞 `SOS_RED` 封包至整個 Mesh 網，完成時間須控制在秒級。
 
 #### 2.3 實地超級節點騾子測試 (Data Mule Transit Test)
 *   **場景佈建**：建立相隔 1 公里、無訊號的兩個測試帳篷 (Island A 與 Island B)。
 *   **模擬行動**：安排一部帶有「Super Node 模式」機器的車輛，從 A 帳篷收集滿載數百筆 Event Logs，行駛並駛入 B 帳篷區。
-*   **預期結果**：在車輛靠近 B 區的幾十秒交會窗口內，大功率 WiFi Direct 能瞬間完成數千筆 Bloom Filter 核對，並把關鍵的動態危險圖層與 `SOS_YELLOW` 資訊傾銷至 B 帳篷的設備中。
+*   **預期結果**：在車輛靠近 B 區的幾十秒交會窗口內，BLE Mesh 能完成數百筆 Bloom Filter 核對，並把關鍵的動態危險圖層與 `SOS_YELLOW` 資訊同步至 B 帳篷的設備中。
 
 #### 2.4 系統邊界極限測試 (Limits & Recovery Drill)
 *   **時鐘失真恢復測試 (Time Drift)**：將設備時間回撥至 1970 年，測試其產生的封包是否能靠連線握手時的「交會強制校時協議」正確推進 `hlc_timestamp`，並維持 CRDT 合併的因果順序。驗收條件：回撥設備與正常設備合併後，事件因果序不出現顛倒。
@@ -67,9 +67,9 @@
 *   **4-PIN 暴力破解與配對取消測試**：對同一 PIN 連續輸入錯誤，驗證第 3 次錯誤後介面強制鎖定 30 秒；30 秒過後重新解鎖，若再連續輸入錯誤 3 次，驗證系統立即取消本次媒合，還原物資狀態為 `AVAILABLE`，且雙方 UI 推回主畫面。
 *   **PENDING 動態防死鎖超時回滾測試**：建立一筆 `SOS_RED` 緊急交割媒合與一筆 `INFO` 一般媒合。故意讓 Provider 斷線失聯，驗證 Background Job 是否能在 30 分鐘精確將緊急物資的 `Materials_State.status` 從 `PENDING` 回滾為 `AVAILABLE`，並不被一般物資的 4 小時長度規定給死鎖卡住；且原 `MatchIntentData` Event Log 仍正確保留在帳本中以利追蹤。
 *   **傳輸 Tier 自動切換與降級互通測試**：
-    *   **場景 A (iOS 升級)**：兩台 iOS 進入前台，互相靠近，平時以 BLE 探索，發起大檔案（地圖）傳輸時，驗證系統能自動升級建立 AWDL 傳輸。
-    *   **場景 B (Android 掛通知)**：將 Android 螢幕關閉，驗證其掛載 `Foreground Service` 時，仍能透過 Wi-Fi Aware 轉發大封包。
-    *   **場景 C (跨系統降級)**：以一台 Android（Wi-Fi Aware）與一台 iOS 退入背景 (Core Bluetooth `bluetooth-central` / `peripheral`) 測試，驗證系統正確回落至唯一的跨系統 BLE 通道，完成 Bloom Filter 握手與 Protobuf 同步（約 5.85 KB），事件無遺漏。
+    *   **場景 A (Android 前台 ↔ iOS 前台)**：兩台設備互相靠近，驗證 BLE GATT 雙角色建立連線、完成 Bloom Filter 握手與 Protobuf 同步，事件無遺漏。
+    *   **場景 B (Android 掛 Foreground Service)**：將 Android 螢幕關閉，驗證其掛載 `Foreground Service` 時，BLE Peripheral 廣告持續、GATT Server 維持運作，仍能與附近節點完成同步。
+    *   **場景 C (跨品牌 BLE 互通)**：以一台 Android（Pixel）與一台 Android（小米）或 iOS，驗證不同廠牌均能透過 BLE GATT 完成 Bloom Filter 握手與 Protobuf 同步（約 5.85 KB），事件無遺漏。
 *   **匹配演算法正確性測試**：準備 3 個 Provider（相同 resource_type，不同距離 / urgency / trust_score 組合），1 個 Requester，驗證 Phase 1 過濾後僅保留類型相符候選，Phase 2 評分結果符合加權公式，最高分者獲得優先媒合。
 
 #### 2.6 離線地圖與 POI 靜態渲染測試 (Offline Map Rendering Test)

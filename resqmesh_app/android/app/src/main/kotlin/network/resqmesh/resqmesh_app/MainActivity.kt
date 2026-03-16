@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.net.wifi.aware.*
 import android.os.*
 import android.provider.Settings
 import android.util.Log
@@ -36,8 +35,6 @@ class MainActivity : FlutterActivity() {
     private var bleAdvertiser: BluetoothLeAdvertiser? = null
     private var gattServer: BluetoothGattServer? = null
     private var advertiseCallback: AdvertiseCallback? = null
-    private var wifiAwareManager: WifiAwareManager? = null
-    private var wifiAwareSession: WifiAwareSession? = null
     private var nativeEventSink: EventChannel.EventSink? = null
     private var dataMuleServiceRunning = false
     // 交接 PIN 狀態
@@ -54,12 +51,6 @@ class MainActivity : FlutterActivity() {
                         val bm = getSystemService(BATTERY_SERVICE) as BatteryManager
                         val level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
                         result.success(level)
-                    }
-                    "isWifiAwareSupported" -> {
-                        val supported = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_AWARE)
-                        } else false
-                        result.success(supported)
                     }
                     "startBleAdvertising" -> {
                         startBleGattServer()
@@ -89,16 +80,10 @@ class MainActivity : FlutterActivity() {
                     "stopAllServices" -> {
                         stopBleAdvertising()
                         stopDataMuleService()
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            wifiAwareSession?.close()
-                            wifiAwareSession = null
-                        }
                         result.success(true)
                     }
                     "requestHighBandwidthTransfer" -> {
-                        // 目前透過 WiFi Aware message 傳送
-                        // 完整版可使用 WiFi Aware Network Specifier
-                        result.success(false) // TODO: implement
+                        result.success(false)
                     }
                     // ── 跨裝置 PIN 交接方法 ──
                     "startHandoffAdvertising" -> {
@@ -120,18 +105,6 @@ class MainActivity : FlutterActivity() {
                     "stopHandoffAdvertising" -> {
                         handoffResourceId = null
                         handoffPinHash = null
-                        result.success(true)
-                    }
-                    "startWifiAwarePublish" -> {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startWifiAwarePublish(result)
-                        } else {
-                            result.error("UNSUPPORTED", "WiFi Aware requires Android 8+", null)
-                        }
-                    }
-                    "stopWifiAware" -> {
-                        wifiAwareSession?.close()
-                        wifiAwareSession = null
                         result.success(true)
                     }
                     // ── 前景服務 & 電池優化 ──
@@ -376,60 +349,6 @@ class MainActivity : FlutterActivity() {
         Log.d(TAG, "BLE advertising stopped")
     }
 
-    // ── WiFi Aware (Android 8+, API 26+) ──────────────────────────────────────
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun startWifiAwarePublish(result: MethodChannel.Result) {
-        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_AWARE)) {
-            result.error("UNSUPPORTED", "WiFi Aware not supported on this device", null)
-            return
-        }
-        wifiAwareManager = getSystemService(Context.WIFI_AWARE_SERVICE) as? WifiAwareManager
-        if (wifiAwareManager == null) {
-            result.error("UNAVAILABLE", "WiFi Aware service unavailable", null)
-            return
-        }
-
-        wifiAwareManager?.attach(object : AttachCallback() {
-            override fun onAttached(session: WifiAwareSession) {
-                wifiAwareSession = session
-                Log.d(TAG, "WiFi Aware session attached")
-
-                val config = PublishConfig.Builder()
-                    .setServiceName("ResQMesh")
-                    .build()
-
-                session.publish(config, object : DiscoverySessionCallback() {
-                    override fun onPublishStarted(session: PublishDiscoverySession) {
-                        Log.i(TAG, "WiFi Aware publish started")
-                        runOnUiThread {
-                            nativeEventSink?.success(mapOf("type" to "wifi_aware", "state" to "publishing"))
-                            result.success(true)
-                        }
-                    }
-                    override fun onMessageReceived(peerHandle: PeerHandle, message: ByteArray) {
-                        Log.d(TAG, "WiFi Aware: received ${message.size} bytes")
-                        runOnUiThread {
-                            nativeEventSink?.success(mapOf(
-                                "type" to "wifi_aware_data",
-                                "data" to message.toList()
-                            ))
-                        }
-                    }
-                    override fun onSessionConfigFailed() {
-                        Log.e(TAG, "WiFi Aware publish config failed")
-                        runOnUiThread { result.error("PUBLISH_FAILED", "WiFi Aware publish failed", null) }
-                    }
-                }, null)
-            }
-
-            override fun onAttachFailed() {
-                Log.e(TAG, "WiFi Aware attach failed")
-                result.error("ATTACH_FAILED", "WiFi Aware attach failed", null)
-            }
-        }, null)
-    }
-
     // ── Foreground Service (Data Mule) ────────────────────────────────────────
 
     private fun startDataMuleService(): Boolean {
@@ -558,9 +477,6 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         stopBleAdvertising()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            wifiAwareSession?.close()
-        }
         super.onDestroy()
     }
 }

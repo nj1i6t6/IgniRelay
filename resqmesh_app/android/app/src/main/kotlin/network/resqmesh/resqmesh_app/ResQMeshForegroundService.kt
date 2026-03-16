@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
-import android.net.wifi.aware.*
 import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -17,7 +16,6 @@ import java.util.UUID
 /**
  * ResQMesh 後台 Foreground Service
  * 保持 BLE 廣播（Peripheral 角色）在螢幕關閉後持續運作（Data Mule 模式）。
- * WiFi Aware publish 亦在此服務中維持。
  */
 class ResQMeshForegroundService : Service() {
 
@@ -35,7 +33,6 @@ class ResQMeshForegroundService : Service() {
     private var bleAdvertiser: BluetoothLeAdvertiser? = null
     private var gattServer: BluetoothGattServer? = null
     private var advertiseCallback: AdvertiseCallback? = null
-    private var wifiAwareSession: WifiAwareSession? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -53,10 +50,6 @@ class ResQMeshForegroundService : Service() {
         }
 
         startBlePeripheral()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startWifiAwarePublish()
-        }
-
         Log.i(TAG, "ResQMesh Data Mule service started")
         return START_STICKY
     }
@@ -65,9 +58,6 @@ class ResQMeshForegroundService : Service() {
 
     override fun onDestroy() {
         stopBlePeripheral()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            wifiAwareSession?.close()
-        }
         Log.i(TAG, "ResQMesh Data Mule service stopped")
         super.onDestroy()
     }
@@ -227,32 +217,4 @@ class ResQMeshForegroundService : Service() {
         advertiseCallback = null
     }
 
-    // ── WiFi Aware Publish ────────────────────────────────────────────────────
-
-    @androidx.annotation.RequiresApi(Build.VERSION_CODES.O)
-    private fun startWifiAwarePublish() {
-        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_AWARE)) return
-
-        val wam = getSystemService(Context.WIFI_AWARE_SERVICE) as? WifiAwareManager ?: return
-        wam.attach(object : AttachCallback() {
-            override fun onAttached(session: WifiAwareSession) {
-                wifiAwareSession = session
-                val config = PublishConfig.Builder().setServiceName("ResQMesh").build()
-                session.publish(config, object : DiscoverySessionCallback() {
-                    override fun onPublishStarted(session: PublishDiscoverySession) {
-                        Log.i(TAG, "WiFi Aware publishing in foreground service")
-                    }
-                    override fun onMessageReceived(peerHandle: PeerHandle, message: ByteArray) {
-                        Log.d(TAG, "WiFi Aware: received ${message.size} bytes")
-                    }
-                    override fun onSessionConfigFailed() {
-                        Log.e(TAG, "WiFi Aware publish config failed")
-                    }
-                }, null)
-            }
-            override fun onAttachFailed() {
-                Log.w(TAG, "WiFi Aware attach failed")
-            }
-        }, null)
-    }
 }
