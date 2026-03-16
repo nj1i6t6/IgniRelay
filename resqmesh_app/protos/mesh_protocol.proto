@@ -10,6 +10,7 @@ enum EventType {
   HAZARD_MARKER     = 4;   // 動態危險圖層標記
   QUARANTINE_VOTE   = 5;   // 惡意節點檢舉投票 (去中心化隔離)
   MATCH_CANCEL      = 6;   // 釋放配對 (PIN 解鎖失敗取消)
+  FIRE_ALARM_RF     = 7;   // 433MHz RF 住警器火警訊號（由 Tier 0 基地台轉譯注入）
 }
 
 // 檢傷及優先級定義 (QoS & Triage)
@@ -34,7 +35,12 @@ message MeshEvent {
 
   int32 ttl = 8;                 // 剩餘存活跳數
 
-  // 接收位置快照 (Received Location Snapshot)
+  // 事件原始座標 (Origin Location — 創建者設定，中繼節點禁止修改)
+  // 用於地理圍欄路由判斷：確認封包屬於哪個里/鄉鎮市區。
+  double origin_lat = 15;        // 事件創建者的緯度（發送時設定，不隨轉發改變）
+  double origin_lng = 16;        // 事件創建者的經度（發送時設定，不隨轉發改變）
+
+  // 接收位置快照 (Received Location Snapshot — 每跳由接收方覆寫)
   double received_lat = 13;      // 接收機的緯度
   double received_lng = 14;      // 接收機的經度
 
@@ -150,6 +156,18 @@ message AllergyEntry {
 message EmergencyContact {
   string phone = 1;      // 電話號碼
   string relation = 2;   // 與用戶的關係
+}
+
+// 433MHz RF 住警器火警訊號 (EventType.FIRE_ALARM_RF)
+// 由 Tier 0 基地台接收傳統住警器 RF 訊號後轉譯生成，自動設為 SOS_RED 優先級
+message FireAlarmRfData {
+  string detector_brand   = 1;  // 住警器品牌識別 (如 "HONG_LI", "TYY", "UNKNOWN")
+  uint32 rf_frequency_mhz = 2;  // RF 頻率 (通常為 433)
+  double station_lat      = 3;  // 接收基地台緯度 (近似火警位置)
+  double station_lng      = 4;  // 接收基地台經度
+  int32  rssi_dbm         = 5;  // 接收訊號強度 (可用於粗估距離)
+  int64  detected_at      = 6;  // 偵測時間 (HLC timestamp, Unix ms)
+  bytes  raw_rf_payload   = 7;  // 原始 RF 資料幀 (供後續分析/擴充解碼)
 }
 
 // ── Bridgefy 廣播驅動 Mesh 封包 ──────────────────────────────────

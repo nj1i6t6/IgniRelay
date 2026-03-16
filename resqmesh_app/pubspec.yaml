@@ -64,3 +64,4 @@ flutter:
   assets:
     - assets/maps/
     - assets/style/
+    - assets/geodata/

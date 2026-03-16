@@ -24,23 +24,38 @@
 *   **F_APP_02 檢傷分級的求救發佈 (Triage)**：發佈需求時需標示緊急度 (INFO / RESOURCE / SOS_YELLOW / SOS_RED)，最高級別 SOS_RED 可強制夾帶確切 GPS 座標並請求周圍設備發出警報。
 *   **F_APP_03 物資登記與發佈**：無網狀態下新增物資紀錄，標註類型、數量與有效範圍。
 *   **F_APP_04 鄰近節點發現與通訊（含 Tier 限制）**：依裝置能力分級執行節點探索與封包交換。節點共分四個等級：
-    *   **Tier 0 裝置**（硬體資料騾子 Hardware Data Mule）：安裝於公務車輛（警車、垃圾車）等之 IoT 節點。無電池焦慮，無儲存上限，負責跨縣市大範圍資料拉取與搬運。享有最高等級豁免：距離衰減豁免、資料驅逐保護（不受 LRU 清除）、Rate Limiting 豁免、直接上報中央（車載設備可能配備 4G 路由器），以及永遠使用分塊 Bloom Filter 進行大容量握手。
-    *   **Tier 1 裝置**（Android WiFi Aware NAN + BLE / iOS 前台）：Android 可在背景持續維持 Wi-Fi Aware 與 BLE 雙通道，以確保高頻寬與跨系統(iOS)的通訊相容性；iOS 前台平時以 BLE 索敵，遇大檔案需求則配對 AWDL 高速傳輸。**注意：Tier 1 Android（掛載 Foreground Service）具備跨區距離衰減豁免特權；iOS 前台雖屬 Tier 1 但不具備此特權，因其無法全天候在背景保持穩定連線。**
-    *   **Tier 2 裝置**（iOS 背景 / 退化之 Android）：依賴 BLE 進行背景低頻寬脈衝中繼。為了突破 iOS 系統對於背景的嚴格冰凍限制，除了 `bluetooth-central / peripheral` 喚醒外，系統亦實作 **Background Fetch / Background Processing Tasks (BGTaskScheduler)** 以定期拉起資源；且在災區邊緣（具備間歇性微弱網際網路 / 衛星網路）者，系統會整合 **PushKit** 以靜默推播（Silent Push）強制喚醒 App 執行短暫的藍牙周邊同步。
+    *   **Tier 0 裝置**（硬體資料騾子 Hardware Data Mule）：安裝於公務車輛（警車、垃圾車）等之 IoT 節點。無電池焦慮，無儲存上限，負責跨縣市大範圍資料拉取與搬運。享有最高等級豁免：距離衰減豁免、資料驅逐保護（不受 LRU 清除）、Rate Limiting 豁免、直接上報中央（車載設備可能配備 4G 路由器），以及永遠使用分塊 Bloom Filter 進行大容量握手。**內建 Sub-1GHz 433MHz RF 接收模組**，可被動接收市面主流連動型住警器（宏力、TYY 等）之火警 RF 訊號，轉譯為數位 MeshEvent 後注入 Mesh 網路，實現傳統設備「零汰換」智慧升級。
+    *   **Tier 1 裝置**（iOS 前台 或 Android 掛載 Foreground Service，電量 ≥ 40%）：全速 BLE 掃描/廣播/中繼，Data Mule 模式。**手機端一律 BLE，不使用 Wi-Fi Aware (NAN) 或 AWDL**。Android 掛載 Foreground Service 時具備跨區距離衰減豁免特權；iOS 前台雖屬 Tier 1 但不具備此特權（無法在背景全天候保持穩定連線）。電量跌破 40% 自動降為 Tier 2。
+    *   **Tier 2 裝置**（iOS 前台或 Android FS 但電量 20-40%，或 iOS 背景電量 ≥ 20%）：降頻 BLE 中繼。iOS 背景受惠於 CoreBluetooth `bluetooth-central / peripheral` 喚醒機制，收到 BLE 事件時被系統喚醒、執行 Bloom Filter 比對後回傳差集，再回去低功耗待機。**Android 無 CoreBluetooth 式背景喚醒機制**，進入 Tier 2 仍需保持 Foreground Service 掛著，只是降低掃描頻率。
     *   **Tier 3 裝置**（極低電量）：僅能透過 BLE 被動發送求救 Beacon。
     *   所有裝置握手均透過 Bloom Filter（5,000容量 / 1% FPR / 約 5.85KB）比對差異事件。
 *   **F_APP_05 動態危險圖層標記 (Hazard Marker) 與地理圍欄 TTL**：
     *   使用者能在離線地圖上長按繪製或標記實體阻礙（如路斷、火災），系統需作為特權事件在 Mesh 中快速傳播。
-    *   **動態地理圍欄 (Adaptive Geo-Fencing)**：為兼顧市區防洪與深山訊號延續，系統採以下四層分級邏輯決定是否轉發封包：
-        1.  **通用前置驗證（所有封包皆適用）**：首先驗證 Ed25519 簽章有效性，並確認發送者未在本地黑名單，不合規者一律丟棄。
-        2.  **SOS_RED 身分分級豁免（Urgency × Identity Override）**：SOS_RED 封包依發送者的 `identity_level` 給予不同待遇：`identity_level >= 1`（手機號已驗證）→ 完整跳過所有距離限制，全力擴散；`identity_level == 0`（匿名）→ 不享完整豁免，改以「5 倍寬鬆倍率」計算（即 `max_range_meters * 5.0`），確保真實遇難的匿名用戶訊號仍可傳遠，同時防止惡意匿名帳號燒遍全台 Mesh。
-        3.  **Tier 0 / Mule 特權（Data Mule Exemption）**：Tier 0 硬體騾子永遠豁免。Tier 1 Android（必須掛載 Foreground Service）亦豁免。iOS 前台裝置（即使是 Tier 1）**不在此豁免範圍**。
-        4.  **常規距離衰減計算**：使用「**接收位置快照** (`received_lat`/`received_lng`)」而非轉發時的當前位置，防止搬運途中的節點在移動後錯殺合法封包。衰減倍率依緊急程度分層：`SOS_RED`（匿名）= 5×、`SOS_YELLOW` = 5×、`RESOURCE` = 2×、`INFO` = 1×。
-    *   **環境自適應預設半徑（GeoContext Resolver）**：發布物資或需求時，系統會透過查詢本機 MBTiles 圖資（`place` 圖層聚落等級、`transportation` 圖層道路等級、`park` 圖層國家公園範圍、`landcover` 圖層地表覆蓋），自動判斷用戶當前所處環境，並建議 `max_range_meters` 預設值，由 Provider 微調確認。GeoContext 快取結果，位置移動超過 2 公里時才重新觸發查詢。
-        *   **市區**（附近 place = city/suburb/town，或主要路網為 motorway/primary）→ 預設 **1,000 公尺**。
-        *   **郊區 / 農村**（附近 place = village/hamlet，或路網為 secondary/tertiary）→ 預設 **5,000 公尺**。
-        *   **深山 / 荒野**（位於 national_park/nature_reserve 內，或地表覆蓋為 wood 且路網僅有 track/path）→ 預設 **15,000 公尺**。
-*   **F_APP_06 自動超級節點切換 (Auto Super Node)**：**僅限 Tier 1 Android 裝置（硬體支援 WiFi Aware NAN）**。因災難初期最重要的是構建通訊網路，**設備首次啟動時只要電量 ≥ 40% 皆會預設為全功率 Data Mule 模式 (Tier 1)**，釋放 WiFi Aware 大範圍廣播與無限制背景執行。鑒於 Android 14+ 對背景網路操作極為嚴格，此模式啟用時會強制掛載明顯的「常駐通知列 (Foreground Service Notification)」，並引導用戶顯式授予 `NEARBY_WIFI_DEVICES` 權限，讓用戶清楚知道手機正為災區網路做出神聖貢獻。**當運作至電量跌破 40% 時，自動降回 Tier 2**，以保留基本電量供用戶發送 SOS。後續若重新獲得電源，電量需回充至 **≥ 60%** 時才會重新自動切換回全功率 Data Mule 模式（遲滯設定）。iOS 裝置因沙盒限制，背景僅能維持 Tier 2 脈衝中繼角色。
+    *   **Zone-Based Geo-Fencing（行政區地理圍欄）**：系統以事件創建者的原始座標（`MeshEvent.origin_lat`/`origin_lng`）為基準，對比接收節點當前 GPS，查詢內政部村里界 SQLite 決定是否轉發。路由邊界對齊現實緊急救援單位：
+
+        | urgency / 事件類型 | 路由邊界 | 設計依據 |
+        |---|---|---|
+        | `INFO` / `RESOURCE` | **里（村里）** | 物資配對以鄰里為單位，減少跨里雜訊 |
+        | `SOS_YELLOW` / `SOS_RED` | **鄉鎮市區** | 全台每鄉鎮市區至少設一消防分隊，對齊救援最小行動單位 |
+        | `HAZARD_MARKER` | **鄉鎮市區** | 危險區域通常涵蓋整個消防分隊轄區 |
+
+        **邊界緩衝區（< 300m）**：位於行政區邊界附近時，同時納入所有相鄰里/鄉鎮市區（1～N 個），確保邊界民眾不漏接資訊。
+
+        **特殊豁免規則**（以下情況無視行政區邊界，永遠轉發）：
+        1.  **通用前置驗證**：Ed25519 簽章驗證 + 黑名單過濾（所有封包皆須通過）。
+        2.  **SOS_RED + identity_level ≥ 1**（手機驗證用戶）：生死攸關，無視行政區邊界全力擴散。
+        3.  **Tier 0 硬體騾子**：永遠豁免。
+        4.  **Tier 1 Android Foreground Service**：跨區搬運豁免。
+
+        **Fallback（離島/資料缺漏）**：VillageGeofence 查無任一端資料時，退回距離衰減（`max_range_meters × multiplier`）：`SOS_RED`（匿名）= 5×、`SOS_YELLOW` = 5×、`RESOURCE` = 2×、`INFO` = 1×。
+
+        **Phase 2（未來規劃）— 鄉鎮市區 → 縣市彙整上報**：鄉鎮市區節點收到 SOS/HAZARD 後定期彙整往縣市指揮節點上報，形成「里 → 鄉鎮市區 → 縣市」三層上報鏈，對接現行 119 指揮體系。
+
+    *   **環境自適應預設半徑（GeoContext Resolver）**：發布物資或需求時，系統自動判斷用戶環境並建議 `max_range_meters` 預設值（主要供 fallback 距離衰減使用）。GeoContext 快取結果，位置移動超過 2 公里時才重新觸發查詢。（實作分兩階段，見 SAD §3.1）
+        *   **市區** → 預設 **1,000 公尺**。
+        *   **郊區 / 農村** → 預設 **5,000 公尺**。
+        *   **深山 / 荒野** → 預設 **15,000 公尺**。
+*   **F_APP_06 自動超級節點切換 (Auto Super Node)**：**Tier 1 手機節點（iOS 前台 或 Android 掛載 Foreground Service，電量 ≥ 40%）**。因災難初期最重要的是構建通訊網路，**設備首次啟動時只要電量 ≥ 40% 皆會預設為 Data Mule 模式（Tier 1）**，全速 BLE 掃描/廣播/中繼。**手機端通訊一律 BLE，不使用 Wi-Fi Aware (NAN) 或 AWDL**。Android 掛載 Foreground Service 啟動時，強制掛載明顯的「常駐通知列」，讓用戶清楚知道手機正為災區網路貢獻。**當電量跌破 40% 時，自動降為 Tier 2**（降頻中繼）；跌破 20% 降為 Tier 3（僅自身 SOS）。後續充電需回充至 **≥ 60%** 才會重新自動升回 Tier 1（遲滯設定，防頻繁切換）。iOS 背景透過 CoreBluetooth 喚醒機制維持 Tier 2 低頻中繼；Android 背景無此機制，要嘛 Foreground Service 掛著，要嘛 App 被殺掉。
     *   **（特別說明）Tier 0 硬體騾子與 Tier 1 Android 的差異**：Tier 1 Android 仍受電量限制與 500MB 資料驅逐策略約束；Tier 0 硬體騾子（如車載 IoT 設備）則完全豁免上述限制，其儲存空間上限、Rate Limiting 和資料驅逐策略由硬體本身的儲存容量決定，且可直接透過車載 4G 路由器上報中央，無需等待 Gateway。
 *   **F_APP_07 離線自體配對與物理交割**：媒合採兩階段設計。
     *   **Phase 1 — 絕對過濾 (Hard Filter)**：`resource_type` 必須與 `request_type` 完全吻合，否則直接排除（O(1) 複雜度）。
@@ -64,7 +79,7 @@
 
 *   **NFR_01 耗電量限制 (Battery Efficiency)**：求生低耗電模式開啟時，每日耗電不超過 15% 總容量。超級節點模式除外。此模式同時需在 Android 與 iOS 畫面上提供一致引導：「請保持 App 在前台運行以確保通訊順暢」。
 *   **NFR_02 QoS 網路優先權與搶佔 (Preemption)**：底層與路由層處理需優先為 `SOS_RED` 事件騰出頻寬與 RAM，強制中斷較低級別封包傳輸。
-*   **NFR_03 防洗版與節流 (Rate Limiting)**：單一節點每小時廣播次數上限限制（如 20 次），一旦超標即被周遭節點孤立並忽視其廣播，防止廣播風暴。
+*   **NFR_03 防洗版與節流 (Rate Limiting)**：依賴動態 Bloom Filter 交換間隔進行廣播速率控制（預設 30 秒/次；SOS_RED 狀態縮短至 10 秒且無視速率限制）。廣播風暴防護由 Bloom Filter 差異比對機制實現——接收端僅補傳本地缺失的事件，不盲目全量轉發。
 *   **NFR_04 頻寬最小化與大檔分塊**：核心協商小於 2KB，一般業務 Payload 壓在 512 Bytes 內；若超過（如傷口圖像），必須支援系統級 Chunking 分塊傳輸機制。
 *   **NFR_05 資料持久性與隔離保護 (Eviction)**：強迫關機後系統能成功復原。為防超級節點儲存崩潰，資料庫需具備高水位線驅逐策略（冷熱數據淘汰）。
 *   **NFR_06 時間軸容錯 (Time Drift)**：系統不能單一依賴裝置絕對時間（防斷電重歸零），強制使用邏輯時鐘記錄事件因果排序。

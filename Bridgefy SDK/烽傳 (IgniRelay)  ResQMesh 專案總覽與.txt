@@ -1,124 +1,257 @@
 烽傳 (IgniRelay) / ResQMesh 專案總覽與
-技術白皮書 
-版本：v0.2 (包含硬體拓樸最佳化與 Bridgefy 整合策略) 狀態：Phase 0 (概念驗證與 MVP 開發階
-段) 核心定位：專為極端災難場景設計的「去中心化離線網狀通訊（MANET）與物資救援調度系
-統」。 
-一、 專案總覽 (Executive Summary) 
+技術白皮書
+版本：v0.3 (頻段互補策略 + MeshTransport 抽象層 + Tier 重構)
+狀態：Phase 0 (概念驗證與 MVP 開發階段)
+核心定位：專為極端災難場景設計的「去中心化離線網狀通訊（MANET）與物資救援調度系統」。
+
+一、 專案總覽 (Executive Summary)
 當 4G/5G 基地台、光纖、Wi-Fi 等傳統通訊基礎設施因地震、颱風、戰爭等極端事件全面癱瘓時，
-烽傳 (IgniRelay) 網路提供一套完全獨立於現有電信基礎設施的災難通訊骨幹。 
+烽傳 (IgniRelay) 網路提供一套完全獨立於現有電信基礎設施的災難通訊骨幹。
 透過結合智慧型手機的 BLE (低功耗藍牙) Mesh 與實體部署的 LoRa 遠距通訊技術，本系統能
 在「斷路、斷電、斷網」的通訊孤島（如小林村情境）中，建立起具備「延遲容忍網路 (DTN)」特性的
 生命線。災區民眾可進行 SOS 廣播、離線地圖標記、物資媒合；而系統最終會將收斂的資料傳送
-至雲端指揮中心。 
-二、 軟體系統架構 (Software Architecture) 
-專案採行三層式架構設計，確保從災區前線到政府指揮中心的資訊流暢通： 
-1. 終端行動應用程式 (Mobile Edge) 
-每一個安裝此 App 的手機都是一個自治的資料節點。 
-● 開發框架：Flutter (Dart) 3.2.0+，支援跨平台 (iOS/Android)。 
+至雲端指揮中心。
+
+二、 軟體系統架構 (Software Architecture)
+專案採行三層式架構設計，確保從災區前線到政府指揮中心的資訊流暢通：
+
+1. 終端行動應用程式 (Mobile Edge)
+每一個安裝此 App 的手機都是一個自治的資料節點。
+● 開發框架：Flutter (Dart) 3.2.0+，支援跨平台 (iOS/Android)。
 ● 地理資訊與離線地圖：整合 flutter_map、mbtiles，依賴本地 SQLite 向量地圖與 latlong2 提
-供無網格精細座標與導航。 
-● 資料儲存與同步：使用 sqflite 作為本地 DB，實作基於 HLC (Hybrid Logical Clocks) 的 
-CRDT 模型，解決離線異步讀寫衝突。 
-● 資料序列化：強制使用 Protocol Buffers (Protobuf) 極致壓縮頻寬。 
-● UI 核心模組（基於實機畫面）： 
-○ 離線戰術地圖：可長按標記危險區域、一鍵發送 SOS 求救。 
-○ 物資媒合：發布需求/供給，內建距離與方位導航（如：飲用水 → 500ml，0m 北方）。 
-○ 醫療卡：本地儲存姓名、血型、過敏原、目前藥物（極端情況下供救護人員讀取）。 
-○ 身分與信任：顯示 Ed25519 公鑰，支援多層級信任（L0 匿名 → L1 手機驗證）。 
-○ Mesh 守護 (BLE Debug)：即時監控 BLE 掃描週期、Peers 數量、GATT 事件與封包
-收發日誌。 
-2. 雲端邊緣閘道器 (Cloud Gateway) 
-接收來自 LoRa 骨幹或資料騾子 (Data Mules) 上傳的離線日誌。 
-● 執行環境：Node.js + Express + PostgreSQL。 
-● 即時通訊：採用 socket.io，第一時間將 SOS_RED 危急日誌推播至指揮中心。 
-● API 模組：/api/v1/sync (增量同步)、/api/v1/auth (TW FidO 串接) 等。 
-3. 政府應急指揮儀表板 (Commander Dashboard) 
-● 前端框架：React 18 + Vite + Leaflet。 
-● 功能：整合災情熱度圖、求救點標位、物資分類與時間趨勢圖表。 
-三、 硬體網路拓樸與設備規格 (Hardware Topology) 
-烽傳網路設計為五層複合式網路架構，對齊台灣災害應變中心（EOC）分級指揮體系： 
-第一層：中央指揮中心 (EOC 總部) 
-● 連接方式：衛星網路 (Starlink/Iridium) 或殘存有線網路連接。 
-第二層：LoRa 骨幹節點 (純 LoRa) 
-● 部署：山頂、高樓頂、高壓電塔（六角蜂巢式佈陣，70% 覆蓋重疊）。 
-● 硬體：LoRa SX1262 (+20 dBm) / 10W 太陽能板 / 6×18650 電池 (約 66Wh)。 
+供無網格精細座標與導航。
+● 資料儲存與同步：使用 sqflite 作為本地 DB，實作基於 HLC (Hybrid Logical Clocks) 的
+CRDT 模型，解決離線異步讀寫衝突。
+● 資料序列化：強制使用 Protocol Buffers (Protobuf) 極致壓縮頻寬。
+● 通訊抽象層：實作 MeshTransport 抽象介面搭配 Provider 依賴注入，上層邏輯完全不感知
+底層傳輸實作。共用 MeshEventHandler 處理接收邏輯（Protobuf 解碼、去重、HLC 合併、
+DB 寫入）。TransportFactory 根據設定自動建立對應 Transport 實例並提供 fallback 機制。
+● UI 核心模組（基於實機畫面）：
+○ 離線戰術地圖：可長按標記危險區域、一鍵發送 SOS 求救。
+○ 物資媒合：發布需求/供給，內建距離與方位導航（如：飲用水 → 500ml，0m 北方）。
+○ 醫療卡：本地儲存姓名、血型、過敏原、目前藥物（極端情況下供救護人員讀取）。
+○ 身分與信任：顯示 Ed25519 公鑰，支援多層級信任（L0 匿名 → L1 手機驗證）。
+○ Mesh 守護 (Debug)：即時監控 Transport 狀態、Peers 數量、封包收發統計與 debug 日誌。
+
+2. 雲端邊緣閘道器 (Cloud Gateway)
+接收來自 LoRa 骨幹或資料騾子 (Data Mules) 上傳的離線日誌。
+● 執行環境：Node.js + Express + PostgreSQL。
+● 即時通訊：採用 socket.io，第一時間將 SOS_RED 危急日誌推播至指揮中心。
+● API 模組：/api/v1/sync (增量同步)、/api/v1/auth (TW FidO 串接) 等。
+
+3. 政府應急指揮儀表板 (Commander Dashboard)
+● 前端框架：React 18 + Vite + Leaflet。
+● 功能：整合災情熱度圖、求救點標位、物資分類與時間趨勢圖表。
+
+三、 頻段互補策略 (Multi-Band Complementary Strategy)
+
+系統不試圖以單一無線頻段解決所有通訊需求，而是採「讓不同頻段做最擅長的事」原則：
+
+  頻段       | 頻率       | 波長     | 職責                                     | 物理特性
+  BLE        | 2.4 GHz    | ~12.5 cm | 手機↔手機/基地台：複雜資料傳輸             | 短波長，穿牆衰減大；手機內建、雙向互動
+  Sub-1GHz RF| 433 MHz    | ~69 cm   | 傳統住警器火警訊號接收（向下相容既有設備）   | 長波長，穿透鋼筋混凝土極強；頻寬小、單向
+  LoRa       | 920-928 MHz| ~33 cm   | 基地台↔基地台骨幹傳輸                     | Sub-1GHz 穿透力 + 擴頻抗干擾 + 超遠距離
+
+物理法則補充：BLE 5.0 Long Range (Coded PHY) 透過前向錯誤更正編碼 (FEC) 提升接收靈敏度，
+在空曠環境可達 1km。但 FEC 是「數學層」改善（放慢語速重複講），無法改變 2.4GHz 訊號被鋼筋
+混凝土吸收的「物理層」限制。穿越多層樓板的場景（如透天厝火警偵測）仍需依賴 Sub-1GHz 頻段。
+
+四、 硬體網路拓樸與設備規格 (Hardware Topology)
+烽傳網路設計為五層複合式網路架構，對齊台灣災害應變中心（EOC）分級指揮體系：
+
+第一層：中央指揮中心 (EOC 總部)
+● 連接方式：衛星網路 (Starlink/Iridium) 或殘存有線網路連接。
+
+第二層：LoRa 骨幹節點 (純 LoRa)
+● 部署：山頂、高樓頂、高壓電塔（六角蜂巢式佈陣，70% 覆蓋重疊）。
+● 硬體：LoRa SX1262 (+20 dBm) / 10W 太陽能板 / 6×18650 電池 (約 66Wh)。
 ● 核心技術：絕對禁止洪泛 (Flooding)，採用定向路由 (DAG, Directed Acyclic Graph) 指向
-最近 EOC 閘道，避免廣播風暴。 
-● 預估單價：約 $3,200 TWD。 
-第三層：LoRa + BLE 複合中繼站 
-● 部署：區公所、警察局、消防局、醫院、大型避難所（每 500 公尺至 1 公里部署）。 
-● 功能：BLE 與 LoRa 之間的橋樑。執行 BLE 掃描、日誌去重 (Bloom Filter)、壓縮 (Protobuf)
-、優先排序 (Triage) 並透過 LoRa 傳送。 
-● 硬體：SX1262 + nRF52840 (含 PA/LNA +20 dBm) / 10W 太陽能板。 
-● 預估單價：約 $3,950 TWD。 
-第四層：BLE 基地台 (純 BLE) 
-● 部署：路燈、電線桿、便利商店外牆（相鄰距離 ≤ 150m）。 
-● 功能：收集周圍手機資料，透過 BLE Mesh Relay 到最近的中繼站。 
+最近 EOC 閘道，避免廣播風暴。
+● 預估單價：約 $3,200 TWD。
+
+第三層：LoRa + BLE 複合中繼站
+● 部署：區公所、警察局、消防局、醫院、大型避難所（每 500 公尺至 1 公里部署）。
+● 功能：BLE 與 LoRa 之間的橋樑。執行 BLE 掃描、日誌去重 (Bloom Filter)、壓縮 (Protobuf)、
+優先排序 (Triage) 並透過 LoRa 傳送。
+● 硬體：SX1262 + nRF52840 (含 PA/LNA +20 dBm) / 10W 太陽能板。
+● 433MHz RF 接收（選配）：內建 Sub-1GHz 433MHz RF 接收模組（如 SYN480R，成本 < 30 NTD），
+可被動接收市面主流連動型住警器（宏力 NQ3S_RF/NQ3F_RF、TYY YDT-H03 等）之火警 RF 訊號，
+轉譯為數位 MeshEvent（event_type = FIRE_ALARM_RF, urgency = SOS_RED）後注入 Mesh 網路。
+● 戰略價值：政府與民眾無須汰換現有數百萬台傳統住警器，僅需部署 IgniRelay 節點，即可將
+「只能在屋內吵」的老舊設備升級為「直通消防局的智慧物聯網設備」（零汰換升級）。
+● 預估單價：約 $3,950 TWD（含 RF 模組約 $3,980 TWD）。
+
+第四層：BLE 基地台 (純 BLE)
+● 部署：路燈、電線桿、便利商店外牆（相鄰距離 ≤ 150m）。
+● 功能：收集周圍手機資料，透過 BLE Mesh Relay 到最近的中繼站。
 ● 硬體限制：最大 5 跳原則 (Max 5 Hops)。超過 5 次 BLE Relay 必須由第三層中繼站接手，
-避免丟包率指數上升。 
-● 電源：5W 太陽能板 / 3×18650 電池。 
-● 預估單價：約 $1,930 TWD。 
-第五層：用戶手機 (烽傳 App) 
-● 功能：手機之間形成 BLE Mesh 互相傳遞，並可將資料丟給第四層基地台。 
-硬體通用韌性設計 (Resilience Design) 
-1. 動態電量降級模式 (Tier Escalation)： 
-○ > 40%：全速運作（BLE 掃描與 LoRa 全開）。 
-○ 20% - 40%：降低掃描頻率，延長休眠。 
-○ < 20%：關閉 BLE，僅保留 LoRa 每小時發送存活 Beacon。 
-2. 大規模 OTA 韌體派發： 
+避免丟包率指數上升。
+● 433MHz RF 接收（選配）：同第三層，可加裝 RF 接收模組監聽傳統住警器訊號。
+● 電源：5W 太陽能板 / 3×18650 電池。
+● 預估單價：約 $1,930 TWD。
+
+第五層：用戶手機 (烽傳 App)
+● 手機端一律使用 BLE 通訊（不使用 Wi-Fi Aware / AWDL）。
+● 手機之間形成 BLE Mesh 互相傳遞，並可將資料丟給第四層基地台。
+● 大檔傳輸（傷患照片等）透過 BLE 分片機制處理（512B 閾值 / 469B 分片 / 30s 逾時重組）。
+● 離線地圖採 App 內預先打包策略（不需傳輸）。
+
+硬體通用韌性設計 (Resilience Design)
+1. 動態電量降級模式 (Tier Escalation)：
+○ > 40%：全速運作（BLE 掃描與 LoRa 全開）。
+○ 20% - 40%：降低掃描頻率，延長休眠。
+○ < 20%：關閉 BLE，僅保留 LoRa 每小時發送存活 Beacon。
+2. 大規模 OTA 韌體派發：
 ○ 透過 LoRa 骨幹向中繼站廣播韌體切片 (Chunks)，再透過 BLE Mesh 逐步「感染」並
-更新末端無人值守的 BLE 基地台。 
-四、 核心通訊演算法與協定 (Core Algorithms) 
-因應極端環境的「Dark Forest Rules（黑暗森林法則）」，系統實作了以下演算法： 
-1. HLC (Hybrid Logical Clocks) 混合邏輯鐘 防禦 Time Drift。設備沒電重啟導致時間跳回 
-1970 時，HLC 向量鐘能為每筆 Immutable Append-only 日誌建立不可回溯的因果順序。 
-2. Bloom Filters 拓樸同步 捨棄盲目互傳。節點相遇時（或定期廣播時），先交換 Bloom Filter 
-Hash 比對交集，僅傳遞「對方缺少」的增量日誌，極致節省頻寬。 
-3. Triage Queue (頻寬搶佔與 QoS) 藍牙頻寬極限下的生命線管控。當傳入 SOS_RED 日誌
-，底層 Mesh 會強制中斷一般傳輸，將 100% 通道配額留給紅色警戒資料。 
-4. Data Mules (資料騾子) 機制 Android 設備電量 > 40% 且支援 NAN 時，App 自動升級為 
-Super Node (Tier 1)，承載海量離線日誌；低於 40% 降為 Tier 2，僅保底自身 SOS。 
-5. 去中心化隔離 (Decentralized Quarantine) 防禦 DoS 假警報。當多數節點判定某特定 
-Ed25519 公鑰廣播異常，將自動發佈 Quarantine_Vote。積分超標即黑名單拒絕轉發。 
-6. 物資交換遭遇證明 (Proof-of-Encounter) 離線狀態下，物資狀態從 Locked 轉為 
-Consumed 時，需透過 BLE 進行 4 位數 PIN 碼實體驗證，並內建防暴力破解冷卻期。 
-五、 Bridgefy SDK 整合策略 (BLE Transport Layer) 
-由於 Android BLE 生態碎片化嚴重（GATT 133 錯誤、跨廠牌廣播相容性極差），現階段採用 
-Bridgefy SDK 作為底層通訊 MVP，隔離平台複雜度。 
-1. 架構設計 (Dependency Inversion) 
-實作 MeshTransport 抽象層： 
-abstract class MeshTransport { 
-Future<void> start(); 
-Future<String> broadcast(Uint8List data); // Protobuf ByteArray 
-Stream<MeshDataReceived> get onDataReceived; 
-} 
-上層 CRDT 與邏輯層完全不感知底層是 Bridgefy 或自研 flutter_blue_plus。 
-2. 資料傳輸與封包優化 
-● 原生 ByteArray 支援：Bridgefy 直接支援 Uint8List 傳輸，捨棄 JSON/Base64，將事件日誌
-全面改為 Protobuf 序列化，單一摘要可壓縮至 50-100 bytes 內。 
-● 傳輸模式：主要依賴 TransmissionMode.broadcast (廣播) 與 TransmissionMode.mesh (多
-跳轉發)。 
-3. iOS 背景與跨平台策略 
-● 捨棄手動刻畫 iOS 背景喚醒邏輯，利用 Bridgefy SDK 隱式處理 CoreBluetooth 的 
-Overflow Area 降級限制。 
-● 採用 PropagationProfile.LongReach (災難通訊專用：最大跳數 20，TTL 3天，最大轉發 300 
-次)。 
-六、 未來發展藍圖 (Roadmap) 
-Phase 0：概念驗證（目前階段） 
-● App 整合 Bridgefy SDK 並重構 MeshTransport。 
-● 完成 Protobuf 序列化與 Bloom Filter 廣播驅動改造。 
-● 確認 iOS / Android 跨平台離線互通。 
-Phase 1：小規模實測 (1-6 個月) 
-● 導入 ESP32 + nRF52840 硬體開發。 
-● 於單一行政區部署 5 個 LoRa+BLE 中繼站 + 50 個 BLE 基地台。 
-● 測試 DAG 路由與 5 跳 BLE 極限穩定度。 
-● 預估硬體成本：約 15 萬 TWD。 
-Phase 2：縣市試點 (6-12 個月) 
-● 單一縣市完整覆蓋 (100 個 LoRa 骨幹 + 300 個中繼站 + 2,000 個 BLE 基地台)。 
-● 完善 OTA 韌體更新機制。 
-● 預估硬體成本：約 800 萬 TWD。 
-Phase 3：全台防災骨幹部署 (1-2 年) 
-● 全台 23,500 個節點覆蓋。 
-● 結合衛星回程 (Satellite Backhaul) 與無人機機動中繼。 
-● 開放 IgniMesh SDK 供第三方智慧路燈/IoT 設備整合。 
-● 預估建置總成本：約 1 億 TWD（遠低於單一 4G 基地台覆蓋成本）。 
+更新末端無人值守的 BLE 基地台。
+
+五、 手機端 Tier 分級架構 (Mobile Device Tier System)
+
+手機端節點依「平台 × 前後台狀態 × 電量」動態分為三個等級：
+
+Tier 1（全速節點）
+● 條件：iOS 前台 或 Android 掛載 Foreground Service，電量 ≥ 40%
+● 能力：全速 BLE 掃描/廣播/中繼，Data Mule 模式（主動拉取與搬運離線日誌）
+● Android 特有：掛載常駐通知列 Foreground Service，即使螢幕關閉仍全速運作
+● iOS 特有：App 必須在前台（用戶可見），進入背景即降級為 Tier 2
+● 電量遲滯切換：首次啟動 ≥ 40% 即預設 Tier 1；跌破 40% 降為 Tier 2；
+需回充至 ≥ 60% 才恢復 Tier 1（防止頻繁切換）
+
+Tier 2（低頻中繼）
+● 條件：iOS 前台或 Android 掛 FS 但電量 20%-40%，或 iOS 背景且電量 ≥ 20%
+● 能力：降頻 BLE 中繼（降低掃描頻率，只轉發不主動拉取）
+● iOS 背景特有機制：受惠於 CoreBluetooth 背景喚醒，收到 BLE 連線/資料事件時被系統
+喚醒，執行 Bloom Filter 比對 → 回傳對方缺少的事件 → 回去睡覺（約 10 秒處理窗口）
+● iOS 背景限制：廣告降級至 Overflow Area，僅正在主動掃描該 Service UUID 的 iOS 裝置
+可發現；Android 裝置和未掃描的 iOS 裝置看不到
+● Android 無 Tier 2 背景模式：Android 沒有 CoreBluetooth 式的背景喚醒機制，
+要嘛掛 Foreground Service 全速跑，要嘛 App 被系統殺掉完全失聯
+
+Tier 3（極限求生）
+● 條件：任何平台，電量 < 20%
+● 能力：僅 BLE 廣播自身 SOS 求救訊號，停止中繼任何他人封包
+● 目的：保留最低電量供用戶發送求救信號
+
+骨幹節點（Tier 0）
+● 硬體骨幹節點（第二～四層實體設備）不在手機 Tier 分級體系內
+● 以太陽能/外部電源驅動，無電量焦慮，恆常全速運作
+● 享有最高等級豁免：距離衰減豁免、資料驅逐保護、Rate Limiting 豁免
+
+六、 核心通訊演算法與協定 (Core Algorithms)
+因應極端環境的「Dark Forest Rules（黑暗森林法則）」，系統實作了以下演算法：
+
+1. HLC (Hybrid Logical Clocks) 混合邏輯鐘
+防禦 Time Drift。設備沒電重啟導致時間跳回 1970 時，HLC 向量鐘能為每筆 Immutable
+Append-only 日誌建立不可回溯的因果順序。
+
+2. Bloom Filter 廣播驅動同步
+捨棄盲目互傳與連線驅動模式。改為廣播驅動：每 30 秒（+/- 5s 隨機抖動）broadcast
+MeshEnvelope{BLOOM_FILTER}，收到後比對本地差集，僅回傳對方缺少的增量事件。
+SOS_RED 在佇列中時，Bloom 廣播間隔縮短至 10 秒。
+封包採 MeshEnvelope protobuf 封裝，區分 ENVELOPE_EVENT 與 ENVELOPE_BLOOM_FILTER 兩種類型。
+MVP 階段限 50 個 event ID（約 1.85KB），避免超過 BLE 封包上限。
+
+3. Triage Queue (頻寬搶佔與 QoS)
+藍牙頻寬極限下的生命線管控。當傳入 SOS_RED 日誌，底層 Mesh 會強制中斷一般傳輸，
+將 100% 通道配額留給紅色警戒資料。
+
+4. Data Mules (資料騾子) 機制
+Tier 1 手機節點（Android 掛 Foreground Service 或 iOS 前台），電量 ≥ 40% 時自動擔任
+Data Mule 角色，全速 BLE 掃描、主動拉取周圍節點離線日誌並搬運擴散。
+電量跌破 40% 降為 Tier 2 降頻中繼；跌破 20% 降為 Tier 3 僅保底自身 SOS。
+
+5. 去中心化隔離 (Decentralized Quarantine)
+防禦 DoS 假警報。當多數節點判定某特定 Ed25519 公鑰廣播異常，將自動發佈
+Quarantine_Vote。積分超標即黑名單拒絕轉發。
+
+6. 物資交換遭遇證明 (Proof-of-Encounter)
+離線狀態下，物資狀態從 Locked 轉為 Consumed 時，需透過 BLE 進行 4 位數 PIN 碼
+實體驗證，並內建防暴力破解冷卻期。
+
+7. 傳統住警器火警轉譯 (Legacy RF Fire Alarm Translation)
+第三/四層骨幹節點內建 433MHz RF 接收模組，被動監聽市面連動型住警器 RF 訊號，
+轉譯為 FIRE_ALARM_RF 事件（自動標記 SOS_RED 優先級），附帶基地台 GPS 座標
+（近似火警位置）與接收訊號強度 (RSSI)，注入 Mesh 網路擴散至消防單位。
+
+七、 BLE 傳輸層策略 (BLE Transport Layer)
+
+1. MeshTransport 抽象架構 (Dependency Inversion)
+已實作完整的 MeshTransport 抽象介面：
+
+abstract class MeshTransport {
+  Future<void> initialize();
+  Future<void> start();
+  Future<void> stop();
+  Future<String> broadcast(Uint8List data);
+  Future<String> sendToNode(String nodeId, Uint8List data);
+  Stream<MeshDataReceived> get onDataReceived;
+  Stream<String> get onPeerConnected;
+  Stream<String> get onPeerDisconnected;
+  Stream<TransportState> get onStateChanged;
+  bool get isActive;
+  TransportStats get stats;
+  void dispose();
+}
+
+上層 CRDT 與邏輯層透過 Provider<MeshTransport> 注入，完全不感知底層傳輸實作。
+TransportFactory 根據設定自動建立對應 Transport 並提供 fallback 機制。
+
+2. 傳輸實作方案
+
+方案 A：Bridgefy SDK（原定 MVP，暫時受阻）
+● 已完成 BridgefyTransport 實作（通過 flutter analyze 零錯誤）
+● 使用 BridgefyPropagationProfile.longReach（災難通訊專用）
+● 現況：Bridgefy maven repo 故障（HTTP 500，Artifactory Spring Bean 初始化失敗），
+所有端點（34.82.5.94、maven.bridgefy.com、104.196.228.98）均無法使用。
+GitHub Issue #28 已有其他開發者回報同一問題。
+● 待 maven repo 恢復後，只需取消 pubspec.yaml 和 transport_factory.dart 中的註解即可啟用。
+
+方案 B：NativeBLE + BitChat/Zemzeme GATT 參考（目前 fallback）
+● 已完成 NativeBleTransport 實作，包裝現有 BleManager
+● 正在參考 BitChat (permissionlesstech/bitchat-android) 與 Zemzeme
+(whisperbit-labs/zemzeme-android) 的 GATT 配置，修復跨廠牌相容性問題：
+  - GATT UUID：SERVICE = F47B5E2D-4A9E-4C5A-9B3F-8E1D2C3A4B5C
+  - GATT 雙角色（Server + Client 同時運行）
+  - 連線後 200ms 延遲請求 MTU 517
+  - PeerID 放在 Scan Response 的 Service Data 中（解決 MAC 輪換識別問題）
+  - 連線數上限 8（正常）/ 4（低功耗）
+
+3. 資料傳輸與封包優化
+● 原生 ByteArray 支援：直接 Uint8List 傳輸，捨棄 JSON/Base64，事件日誌全面 Protobuf
+序列化，單一摘要壓縮至 50-100 bytes。
+● MeshEnvelope 封裝：所有 BLE 封包以 MeshEnvelope protobuf 包裝，type 欄位區分
+ENVELOPE_EVENT（事件資料）與 ENVELOPE_BLOOM_FILTER（Bloom 同步）。
+● 大檔分片：參考 BitChat FragmentManager，512B 閾值 / 469B 分片 / 30s 逾時重組。
+
+八、 未來發展藍圖 (Roadmap)
+
+Phase 0：概念驗證（目前階段）
+● [已完成] MeshTransport 抽象層 + BridgefyTransport + NativeBleTransport 實作
+● [已完成] MeshEnvelope protobuf 封裝（EVENT / BLOOM_FILTER 區分）
+● [已完成] MeshEventHandler 共用接收邏輯（去重、HLC 合併、DB 寫入）
+● [已完成] Provider<MeshTransport> 依賴注入
+● [已完成] 替代方案研究（BitChat / Zemzeme GATT 架構分析）
+● [已完成] Release APK v0.1.8 建置（IgniRelay-v0.1.8-release.apk）
+● [受阻中] Bridgefy SDK maven repo 故障，暫 fallback NativeBLE
+● [進行中] 參考 BitChat/Zemzeme GATT 配置修復跨廠牌 BLE 相容性
+● [待辦] FIRE_ALARM_RF 事件類型實作
+● 目標：跨廠牌（Pixel ↔ 小米）BLE Mesh 穩定互通
+
+Phase 1：小規模實測 (1-6 個月)
+● 導入 ESP32 + nRF52840 硬體開發。
+● 於單一行政區部署 5 個 LoRa+BLE 中繼站 + 50 個 BLE 基地台。
+● 測試 DAG 路由與 5 跳 BLE 極限穩定度。
+● 433MHz RF 接收模組整合測試（先支援市佔率最高 1-2 家住警器品牌）。
+● 預估硬體成本：約 15 萬 TWD。
+
+Phase 2：縣市試點 (6-12 個月)
+● 單一縣市完整覆蓋 (100 個 LoRa 骨幹 + 300 個中繼站 + 2,000 個 BLE 基地台)。
+● 完善 OTA 韌體更新機制。
+● 擴大 433MHz RF 住警器品牌相容性。
+● 預估硬體成本：約 800 萬 TWD。
+
+Phase 3：全台防災骨幹部署 (1-2 年)
+● 全台 23,500 個節點覆蓋。
+● 結合衛星回程 (Satellite Backhaul) 與無人機機動中繼。
+● 開放 IgniMesh SDK 供第三方智慧路燈/IoT 設備整合。
+● 預估建置總成本：約 1 億 TWD（遠低於單一 4G 基地台覆蓋成本）。

@@ -382,7 +382,7 @@ final expirationDate = DateTime.fromMillisecondsSinceEpoch(expirationTimestamp);
   └─ 完全移除 Bridgefy 依賴
 
 長期（有團隊後）
-  └─ 找 iOS 開發者處理 CoreBluetooth
+  └─ 找 iOS 開發者處理 CoreBluetooth 背景優化
   └─ 封裝 IgniMesh SDK 供外部整合
-  └─ Wi-Fi Aware 支援（Android only）
+  └─ 參考 BitChat/Zemzeme GATT 配置修復跨廠牌 BLE 相容性
 ```

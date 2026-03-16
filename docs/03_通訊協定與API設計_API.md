@@ -18,6 +18,7 @@ enum EventType {
   HAZARD_MARKER     = 4;   // 動態危險圖層標記
   QUARANTINE_VOTE   = 5;   // 惡意節點檢舉投票 (去中心化隔離)
   MATCH_CANCEL      = 6;   // 釋放配對 (PIN 解鎖失敗取消)
+  FIRE_ALARM_RF     = 7;   // 433MHz RF 住警器火警訊號（由 Tier 0 基地台轉譯注入）
 }
 
 // 檢傷及優先級定義 (QoS & Triage)
@@ -42,13 +43,16 @@ message MeshEvent {
 
   int32 ttl = 8;                 // 剩餘存活跳數
 
-  // 接收位置快照 (Received Location Snapshot)
-  // 「接收封包當下」本機的 GPS 坐標，由接收方在收到封包時自動嵌入。
-  // 目的：距離衰減機制以「此延稀位置」而非轉發時的「當前位置」來判斷。
-  // 效果：防止搬運封包途中移動的節點，將原本在合法區域內收到的封包于抵達市區後錯殺丟棄。
-  // 安全：快照位置包含在封包簽章內容中，接收方無法事後筕改。
-  double received_lat = 13;      // 接收機的緯度 (接收時点記錄，龞次 origin 發布者位置)
-  double received_lng = 14;      // 接收機的經度 (接收時點記錄)
+  // 事件原始座標 (Origin Location — 創建者設定，中繼節點禁止修改)
+  // 用於 Zone-Based Geo-Fencing 路由判斷：決定封包屬於哪個里/鄉鎮市區。
+  // 安全：包含在簽章範圍內，無法被中繼節點竄改。
+  double origin_lat = 15;        // 事件創建者的緯度（發送時設定，不隨轉發改變）
+  double origin_lng = 16;        // 事件創建者的經度（發送時設定，不隨轉發改變）
+
+  // 接收位置快照 (Received Location Snapshot — 每跳由接收方覆寫)
+  // 記錄「最後一個中繼節點」收到封包時的 GPS 座標，供除錯與溯源使用。
+  double received_lat = 13;      // 接收機的緯度（每跳覆寫，非原始發送者位置）
+  double received_lng = 14;      // 接收機的經度（每跳覆寫）
 
   // 分塊傳輸機制 (Chunking)
   int32 chunk_index = 9;         // 當前區塊索引 (若無分塊為 0)
@@ -136,20 +140,111 @@ message QuarantineVoteData {
   float vote_weight = 3;         // 發票方的投票權重 (由 identity_level 決定: 0.2/0.5/0.8/1.0)
 }
 
+// 433MHz RF 住警器火警訊號 (EventType.FIRE_ALARM_RF)
+// 由 Tier 0 基地台接收傳統住警器 RF 訊號後轉譯生成，自動設為 SOS_RED 優先級
+message FireAlarmRfData {
+  string detector_brand = 1;     // 偵測到的住警器品牌識別 (如 "HONG_LI", "TYY", "UNKNOWN")
+  uint32 rf_frequency_mhz = 2;  // RF 頻率 (通常為 433)
+  double station_lat = 3;        // 接收基地台緯度 (近似火警位置)
+  double station_lng = 4;        // 接收基地台經度
+  int32 rssi_dbm = 5;           // 接收訊號強度 (可用於粗估距離)
+  int64 detected_at = 6;        // 偵測時間 (HLC timestamp, Unix ms)
+  bytes raw_rf_payload = 7;     // 原始 RF 資料幀 (供後續分析/擴充解碼)
+}
+
 // 釋放配對 (EventType.MATCH_CANCEL)
 message MatchCancelData {
   string request_id = 1;   // 要取消的需求 ID
   string resource_id = 2;  // 要釋放的物資 ID
   string reason = 3;       // 取消原因代碼，如 "PIN_LOCKED" (密碼鎖死), "NO_SHOW" (未出現), "USER_CANCEL" (使用者反悔)
 }
+
+// ─────────────────────────────────────────────
+// 醫療卡相關結構 (附加在 SOS 廣播 payload 中)
+// 僅包含用戶授權揭露的欄位，所有欄位均為 optional
+// ─────────────────────────────────────────────
+
+// 醫療卡摘要 (附加在 SOS 廣播 payload 中，僅包含用戶授權的欄位)
+message MedicalSummary {
+  optional string name             = 1;   // 姓名
+  optional int32  age              = 2;   // 年齡
+  optional int32  height_cm        = 3;   // 身高 (公分)
+  optional int32  weight_kg        = 4;   // 體重 (公斤)
+  optional string blood_type       = 5;   // 血型 (A+, A-, B+, B-, AB+, AB-, O+, O-)
+  repeated string conditions       = 6;   // 慢性病/病史 (如 "diabetes", "epilepsy")
+  repeated AllergyEntry allergies  = 7;   // 過敏原與反應
+  repeated string medications      = 8;   // 目前正在服用的藥物
+  optional EmergencyContact emergency_contact = 9; // 緊急聯絡人
+  optional bool   organ_donor      = 10;  // 器官捐贈意願
+  optional string primary_language = 11;  // 主要語言 (供外籍人士使用)
+}
+
+// 過敏原條目
+message AllergyEntry {
+  string allergen = 1;   // 過敏原名稱 (如 "penicillin", "peanuts")
+  string reaction = 2;   // 過敏反應描述 (如 "anaphylaxis")
+}
+
+// 緊急聯絡人
+message EmergencyContact {
+  string phone    = 1;   // 電話號碼
+  string relation = 2;   // 與用戶的關係 (如 "spouse", "parent")
+}
+
+// ─────────────────────────────────────────────
+// MeshEnvelope — Bridgefy 廣播驅動頂層封包
+// ─────────────────────────────────────────────
+// 所有透過 Bridgefy SDK 傳送的資料都必須先包裝成此格式。
+// 接收端根據 type 欄位決定後續處理：
+//   ENVELOPE_EVENT        → 解包 payload 為 MeshEvent
+//   ENVELOPE_BLOOM_FILTER → 解包 payload 為 Bloom Filter 事件 ID 列表
+//
+// 【給硬體廠商 / IgniMesh SDK 接入方的注意事項】
+//   Bridgefy SDK 傳輸的所有 bytes 皆為 raw Protobuf（不做 base64）。
+//   接收端必須先用 MeshEnvelope 反序列化，再依 type 處理 payload，
+//   否則無法與 IgniRelay 節點互通。
+//
+enum EnvelopeType {
+  ENVELOPE_EVENT        = 0;  // payload 內容為序列化的 MeshEvent bytes
+  ENVELOPE_BLOOM_FILTER = 1;  // payload 內容為 Bloom Filter 事件 ID 列表 bytes
+}
+
+message MeshEnvelope {
+  EnvelopeType type = 1;   // 封包類型（決定 payload 解析方式）
+  bytes payload = 2;        // 內容：EVENT → MeshEvent；BLOOM_FILTER → 事件 ID 列表
+  string sender_id = 3;     // 發送者 UUID（Bridgefy SDK 分配的 userId，非 Ed25519 公鑰）
+}
 ```
 
-#### 1.2 交會握手與優先級搶佔流程
+#### 1.2 交會握手、優先級搶佔與地理圍欄路由流程
+
 1.  **設備發現與過濾**：連線成立前，快速判讀廣告封包 (Advertising Data)。若判定來源的 MAC / User ID 在本地「防洗版黑名單」內，直接拒絕建立 Socket。
 2.  **Bloom Filter 交換**：雙方建立連線，交換 `BloomFilterSync`。
 3.  **檢傷分類 (Triage Extraction)**：從雙方的需傳輸佇列中掃描，若有 `UrgencyLevel == SOS_RED` 的事件。
 4.  **路由霸權**：強行將 `SOS_RED` 事件排至最優先序列，暫停或丟棄 `INFO` 級別的傳輸。
-5.  傳送包含 Signature 的 `MeshEvent`，接收方完成簽章校驗後存入本地 SQLite。
+5.  傳送包含 Signature 的 `MeshEvent`，接收方完成簽章校驗後進行地理圍欄路由判斷：
+
+**Zone-Based Geo-Fencing 路由規則（接收方判斷是否留存/轉發）**
+
+| urgency / EventType | 路由邊界 | 說明 |
+|---|---|---|
+| `INFO` (0) / `RESOURCE` (1) | **里（村里）** | 依 `origin_lat`/`origin_lng` 判斷發送者所在里，與本節點所在里比對 |
+| `SOS_YELLOW` (2) / `SOS_RED` (3) | **鄉鎮市區** | 依發送者所在鄉鎮市區與本節點比對；每個鄉鎮市區至少有一消防分隊與派出所，對齊實際救援單位邊界 |
+| `HAZARD_MARKER` (EventType=4) | **鄉鎮市區** | 危險標記影響範圍通常涵蓋整個消防分隊轄區 |
+
+**邊界緩衝區**：若節點位於里/鄉鎮市區邊界 < 300m 處，同時納入相鄰區域（可跨 1～N 個相鄰里/鄉鎮市區，視實際地理重疊而定）。
+
+**特殊豁免（無視地理邊界）**：
+- Tier 0 硬體騾子（公務車/基地台）
+- Android Foreground Service Data Mule
+- `SOS_RED` + `identity_level >= 1`（手機驗證以上的用戶，生死攸關無視行政區邊界）
+- 離島/資料缺漏（VillageGeofence 查無資料）：自動 fallback 至距離衰減（`max_range_meters × urgency_multiplier`）
+
+6.  判斷通過後存入本地 SQLite，進入 TriageQueue 等待轉發。
+
+**Phase 2（未來規劃）— 鄉鎮市區 → 縣市彙整上報**
+
+當鄉鎮市區節點（消防分隊協作節點或 Tier 0 基地台）收到 `SOS_YELLOW`/`SOS_RED`/`HAZARD_MARKER` 後，將定期彙整並往縣市層級的指揮節點上報，實現類「119 指揮中心」的數位化事件匯聚。此機制與現行逐跳 Mesh 傳播並行，不取代。
 
 ---
 
