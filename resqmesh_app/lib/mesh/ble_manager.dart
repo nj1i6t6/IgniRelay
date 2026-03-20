@@ -200,20 +200,19 @@ class BleManager {
         final task = queue.dequeue();
         if (task == null) break;
         if (remoteEventIds.contains(task.eventId)) continue;
-        if (_eventHandler.hasSeen(task.eventId)) continue;
 
         try {
           final wireData = MeshEventHandler.encodeWirePayload(
             task.eventId,
             task.payload,
             urgency: task.urgency,
+            eventType: task.eventType,
           );
           final success = await NativeBridge.nordicWriteEvent(
             deviceId,
             Uint8List.fromList(wireData),
           );
           if (success) {
-            _eventHandler.markSeen(task.eventId);
             sentFromQueue.add(task.eventId);
             syncedEventCount++;
             _dlog('SENT(queue) ${task.eventId.substring(0, 8)}.. urg=${task.urgency} → $deviceId');
@@ -259,7 +258,6 @@ class BleManager {
       for (final evt in myEvents) {
         final evtId = evt['event_id'] as String;
         if (remoteEventIds.contains(evtId)) continue;
-        if (_eventHandler.hasSeen(evtId)) continue;
         if (sentFromQueue.contains(evtId)) continue;
 
         final payload = evt['payload'] as Uint8List?;
@@ -285,7 +283,6 @@ class BleManager {
               Uint8List.fromList(wireData),
             );
             if (success) {
-              _eventHandler.markSeen(evtId);
               syncedEventCount++;
               _dlog('SENT(db) ${evtId.substring(0, 8)}.. urg=${evt['urgency']} → $deviceId');
             } else {
@@ -584,10 +581,19 @@ class BleManager {
     try {
       while (_pendingDevices.isNotEmpty && _isActive) {
         final device = _pendingDevices.removeAt(0);
-        if (Platform.isAndroid) {
-          await _nordicConnectAndSync(device as String);
-        } else {
-          await _iosConnectAndSync(device as BluetoothDevice);
+        try {
+          if (Platform.isAndroid) {
+            await _nordicConnectAndSync(device as String)
+                .timeout(const Duration(seconds: 30), onTimeout: () {
+              _dlog('TIMEOUT connecting to $device');
+              _knownPeers.remove(device);
+            });
+          } else {
+            await _iosConnectAndSync(device as BluetoothDevice)
+                .timeout(const Duration(seconds: 30));
+          }
+        } on TimeoutException {
+          _dlog('TIMEOUT (exception) connecting to $device');
         }
       }
     } finally {

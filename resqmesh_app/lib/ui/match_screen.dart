@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../mesh/event_manager.dart';
+import '../mesh/mesh_event_handler.dart';
 import '../services/location_service.dart';
 import '../services/match_repository.dart';
 import '../services/match_service.dart';
@@ -33,6 +35,8 @@ class _MatchScreenState extends State<MatchScreen>
     duration: const Duration(milliseconds: 800),
   );
   bool _isRefreshing = false;
+  StreamSubscription? _meshEventSub;
+  Timer? _meshDebounce;
 
   @override
   bool get wantKeepAlive => true;
@@ -41,10 +45,19 @@ class _MatchScreenState extends State<MatchScreen>
   void initState() {
     super.initState();
     _initAndLoad();
+    // 監聽 Mesh 事件，收到新資料時自動刷新社區動態
+    _meshEventSub = MeshEventHandler().events.listen((_) {
+      _meshDebounce?.cancel();
+      _meshDebounce = Timer(const Duration(seconds: 3), () {
+        if (mounted && !_isRefreshing) _loadAll();
+      });
+    });
   }
 
   @override
   void dispose() {
+    _meshEventSub?.cancel();
+    _meshDebounce?.cancel();
     _refreshSpinCtrl.dispose();
     super.dispose();
   }

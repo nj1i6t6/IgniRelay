@@ -10,7 +10,14 @@
       "Bash(ls -la /c/Users/radio/Downloads/IDE/CoReM/resqmesh_app/build/app/outputs/apk/release/*.apk)",
       "Bash(flutter devices)",
       "Bash(flutter analyze:*)",
-      "Bash(flutter run:*)"
+      "Bash(flutter run:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(protoc --dart_out=lib/proto protos/mesh_protocol.proto)",
+      "Bash(where protoc:*)",
+      "Bash(flutter pub:*)",
+      "Bash(flutter emulators:*)",
+      "Bash(flutter build:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 10 \"http://34.82.5.94:8081/artifactory/libs-release-local/me/bridgefy/android-sdk/1.2.4/android-sdk-1.2.4.pom\")"
     ]
   }
 }

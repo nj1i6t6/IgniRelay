@@ -3,9 +3,10 @@ import 'package:collection/collection.dart';
 class MeshTask {
   final String eventId;
   final int urgency; // 0: INFO, 1: RESOURCE, 2: SOS_YELLOW, 3: SOS_RED
+  final int eventType; // EventType enum value (0–6)
   final List<int> payload;
 
-  MeshTask(this.eventId, this.urgency, this.payload);
+  MeshTask(this.eventId, this.urgency, this.payload, {this.eventType = 0});
 }
 
 class TriageQueue {

@@ -132,10 +132,10 @@ class NativeBleTransport implements MeshTransport {
     final decoded = MeshEventHandler.decodeWirePayload(data);
     if (decoded != null) {
       EventManager().queue.enqueue(
-        MeshTask(decoded.eventId, decoded.urgency, data),
+        MeshTask(decoded.eventId, decoded.urgency, data, eventType: decoded.eventType),
       );
       debugPrint(
-          '[NativeBLE] broadcast ${decoded.eventId.substring(0, 8)}.. urg=${decoded.urgency} → TriageQueue');
+          '[NativeBLE] broadcast ${decoded.eventId.substring(0, 8)}.. urg=${decoded.urgency} type=${decoded.eventType} → TriageQueue');
       return decoded.eventId;
     }
     debugPrint('[NativeBLE] broadcast ${data.length}B → decode failed');
@@ -148,10 +148,10 @@ class NativeBleTransport implements MeshTransport {
     final decoded = MeshEventHandler.decodeWirePayload(data);
     if (decoded != null) {
       EventManager().queue.enqueue(
-        MeshTask(decoded.eventId, decoded.urgency, data),
+        MeshTask(decoded.eventId, decoded.urgency, data, eventType: decoded.eventType),
       );
       debugPrint(
-          '[NativeBLE] sendToNode $nodeId ${decoded.eventId.substring(0, 8)}.. → TriageQueue');
+          '[NativeBLE] sendToNode $nodeId ${decoded.eventId.substring(0, 8)}.. type=${decoded.eventType} → TriageQueue');
       return decoded.eventId;
     }
     return 'native-ble-${DateTime.now().millisecondsSinceEpoch}';

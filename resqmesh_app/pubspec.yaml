@@ -2,7 +2,7 @@ name: resqmesh_app
 description: 烽傳 IgniRelay - Offline Mesh Emergency Rescue System
 publish_to: 'none'
 
-version: 0.1.10+11
+version: 0.1.11+12
 
 environment:
   sdk: '>=3.2.0 <4.0.0'

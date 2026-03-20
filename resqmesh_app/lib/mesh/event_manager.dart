@@ -207,7 +207,7 @@ class EventManager {
       'is_synced': 0,
     });
 
-    _queue.enqueue(MeshTask(eventId, urgency, payload));
+    _queue.enqueue(MeshTask(eventId, urgency, payload, eventType: EventType.requestBroadcast));
     return eventId;
   }
 
@@ -276,7 +276,7 @@ class EventManager {
       'is_synced': 0,
     });
 
-    _queue.enqueue(MeshTask(eventId, 1, payload));
+    _queue.enqueue(MeshTask(eventId, 1, payload, eventType: EventType.resourceRegister));
     return resourceId;
   }
 
@@ -332,7 +332,7 @@ class EventManager {
       'is_synced': 0,
     });
 
-    _queue.enqueue(MeshTask(eventId, 1, payload));
+    _queue.enqueue(MeshTask(eventId, 1, payload, eventType: EventType.requestBroadcast));
     return eventId;
   }
 
@@ -403,7 +403,7 @@ class EventManager {
       'is_synced': 0,
     });
 
-    _queue.enqueue(MeshTask(eventId, 2, payload));
+    _queue.enqueue(MeshTask(eventId, 2, payload, eventType: EventType.hazardMarker));
     return hazardId;
   }
 
@@ -574,7 +574,7 @@ class EventManager {
         'signature': Uint8List.fromList(signature),
         'is_synced': 0,
       });
-      _queue.enqueue(MeshTask(eventId, 2, payload));
+      _queue.enqueue(MeshTask(eventId, 2, payload, eventType: EventType.hazardMarker));
     }
   }
 
@@ -624,7 +624,7 @@ class EventManager {
         'signature': Uint8List.fromList(signature),
         'is_synced': 0,
       });
-      _queue.enqueue(MeshTask(eventId, 0, payload));
+      _queue.enqueue(MeshTask(eventId, 0, payload, eventType: EventType.hazardMarker));
     }
   }
 
@@ -705,7 +705,7 @@ class EventManager {
       'signature': Uint8List.fromList(signature),
       'is_synced': 0,
     });
-    _queue.enqueue(MeshTask(cancelId, 0, Uint8List.fromList(cancelPayload)));
+    _queue.enqueue(MeshTask(cancelId, 0, Uint8List.fromList(cancelPayload), eventType: EventType.matchCancel));
   }
 
   // ── 取消物資需求 ───────────────────────────────────────────────
@@ -738,6 +738,6 @@ class EventManager {
       'signature': Uint8List.fromList(signature),
       'is_synced': 0,
     });
-    _queue.enqueue(MeshTask(cancelId, 0, Uint8List.fromList(cancelPayload)));
+    _queue.enqueue(MeshTask(cancelId, 0, Uint8List.fromList(cancelPayload), eventType: EventType.matchCancel));
   }
 }

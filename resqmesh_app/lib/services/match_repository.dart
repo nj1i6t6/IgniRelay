@@ -176,7 +176,7 @@ class MatchRepository {
     final rows = await db.query(
       'Event_Logs',
       where:
-          'sender_pub_key != ? AND (event_type = ? OR event_type = ?) AND hlc_timestamp > ?',
+          'sender_pub_key != ? AND (event_type = ? OR event_type = ?) AND urgency <= 1 AND hlc_timestamp > ?',
       whereArgs: [
         myPubKey,
         EventType.resourceRegister,
