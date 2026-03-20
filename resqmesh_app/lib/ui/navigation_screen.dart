@@ -8,7 +8,7 @@ import 'package:mbtiles/mbtiles.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_mbtiles/vector_map_tiles_mbtiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
-import '../mesh/ble_manager.dart' show kResQMeshServiceUUID;
+import '../mesh/mesh_constants.dart' show kResQMeshServiceUUID;
 import '../mesh/mbtiles_loader.dart';
 import '../services/location_service.dart';
 import '../services/match_service.dart';

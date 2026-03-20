@@ -1,7 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:path_provider/path_provider.dart';
 import '../mesh/mesh_transport.dart';
 import '../mesh/mesh_event_handler.dart';
 import '../mesh/native_bridge.dart';
@@ -87,6 +88,15 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   void _startMeshListening() {
     // Transport 已在 main 啟動時自動開始，這裡同步 UI 狀態
     _isBleActive = _transport.isActive;
+
+    // 監聽 transport 狀態變化，同步 BLE 按鈕顯示
+    _transport.onStateChanged.listen((state) {
+      if (!mounted) return;
+      setState(() {
+        _isBleActive = state == TransportState.running;
+      });
+    });
+
     _bleSub = MeshEventHandler().events.listen((event) {
       if (!mounted) return;
       setState(() {
@@ -99,8 +109,8 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
 
   void _startGattListener() {
     // 監聽 Kotlin GATT Server 透過 EventChannel 送來的原始資料
-    const eventChannel = EventChannel('network.resqmesh/events');
-    _gattSub = eventChannel.receiveBroadcastStream().listen((event) {
+    // 使用 NativeBridge 共享 stream，避免重複 receiveBroadcastStream() 衝突
+    _gattSub = NativeBridge.nativeEventStream.listen((event) {
       if (!mounted) return;
       if (event is Map) {
         final type = event['type'];
@@ -173,16 +183,94 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
 
   Future<void> _toggleBle() async {
     if (_isBleActive) {
-      await _transport.stop();
+      try {
+        await _transport.stop();
+      } catch (_) {}
       setState(() => _isBleActive = false);
     } else {
-      // 確保前景服務啟動，防止背景被系統殺掉
       try {
-        await NativeBridge.startMeshForegroundService();
-      } catch (_) {}
-      await _transport.initialize();
-      await _transport.start();
-      setState(() => _isBleActive = true);
+        // 確保前景服務啟動，防止背景被系統殺掉
+        try {
+          await NativeBridge.startMeshForegroundService();
+        } catch (_) {}
+        await _transport.initialize();
+        await _transport.start();
+        setState(() => _isBleActive = true);
+      } catch (e) {
+        debugPrint('[BLE Toggle] start failed: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('BLE 啟動失敗：$e\n請確認藍牙已開啟且已授予權限'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _exportLogs() async {
+    try {
+      final s = _transport.stats;
+      final buf = StringBuffer();
+      buf.writeln('=== IgniRelay Debug Log ===');
+      buf.writeln('Time: ${DateTime.now().toIso8601String()}');
+      buf.writeln('Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
+      buf.writeln('');
+
+      buf.writeln('--- Transport State ---');
+      buf.writeln('active: ${_transport.isActive}');
+      buf.writeln('connectedPeers: ${s.connectedPeers}');
+      buf.writeln('seenEvents: ${s.seenEventsCount}');
+      buf.writeln('sent: ${s.sentCount}');
+      buf.writeln('recv: ${s.receivedCount}');
+      buf.writeln('');
+
+      buf.writeln('--- GATT Server Logs (${_gattServerLogs.length}) ---');
+      for (final l in _gattServerLogs) {
+        buf.writeln(l);
+      }
+      buf.writeln('');
+
+      buf.writeln('--- Transport Logs (${s.debugLogs.length}) ---');
+      for (final l in s.debugLogs) {
+        buf.writeln(l);
+      }
+      buf.writeln('');
+
+      buf.writeln('--- MeshEventHandler Logs (${MeshEventHandler().debugLogs.length}) ---');
+      for (final l in MeshEventHandler().debugLogs) {
+        buf.writeln(l);
+      }
+
+      // 存到公開的「下載」資料夾，檔案管理員可直接看到
+      final downloadDir = Directory('/storage/emulated/0/Download');
+      final fallbackDir = await getApplicationDocumentsDirectory();
+      final dir = (Platform.isAndroid && await downloadDir.exists()) ? downloadDir : fallbackDir;
+      final ts = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
+      final file = File('${dir.path}/ignirelay_debug_$ts.txt');
+      await file.writeAsString(buf.toString());
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('日誌已存到「下載」：${file.path.split('/').last}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('匯出失敗：$e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -388,6 +476,23 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── 匯出日誌按鈕 ──
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.amber.withValues(alpha: 0.2),
+                foregroundColor: Colors.amber,
+                side: const BorderSide(color: Colors.amber),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onPressed: _exportLogs,
+              icon: const Icon(Icons.download, size: 16),
+              label: const Text('匯出完整日誌', style: TextStyle(fontSize: 12)),
+            ),
+          ),
+          const SizedBox(height: 10),
+
           // Transport State
           const Text('Transport State', style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),

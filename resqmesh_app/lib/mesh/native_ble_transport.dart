@@ -6,6 +6,7 @@ import 'mesh_transport.dart';
 import 'mesh_event_handler.dart';
 import 'native_bridge.dart';
 import 'triage_queue.dart';
+import '../crypto/identity_manager.dart';
 
 /// NativeBleTransport — 完整的自研 BLE Mesh Transport
 ///
@@ -97,7 +98,18 @@ class NativeBleTransport implements MeshTransport {
 
     // ── 4. 啟動 Central 掃描 + Peripheral 廣播 ──
     await _bleManager.startScanning();
-    await NativeBridge.startBleAdvertising([], 0);
+
+    // 取得真正的 pubKey prefix 和 identity level
+    final identity = IdentityManager();
+    List<int> pubKeyPrefix;
+    try {
+      pubKeyPrefix = await identity.getPublicKeyBytes();
+    } catch (_) {
+      pubKeyPrefix = [0, 0, 0, 0];
+    }
+    final identityLevel = identity.getIdentityLevel();
+    await NativeBridge.startBleAdvertising(pubKeyPrefix, identityLevel);
+
     _stateController.add(TransportState.running);
   }
 

@@ -25,7 +25,8 @@ android {
         applicationId = "network.resqmesh"
         // minSdk 23: Bridgefy SDK 最低需求
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        // 鎖定 35 (Android 15 stable)，避免 Flutter 預設 36 (Android 16 beta) 導致安裝相容性問題
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -50,6 +51,8 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    // Nordic BLE Library — 跨廠牌 Android BLE 相容性（取代 flutter_blue_plus Central 角色）
+    implementation("no.nordicsemi.android:ble:2.7.4")
 }
 
 flutter {

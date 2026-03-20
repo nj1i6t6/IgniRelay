@@ -1,8 +1,6 @@
 package network.resqmesh.resqmesh_app
 
 import android.Manifest
-import android.bluetooth.*
-import android.bluetooth.le.*
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,13 +8,11 @@ import android.net.Uri
 import android.os.*
 import android.provider.Settings
 import android.util.Log
-import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
-import java.util.UUID
 
 class MainActivity : FlutterActivity() {
 
@@ -24,16 +20,23 @@ class MainActivity : FlutterActivity() {
         private const val METHOD_CHANNEL = "network.resqmesh/native"
         private const val EVENT_CHANNEL = "network.resqmesh/events"
         private const val TAG = "ResQMesh"
+
+        /**
+         * 共享 EventSink — 供 ForegroundService 轉發 GATT Server 收到的資料到 Flutter
+         * Bug 3 Fix: ForegroundService 的 onCharacteristicWriteRequest 透過此 sink 發送事件
+         */
+        @Volatile
+        @JvmStatic
+        var sharedEventSink: EventChannel.EventSink? = null
     }
 
-    private var bleAdvertiser: BluetoothLeAdvertiser? = null
-    private var gattServer: BluetoothGattServer? = null
-    private var advertiseCallback: AdvertiseCallback? = null
-    private var nativeEventSink: EventChannel.EventSink? = null
+    private var nordicManager: NordicMeshManager? = null
     private var dataMuleServiceRunning = false
+
     // Bloom Filter 快取（由 Dart 端推送更新）
     @Volatile
     private var localBloomBytes: ByteArray = ByteArray(0)
+
     // 交接 PIN 狀態
     private var handoffResourceId: String? = null
     private var handoffPinHash: String? = null
@@ -41,23 +44,93 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
+        // 初始化 Nordic BLE Manager
+        nordicManager = NordicMeshManager(this)
+
+        // ── EventChannel ──────────────────────────────────────────────
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    sharedEventSink = events
+                }
+                override fun onCancel(arguments: Any?) {
+                    sharedEventSink = null
+                }
+            })
+
+        // ── MethodChannel ─────────────────────────────────────────────
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+
+                    // ── Nordic BLE Central 操作 ──────────────────────────
+                    "startNordicScan" -> {
+                        val success = nordicManager?.startScan() ?: false
+                        result.success(success)
+                    }
+                    "stopNordicScan" -> {
+                        nordicManager?.stopScan()
+                        result.success(true)
+                    }
+                    "nordicConnect" -> {
+                        val deviceId = call.argument<String>("deviceId") ?: ""
+                        if (deviceId.isEmpty()) {
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+                        nordicManager?.connect(deviceId) { success ->
+                            result.success(success)
+                        }
+                    }
+                    "nordicDisconnect" -> {
+                        val deviceId = call.argument<String>("deviceId") ?: ""
+                        nordicManager?.disconnect(deviceId)
+                        result.success(true)
+                    }
+                    "nordicReadBloom" -> {
+                        val deviceId = call.argument<String>("deviceId") ?: ""
+                        if (deviceId.isEmpty()) {
+                            result.success(null)
+                            return@setMethodCallHandler
+                        }
+                        nordicManager?.readBloom(deviceId) { data ->
+                            result.success(data)
+                        }
+                    }
+                    "nordicWriteEvent" -> {
+                        val deviceId = call.argument<String>("deviceId") ?: ""
+                        val data = call.argument<ByteArray>("data")
+                        if (deviceId.isEmpty() || data == null) {
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+                        nordicManager?.writeEvent(deviceId, data) { success ->
+                            result.success(success)
+                        }
+                    }
+
+                    // ── Peripheral 角色（統一由 ForegroundService 管理）──
+                    "startBleAdvertising" -> {
+                        // Bug 2 Fix: GATT Server + Advertising 統一由 ForegroundService 管理
+                        // 不再在 MainActivity 開第二個 GATT Server
+                        result.success(startDataMuleService())
+                    }
+                    "stopBleAdvertising" -> {
+                        stopDataMuleService()
+                        result.success(true)
+                    }
+                    "startBleRelayMode" -> {
+                        result.success(startDataMuleService())
+                    }
+
+                    // ── 基本查詢 ──────────────────────────────────────────
                     "getBatteryLevel" -> {
                         val bm = getSystemService(BATTERY_SERVICE) as BatteryManager
                         val level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
                         result.success(level)
                     }
-                    "startBleAdvertising" -> {
-                        startBleGattServer()
-                        startBleAdvertising()
-                        result.success(true)
-                    }
-                    "stopBleAdvertising" -> {
-                        stopBleAdvertising()
-                        result.success(true)
-                    }
+
+                    // ── Foreground Service (Data Mule) ────────────────────
                     "startAndroidDataMuleMode", "startDataMuleMode" -> {
                         result.success(startDataMuleService())
                     }
@@ -68,32 +141,24 @@ class MainActivity : FlutterActivity() {
                     "isDataMuleRunning" -> {
                         result.success(dataMuleServiceRunning)
                     }
-                    "startBleRelayMode" -> {
-                        // BLE Relay = GATT Server + Advertising (低耗電背景模式)
-                        startBleGattServer()
-                        startBleAdvertising()
-                        result.success(true)
-                    }
                     "stopAllServices" -> {
-                        stopBleAdvertising()
+                        nordicManager?.stopScan()
                         stopDataMuleService()
                         result.success(true)
                     }
                     "requestHighBandwidthTransfer" -> {
                         result.success(false)
                     }
-                    // ── 跨裝置 PIN 交接方法 ──
+
+                    // ── 跨裝置 PIN 交接方法 ────────────────────────────────
                     "startHandoffAdvertising" -> {
                         handoffResourceId = call.argument<String>("resourceId")
                         handoffPinHash = call.argument<String>("pinHash")
-                        startBleGattServer()
-                        startBleAdvertising()
+                        startDataMuleService()
                         Log.d(TAG, "Handoff advertising started for resource: $handoffResourceId")
                         result.success(true)
                     }
                     "sendHandoffPin" -> {
-                        // Requester 端：發送 PIN 到 Provider
-                        // 實際上透過 BLE Central 連線到 Provider 的 GATT 寫入
                         val pin = call.argument<String>("pin") ?: ""
                         val resId = call.argument<String>("resourceId") ?: ""
                         val verified = verifyHandoffPin(pin, resId)
@@ -104,7 +169,8 @@ class MainActivity : FlutterActivity() {
                         handoffPinHash = null
                         result.success(true)
                     }
-                    // ── 前景服務 & 電池優化 ──
+
+                    // ── 前景服務 & 電池優化 ────────────────────────────────
                     "startMeshForegroundService" -> {
                         result.success(startDataMuleService())
                     }
@@ -130,12 +196,10 @@ class MainActivity : FlutterActivity() {
                     }
                     "openBatterySettings" -> {
                         try {
-                            // 嘗試開啟電池優化設定頁面
                             val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                             startActivity(intent)
                             result.success(true)
                         } catch (e: Exception) {
-                            // fallback: 開啟一般設定
                             try {
                                 val intent = Intent(Settings.ACTION_SETTINGS)
                                 startActivity(intent)
@@ -149,7 +213,6 @@ class MainActivity : FlutterActivity() {
                         result.success(Build.MANUFACTURER.lowercase())
                     }
                     "openManufacturerPowerSettings" -> {
-                        // 各大廠私有電源管理頁面
                         val opened = openManufacturerPowerSettings()
                         result.success(opened)
                     }
@@ -157,7 +220,6 @@ class MainActivity : FlutterActivity() {
                         val bytes = call.argument<ByteArray>("bloom")
                         if (bytes != null) {
                             localBloomBytes = bytes
-                            // 同步更新 ForegroundService 的共享快取
                             ResQMeshForegroundService.sharedBloomBytes = bytes
                             Log.d(TAG, "Bloom filter updated: ${bytes.size} bytes")
                         }
@@ -166,205 +228,9 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
-
-        EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
-            .setStreamHandler(object : EventChannel.StreamHandler {
-                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-                    nativeEventSink = events
-                }
-                override fun onCancel(arguments: Any?) {
-                    nativeEventSink = null
-                }
-            })
     }
 
-    // ── BLE GATT Server (Peripheral / Advertiser) ─────────────────────────────
-
-    private fun startBleGattServer() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
-            != PackageManager.PERMISSION_GRANTED) {
-            Log.w(TAG, "BLUETOOTH_CONNECT not granted, skipping GATT server")
-            return
-        }
-
-        val btManager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
-        val adapter = btManager.adapter ?: return
-        if (!adapter.isEnabled) return
-
-        gattServer = btManager.openGattServer(this, object : BluetoothGattServerCallback() {
-            override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
-                val stateStr = if (newState == BluetoothProfile.STATE_CONNECTED) "connected" else "disconnected"
-                runOnUiThread {
-                    nativeEventSink?.success(mapOf(
-                        "type" to "ble_peer",
-                        "state" to stateStr,
-                        "device" to device.address
-                    ))
-                }
-            }
-
-            override fun onCharacteristicWriteRequest(
-                device: BluetoothDevice, requestId: Int,
-                characteristic: BluetoothGattCharacteristic,
-                preparedWrite: Boolean, responseNeeded: Boolean,
-                offset: Int, value: ByteArray
-            ) {
-                if (responseNeeded) {
-                    gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
-                }
-
-                // 判斷是否為交接 PIN 驗證請求
-                if (characteristic.uuid == ResQMeshConstants.HANDSHAKE_CHAR_UUID && handoffPinHash != null) {
-                    val receivedStr = String(value, Charsets.UTF_8)
-                    if (receivedStr.startsWith("VERIFY|")) {
-                        val parts = receivedStr.split("|")
-                        if (parts.size >= 3) {
-                            val resId = parts[1]
-                            val pinHashFromRequester = parts[2]
-                            val match = (resId == handoffResourceId && pinHashFromRequester == handoffPinHash)
-                            Log.d(TAG, "Handoff PIN verification: match=$match for resource=$resId")
-                            runOnUiThread {
-                                nativeEventSink?.success(mapOf(
-                                    "type" to "handoff_result",
-                                    "resourceId" to resId,
-                                    "success" to match,
-                                    "device" to device.address
-                                ))
-                            }
-                        }
-                    }
-                }
-
-                // 通知 Flutter 端收到 BLE 資料
-                runOnUiThread {
-                    nativeEventSink?.success(mapOf(
-                        "type" to "ble_data",
-                        "device" to device.address,
-                        "data" to value.toList()
-                    ))
-                }
-                Log.d(TAG, "Received ${value.size} bytes from ${device.address}")
-            }
-
-            override fun onCharacteristicReadRequest(
-                device: BluetoothDevice, requestId: Int,
-                offset: Int, characteristic: BluetoothGattCharacteristic
-            ) {
-                val responseBytes = when (characteristic.uuid) {
-                    ResQMeshConstants.BLOOM_CHAR_UUID -> {
-                        // 回傳本機 Bloom Filter（由 Dart 定期推送）
-                        val bloom = localBloomBytes
-                        if (offset < bloom.size) bloom.copyOfRange(offset, bloom.size) else ByteArray(0)
-                    }
-                    else -> ByteArray(0)
-                }
-                gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, responseBytes)
-                Log.d(TAG, "Read request: uuid=${characteristic.uuid}, offset=$offset, resp=${responseBytes.size}B")
-            }
-
-            override fun onDescriptorWriteRequest(
-                device: BluetoothDevice, requestId: Int,
-                descriptor: BluetoothGattDescriptor,
-                preparedWrite: Boolean, responseNeeded: Boolean,
-                offset: Int, value: ByteArray
-            ) {
-                if (responseNeeded) {
-                    gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
-                }
-            }
-        })
-
-        // Build ResQMesh primary service
-        val service = BluetoothGattService(ResQMeshConstants.SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
-
-        // Event characteristic (read/write/notify)
-        val eventChar = BluetoothGattCharacteristic(
-            ResQMeshConstants.EVENT_CHAR_UUID,
-            BluetoothGattCharacteristic.PROPERTY_READ or
-                BluetoothGattCharacteristic.PROPERTY_WRITE or
-                BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-            BluetoothGattCharacteristic.PERMISSION_READ or BluetoothGattCharacteristic.PERMISSION_WRITE
-        )
-        eventChar.addDescriptor(BluetoothGattDescriptor(
-            ResQMeshConstants.CCCD_UUID,
-            BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
-        ))
-        service.addCharacteristic(eventChar)
-
-        // Bloom filter characteristic (read-only)
-        service.addCharacteristic(BluetoothGattCharacteristic(
-            ResQMeshConstants.BLOOM_CHAR_UUID,
-            BluetoothGattCharacteristic.PROPERTY_READ,
-            BluetoothGattCharacteristic.PERMISSION_READ
-        ))
-
-        // Handshake characteristic (read/write)
-        service.addCharacteristic(BluetoothGattCharacteristic(
-            ResQMeshConstants.HANDSHAKE_CHAR_UUID,
-            BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_WRITE,
-            BluetoothGattCharacteristic.PERMISSION_READ or BluetoothGattCharacteristic.PERMISSION_WRITE
-        ))
-
-        gattServer?.addService(service)
-        Log.d(TAG, "GATT server started with ResQMesh service")
-    }
-
-    private fun startBleAdvertising() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADVERTISE)
-            != PackageManager.PERMISSION_GRANTED) {
-            Log.w(TAG, "BLUETOOTH_ADVERTISE not granted, skipping advertising")
-            return
-        }
-
-        val btManager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
-        bleAdvertiser = btManager.adapter?.bluetoothLeAdvertiser
-        if (bleAdvertiser == null) {
-            Log.w(TAG, "BLE advertising not supported on this device")
-            return
-        }
-
-        val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-            .setConnectable(true)
-            .setTimeout(0) // Advertise indefinitely
-            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
-            .build()
-
-        val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(false)
-            .addServiceUuid(android.os.ParcelUuid(ResQMeshConstants.SERVICE_UUID))
-            .build()
-
-        advertiseCallback = object : AdvertiseCallback() {
-            override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
-                Log.i(TAG, "BLE advertising started successfully")
-                runOnUiThread {
-                    nativeEventSink?.success(mapOf("type" to "ble_advertising", "state" to "started"))
-                }
-            }
-            override fun onStartFailure(errorCode: Int) {
-                Log.e(TAG, "BLE advertising failed with error code: $errorCode")
-            }
-        }
-
-        bleAdvertiser?.startAdvertising(settings, data, advertiseCallback)
-    }
-
-    private fun stopBleAdvertising() {
-        try {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADVERTISE)
-                == PackageManager.PERMISSION_GRANTED) {
-                advertiseCallback?.let { bleAdvertiser?.stopAdvertising(it) }
-            }
-        } catch (_: Exception) {}
-        gattServer?.close()
-        gattServer = null
-        bleAdvertiser = null
-        advertiseCallback = null
-        Log.d(TAG, "BLE advertising stopped")
-    }
-
-    // ── Foreground Service (Data Mule) ────────────────────────────────────────
+    // ── Foreground Service (Data Mule) ────────────────────────────────────
 
     private fun startDataMuleService(): Boolean {
         return try {
@@ -389,21 +255,16 @@ class MainActivity : FlutterActivity() {
         Log.i(TAG, "Data Mule service stopped")
     }
 
-    // ── PIN 驗證 (Requester 端在本地比對 Provider 的 pinHash) ──────────────
+    // ── PIN 驗證 ──────────────────────────────────────────────────────────
 
     private fun verifyHandoffPin(pin: String, resourceId: String): Boolean {
-        // 在真正的跨裝置情境中，Requester 連線到 Provider 的 GATT
-        // 讀取 handshake characteristic 取得 pinHash，然後本地比對
-        // 簡化版：直接比對（同裝置測試用）
         val hash = java.security.MessageDigest.getInstance("SHA-256")
             .digest(pin.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
         return hash == handoffPinHash && resourceId == handoffResourceId
     }
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
-
-    // ── 各大廠私有電源管理設定頁 ──────────────────────────────────────────────
+    // ── 各大廠私有電源管理設定頁 ──────────────────────────────────────────
 
     private fun openManufacturerPowerSettings(): Boolean {
         val manufacturer = Build.MANUFACTURER.lowercase()
@@ -472,7 +333,6 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // 嘗試開啟各廠商頁面，失敗則 fallback 到一般電池設定
         for (intent in intents) {
             try {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -481,7 +341,6 @@ class MainActivity : FlutterActivity() {
             } catch (_: Exception) {}
         }
 
-        // Fallback: 開啟 Android 電池優化設定
         return try {
             startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
             true
@@ -490,8 +349,11 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    // ── Lifecycle ─────────────────────────────────────────────────────────
+
     override fun onDestroy() {
-        stopBleAdvertising()
+        nordicManager?.destroy()
+        nordicManager = null
         super.onDestroy()
     }
 }

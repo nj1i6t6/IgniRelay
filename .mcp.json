@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "claude-bridge": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["C:\\Users\\radio\\.claude\\mcp-bridge\\server.js"]
+    }
+  }
+}

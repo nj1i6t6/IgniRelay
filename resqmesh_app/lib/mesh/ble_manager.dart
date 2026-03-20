@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'event_manager.dart';
@@ -9,9 +10,13 @@ import '../db/database_helper.dart';
 
 /// BLE Mesh 管理員（Central 角色）
 ///
-/// 負責掃描、連線、MTU 協商、交換 Bloom Filter 和同步 Event 資料。
-/// 接收端邏輯統一委託給 [MeshEventHandler]（去重、geo-routing、DB 寫入）。
-/// 發送端使用 [MeshEventHandler.encodeWirePayload] 編碼。
+/// 平台感知路由：
+/// - Android → Nordic BLE Library（透過 MethodChannel）
+///   解決跨廠牌（MediaTek / Qualcomm / Exynos）相容性問題
+/// - iOS → flutter_blue_plus（Core Bluetooth 本來就穩定）
+///
+/// 上層邏輯（Bloom Filter 比對、DB 查詢、TriageQueue 消費）保留在 Dart，
+/// 只有 BLE 原語（掃描、連線、讀寫）走平台專用路徑。
 class BleManager {
   static final BleManager _instance = BleManager._internal();
   factory BleManager() => _instance;
@@ -28,11 +33,13 @@ class BleManager {
   final Map<String, DateTime> _peerCooldown = {};
 
   // 待連線設備佇列（序列化處理，避免 Android BLE 並行 GATT 衝突）
-  final List<BluetoothDevice> _pendingDevices = [];
+  // Android: 存 String (deviceAddress), iOS: 存 BluetoothDevice
+  final List<dynamic> _pendingDevices = [];
   bool _isConnecting = false;
 
   StreamSubscription? _scanSubscription;
   StreamSubscription? _isScanningSubscription;
+  StreamSubscription? _nordicEventSub;
 
   final StreamController<BleEvent> _eventStreamController =
       StreamController<BleEvent>.broadcast();
@@ -43,7 +50,7 @@ class BleManager {
   int syncedEventCount = 0;
   int receivedEventCount = 0;
 
-  // ── Debug Log ──────────────────────────────────────────────────────────────
+  // ── Debug Log ──────────────────────────────────────────────────────────
   static const int _maxDebugLogs = 80;
   final List<String> debugLogs = [];
   int scanCycleCount = 0;
@@ -63,6 +70,252 @@ class BleManager {
   Future<void> startScanning() async {
     if (_isScanning) return;
 
+    if (Platform.isAndroid) {
+      await _startAndroidNordicScan();
+    } else {
+      await _startIosScan();
+    }
+  }
+
+  /// 停止掃描
+  Future<void> stopScanning() async {
+    _isActive = false;
+    _isScanning = false;
+    _dlog('SCAN STOPPED (manual)');
+
+    if (Platform.isAndroid) {
+      await NativeBridge.stopNordicScan();
+      await _nordicEventSub?.cancel();
+      _nordicEventSub = null;
+    } else {
+      await _scanSubscription?.cancel();
+      _scanSubscription = null;
+      await _isScanningSubscription?.cancel();
+      _isScanningSubscription = null;
+      await FlutterBluePlus.stopScan();
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ── Android: Nordic BLE Library via MethodChannel ────────────────────
+  // ══════════════════════════════════════════════════════════════════════
+
+  Future<void> _startAndroidNordicScan() async {
+    _isActive = true;
+    _isScanning = true;
+    scanCycleCount++;
+
+    _cleanupCooldowns();
+    _updateNativeBloomFilter();
+
+    _dlog('NORDIC SCAN #$scanCycleCount started (known=${_knownPeers.length}, cooldown=${_peerCooldown.length}, seen=${_eventHandler.seenEventsCount})');
+
+    // 監聽 Nordic EventChannel 事件
+    _nordicEventSub?.cancel();
+    _nordicEventSub = NativeBridge.nativeEventStream.listen((event) {
+      if (event is Map) {
+        final type = event['type'] as String?;
+        if (type == 'nordic_found') {
+          _handleNordicDeviceFound(event);
+        } else if (type == 'nordic_data') {
+          _handleNordicDataReceived(event);
+        }
+      }
+    });
+
+    // 啟動 Nordic 掃描
+    final success = await NativeBridge.startNordicScan();
+    if (!success) {
+      _dlog('Nordic scan failed to start');
+      _isScanning = false;
+      return;
+    }
+
+    // 定時重啟掃描循環（模擬 flutter_blue_plus 的 timeout + restart）
+    _scheduleNordicScanRestart();
+  }
+
+  void _scheduleNordicScanRestart() {
+    Future.delayed(Duration(seconds: kScanDurationSec), () async {
+      if (!_isActive) return;
+      await NativeBridge.stopNordicScan();
+      _isScanning = false;
+      _dlog('Nordic scan cycle done, restart in ${kScanRestartDelaySec}s');
+      Future.delayed(Duration(seconds: kScanRestartDelaySec), () {
+        if (_isActive) _startAndroidNordicScan();
+      });
+    });
+  }
+
+  void _handleNordicDeviceFound(Map event) {
+    final deviceId = event['device'] as String? ?? '';
+    final rssi = event['rssi'] as int? ?? 0;
+    if (deviceId.isEmpty) return;
+
+    uniquePeersEverSeen.add(deviceId);
+    if (!_knownPeers.contains(deviceId) && !_isInCooldown(deviceId)) {
+      _knownPeers.add(deviceId);
+      _pendingDevices.add(deviceId); // Android: 存 String
+      _dlog('FOUND $deviceId (RSSI=$rssi) → queued (pending=${_pendingDevices.length})');
+    }
+    _processQueue();
+  }
+
+  void _handleNordicDataReceived(Map event) {
+    final deviceId = event['device'] as String? ?? 'unknown';
+    final dataList = event['data'];
+    if (dataList is List && dataList.isNotEmpty) {
+      final data = Uint8List.fromList(List<int>.from(dataList));
+      _dlog('NOTIFY from $deviceId: ${data.length} bytes (Nordic)');
+      _eventHandler.handleIncomingData(data, deviceId);
+      receivedEventCount++;
+      _eventStreamController.add(BleEvent.received(deviceId, data.toList()));
+    }
+  }
+
+  /// Android: 使用 Nordic 連線並同步
+  Future<void> _nordicConnectAndSync(String deviceId) async {
+    try {
+      _dlog('NORDIC CONNECT $deviceId ...');
+      final connected = await NativeBridge.nordicConnect(deviceId);
+      if (!connected) {
+        _dlog('NORDIC CONNECT FAILED $deviceId');
+        _knownPeers.remove(deviceId);
+        return;
+      }
+      _dlog('NORDIC CONNECTED $deviceId ✓ (MTU + services auto-negotiated)');
+
+      // ── 1. 讀取對端 Bloom Filter ──
+      final remoteBloomBytes = await NativeBridge.nordicReadBloom(deviceId);
+      final remoteEventIds = remoteBloomBytes != null
+          ? MeshEventHandler.parseBloomFilter(remoteBloomBytes.toList())
+          : <String>{};
+      _dlog('BLOOM from $deviceId: ${remoteBloomBytes?.length ?? 0} bytes, ${remoteEventIds.length} event IDs');
+
+      // ── 2. 推送 TriageQueue 中的高優先級事件 ──
+      final queue = EventManager().queue;
+      final sentFromQueue = <String>{};
+
+      while (!queue.isEmpty) {
+        final task = queue.dequeue();
+        if (task == null) break;
+        if (remoteEventIds.contains(task.eventId)) continue;
+        if (_eventHandler.hasSeen(task.eventId)) continue;
+
+        try {
+          final wireData = MeshEventHandler.encodeWirePayload(
+            task.eventId,
+            task.payload,
+            urgency: task.urgency,
+          );
+          final success = await NativeBridge.nordicWriteEvent(
+            deviceId,
+            Uint8List.fromList(wireData),
+          );
+          if (success) {
+            _eventHandler.markSeen(task.eventId);
+            sentFromQueue.add(task.eventId);
+            syncedEventCount++;
+            _dlog('SENT(queue) ${task.eventId.substring(0, 8)}.. urg=${task.urgency} → $deviceId');
+          } else {
+            queue.enqueue(task);
+            break;
+          }
+        } catch (e) {
+          queue.enqueue(task);
+          debugPrint('[BLE] Nordic queue write error: $e');
+          break;
+        }
+      }
+
+      // ── 3. 從 DB 補充最近 24h 的事件 ──
+      final db = await DatabaseHelper().database;
+      final cutoff24h =
+          DateTime.now().millisecondsSinceEpoch - (24 * 3600 * 1000);
+      final myEvents = await db.query(
+        'Event_Logs',
+        columns: [
+          'event_id',
+          'payload',
+          'signature',
+          'urgency',
+          'event_type',
+          'sender_pub_key',
+          'hlc_timestamp',
+          'hlc_counter',
+          'received_lat',
+          'received_lng',
+          'origin_lat',
+          'origin_lng',
+        ],
+        where: 'hlc_timestamp > ?',
+        whereArgs: [cutoff24h],
+        orderBy: 'urgency DESC, hlc_timestamp DESC',
+        limit: 50,
+      );
+
+      _dlog('DB query: ${myEvents.length} events in last 24h');
+
+      for (final evt in myEvents) {
+        final evtId = evt['event_id'] as String;
+        if (remoteEventIds.contains(evtId)) continue;
+        if (_eventHandler.hasSeen(evtId)) continue;
+        if (sentFromQueue.contains(evtId)) continue;
+
+        final payload = evt['payload'] as Uint8List?;
+        if (payload != null) {
+          try {
+            final wireData = MeshEventHandler.encodeWirePayload(
+              evtId,
+              payload.toList(),
+              urgency: (evt['urgency'] as int?) ?? 0,
+              eventType: (evt['event_type'] as int?) ?? 0,
+              signature: (evt['signature'] as Uint8List?)?.toList(),
+              senderPubKey:
+                  (evt['sender_pub_key'] as Uint8List?)?.toList(),
+              hlcTimestamp: (evt['hlc_timestamp'] as int?) ?? 0,
+              hlcCounter: (evt['hlc_counter'] as int?) ?? 0,
+              lat: (evt['received_lat'] as num?)?.toDouble(),
+              lng: (evt['received_lng'] as num?)?.toDouble(),
+              originLat: (evt['origin_lat'] as num?)?.toDouble(),
+              originLng: (evt['origin_lng'] as num?)?.toDouble(),
+            );
+            final success = await NativeBridge.nordicWriteEvent(
+              deviceId,
+              Uint8List.fromList(wireData),
+            );
+            if (success) {
+              _eventHandler.markSeen(evtId);
+              syncedEventCount++;
+              _dlog('SENT(db) ${evtId.substring(0, 8)}.. urg=${evt['urgency']} → $deviceId');
+            } else {
+              break;
+            }
+          } catch (e) {
+            debugPrint('[BLE] Nordic write error: $e');
+            break;
+          }
+        }
+      }
+
+      // ── 4. 通知已由 Nordic 自動啟用，資料透過 EventChannel 接收 ──
+      _eventStreamController.add(BleEvent.connected(deviceId));
+      _peerCooldown[deviceId] = DateTime.now();
+      _dlog('DONE with $deviceId (sent=$syncedEventCount, recv=$receivedEventCount) → cooldown ${kPeerCooldownSec}s');
+
+      await Future.delayed(const Duration(seconds: 2));
+      await NativeBridge.nordicDisconnect(deviceId);
+    } catch (e) {
+      _dlog('ERROR $deviceId: $e');
+      _knownPeers.remove(deviceId);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ── iOS: flutter_blue_plus (Core Bluetooth) ─────────────────────────
+  // ══════════════════════════════════════════════════════════════════════
+
+  Future<void> _startIosScan() async {
     final state = await FlutterBluePlus.adapterState.first;
     if (state != BluetoothAdapterState.on) {
       _dlog('Bluetooth is OFF, cannot scan');
@@ -74,11 +327,9 @@ class BleManager {
     scanCycleCount++;
 
     _cleanupCooldowns();
-
-    // 推送最新 Bloom Filter 到 Native GATT Server
     _updateNativeBloomFilter();
 
-    _dlog('SCAN #$scanCycleCount started (known=${_knownPeers.length}, cooldown=${_peerCooldown.length}, seen=${_eventHandler.seenEventsCount})');
+    _dlog('IOS SCAN #$scanCycleCount started (known=${_knownPeers.length}, cooldown=${_peerCooldown.length}, seen=${_eventHandler.seenEventsCount})');
 
     await FlutterBluePlus.startScan(
       withServices: [Guid(kResQMeshServiceUUID)],
@@ -93,7 +344,7 @@ class BleManager {
         uniquePeersEverSeen.add(deviceId);
         if (!_knownPeers.contains(deviceId) && !_isInCooldown(deviceId)) {
           _knownPeers.add(deviceId);
-          _pendingDevices.add(r.device);
+          _pendingDevices.add(r.device); // iOS: 存 BluetoothDevice
           _dlog('FOUND $deviceId (RSSI=$rssi) → queued (pending=${_pendingDevices.length})');
         }
       }
@@ -112,58 +363,8 @@ class BleManager {
     });
   }
 
-  /// 停止掃描
-  Future<void> stopScanning() async {
-    _isActive = false;
-    _isScanning = false;
-    _dlog('SCAN STOPPED (manual)');
-    await _scanSubscription?.cancel();
-    _scanSubscription = null;
-    await _isScanningSubscription?.cancel();
-    _isScanningSubscription = null;
-    await FlutterBluePlus.stopScan();
-  }
-
-  /// 推送本機 Bloom Filter 到 Native GATT Server（供 Peripheral 端回應 Central 讀取）
-  Future<void> _updateNativeBloomFilter() async {
-    try {
-      final bloomBytes = await MeshEventHandler.buildLocalBloomFilter();
-      await NativeBridge.updateBloomFilter(bloomBytes);
-      _dlog('Bloom filter pushed to native: ${bloomBytes.length} bytes');
-    } catch (e) {
-      _dlog('Bloom filter push failed: $e');
-    }
-  }
-
-  bool _isInCooldown(String deviceId) {
-    final last = _peerCooldown[deviceId];
-    if (last == null) return false;
-    return DateTime.now().difference(last) <
-        Duration(seconds: kPeerCooldownSec);
-  }
-
-  void _cleanupCooldowns() {
-    _peerCooldown.removeWhere((_, time) =>
-        DateTime.now().difference(time) > Duration(seconds: kPeerCooldownSec));
-    _knownPeers.clear();
-  }
-
-  /// 序列化處理連線佇列（一台連完再連下一台）
-  Future<void> _processQueue() async {
-    if (_isConnecting) return;
-    _isConnecting = true;
-    try {
-      while (_pendingDevices.isNotEmpty && _isActive) {
-        final device = _pendingDevices.removeAt(0);
-        await _connectAndSync(device);
-      }
-    } finally {
-      _isConnecting = false;
-    }
-  }
-
-  /// 與發現的對等節點連線並執行 Epidemic Routing 同步
-  Future<void> _connectAndSync(BluetoothDevice device) async {
+  /// iOS: 使用 flutter_blue_plus 連線並同步
+  Future<void> _iosConnectAndSync(BluetoothDevice device) async {
     final deviceId = device.remoteId.str;
 
     try {
@@ -171,11 +372,11 @@ class BleManager {
       await device.connect(
         license: License.free,
         autoConnect: false,
-        timeout: Duration(seconds: kConnectTimeoutSec),
+        timeout: const Duration(seconds: kConnectTimeoutSec),
       );
       _dlog('CONNECTED $deviceId ✓');
 
-      // ── MTU 協商（參考 BitChat: 200ms 延遲後請求 517）──
+      // MTU 協商
       await Future.delayed(
           const Duration(milliseconds: kMtuRequestDelayMs));
       try {
@@ -203,7 +404,6 @@ class BleManager {
         return;
       }
 
-      // 找到特徵
       BluetoothCharacteristic? bloomChar;
       BluetoothCharacteristic? eventChar;
 
@@ -320,7 +520,6 @@ class BleManager {
           eventChar.lastValueStream.listen((data) {
             if (data.isNotEmpty) {
               _dlog('NOTIFY from $deviceId: ${data.length} bytes');
-              // 委託給 MeshEventHandler 統一處理（去重、geo-routing、DB 寫入）
               _eventHandler.handleIncomingData(
                 Uint8List.fromList(data),
                 deviceId,
@@ -347,6 +546,52 @@ class BleManager {
     } catch (e) {
       _dlog('ERROR $deviceId: $e');
       _knownPeers.remove(deviceId);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ── 共用邏輯 ─────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// 推送本機 Bloom Filter 到 Native GATT Server
+  Future<void> _updateNativeBloomFilter() async {
+    try {
+      final bloomBytes = await MeshEventHandler.buildLocalBloomFilter();
+      await NativeBridge.updateBloomFilter(bloomBytes);
+      _dlog('Bloom filter pushed to native: ${bloomBytes.length} bytes');
+    } catch (e) {
+      _dlog('Bloom filter push failed: $e');
+    }
+  }
+
+  bool _isInCooldown(String deviceId) {
+    final last = _peerCooldown[deviceId];
+    if (last == null) return false;
+    return DateTime.now().difference(last) <
+        Duration(seconds: kPeerCooldownSec);
+  }
+
+  void _cleanupCooldowns() {
+    _peerCooldown.removeWhere((_, time) =>
+        DateTime.now().difference(time) > Duration(seconds: kPeerCooldownSec));
+    _knownPeers.clear();
+  }
+
+  /// 序列化處理連線佇列（一台連完再連下一台）
+  Future<void> _processQueue() async {
+    if (_isConnecting) return;
+    _isConnecting = true;
+    try {
+      while (_pendingDevices.isNotEmpty && _isActive) {
+        final device = _pendingDevices.removeAt(0);
+        if (Platform.isAndroid) {
+          await _nordicConnectAndSync(device as String);
+        } else {
+          await _iosConnectAndSync(device as BluetoothDevice);
+        }
+      }
+    } finally {
+      _isConnecting = false;
     }
   }
 

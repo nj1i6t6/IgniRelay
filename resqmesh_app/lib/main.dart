@@ -20,30 +20,11 @@ import 'mesh/transport_factory.dart';
 import 'mesh/native_bridge.dart';
 import 'services/location_service.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  try {
-    // 1. 初始化 SQLite
-    await DatabaseHelper().database;
-
-    // 2. 初始化 Identity（含金鑰持久化、HLC nodeId 設定）
-    await IdentityManager().initialize();
-
-    // 3. 初始化村里地理圍欄資料庫（複製 assets → 裝置本機）
-    await VillageGeofence.init();
-
-    // 4. 初始化 GPS 定位（供 Zone-Based 路由判斷使用）
-    LocationService().init(); // 不 await，GPS 冷啟動耗時，背景進行
-  } catch (e) {
-    debugPrint('[Main] Critical init error: $e');
-    // 即使初始化失敗也讓 app 能啟動，不要黑屏
-  }
-
-  // 建立 MeshTransport 實例
-  final transport = TransportFactory.create();
-
-  runApp(ResQMeshApp(transport: transport));
+  // 直接 runApp，所有 init 在 _StartupRouter._init() 背景執行
+  // 讓 Flutter 第一幀立即渲染 loading 畫面，不黑屏
+  runApp(ResQMeshApp(transport: TransportFactory.create()));
 }
 
 class ResQMeshApp extends StatelessWidget {
@@ -98,34 +79,40 @@ class _StartupRouterState extends State<_StartupRouter> {
 
   Future<void> _init() async {
     try {
-      // 請求必要權限
-      final allGranted = await _requestPermissions();
+      // 背景初始化（UI 已顯示 loading 畫面）
+      await DatabaseHelper().database;
+      await IdentityManager().initialize();
+      await VillageGeofence.init();
+      LocationService().init(); // 不 await，GPS 冷啟動耗時
 
       // 檢查是否需要 onboarding
       final prefs = await SharedPreferences.getInstance();
       final done = prefs.getBool('onboarding_done') ?? false;
 
-      // 權限通過後自動啟動 Mesh Transport
-      if (allGranted) {
-        // 不 await，讓 mesh 在背景啟動，避免阻塞 UI
-        _transport.initialize().then((_) => _transport.start()).catchError((e) {
-          debugPrint('[Init] Mesh transport start failed: $e');
-        });
-
-        // Android: 自動掛載前景服務，防止系統殺掉後台
-        if (Platform.isAndroid) {
-          try {
-            await NativeBridge.startMeshForegroundService();
-          } catch (e) {
-            debugPrint('[Init] Foreground service failed: $e');
-          }
-        }
-      }
-
+      // ★ 先讓 UI 顯示，不等權限 ★
+      // 真機上 permissions.request() 彈系統對話框時可能重建 Activity，
+      // 導致 mounted=false，setState 永遠不執行 → 轉圈卡死。
+      // 所以先 setState 讓畫面出來，權限對話框疊在上面。
       if (mounted) {
         setState(() {
           _showOnboarding = !done;
           _initialized = true;
+        });
+      }
+
+      // 權限在 UI 已顯示後才請求（對話框會疊在 onboarding/主畫面上）
+      await _requestPermissions();
+
+      // 嘗試啟動 Mesh Transport
+      _transport.initialize().then((_) => _transport.start()).catchError((e) {
+        debugPrint('[Init] Mesh transport start failed: $e');
+      });
+
+      // Android: 自動掛載前景服務
+      if (Platform.isAndroid) {
+        NativeBridge.startMeshForegroundService().catchError((e) {
+          debugPrint('[Init] Foreground service failed: $e');
+          return false;
         });
       }
     } catch (e) {
@@ -151,7 +138,6 @@ class _StartupRouterState extends State<_StartupRouter> {
     // Android 13+ 需要通知權限才能顯示前景服務通知
     if (Platform.isAndroid) {
       permissions.add(Permission.notification);
-      permissions.add(Permission.nearbyWifiDevices);
     }
 
     final statuses = await permissions.request();

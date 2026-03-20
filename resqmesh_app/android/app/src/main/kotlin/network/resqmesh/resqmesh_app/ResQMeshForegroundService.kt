@@ -14,7 +14,12 @@ import androidx.core.content.ContextCompat
 
 /**
  * ResQMesh 後台 Foreground Service
- * 保持 BLE 廣播（Peripheral 角色）在螢幕關閉後持續運作（Data Mule 模式）。
+ *
+ * Bug 2 Fix: 這是唯一的 GATT Server 來源。
+ * MainActivity 不再開 GATT Server，避免 Android 只允許一個 GATT Server 的衝突。
+ *
+ * Bug 3 Fix: onCharacteristicWriteRequest 收到資料後，
+ * 透過 MainActivity.sharedEventSink 轉發到 Flutter EventChannel。
  */
 class ResQMeshForegroundService : Service() {
 
@@ -32,6 +37,7 @@ class ResQMeshForegroundService : Service() {
     private var bleAdvertiser: BluetoothLeAdvertiser? = null
     private var gattServer: BluetoothGattServer? = null
     private var advertiseCallback: AdvertiseCallback? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate() {
         super.onCreate()
@@ -61,7 +67,7 @@ class ResQMeshForegroundService : Service() {
         super.onDestroy()
     }
 
-    // ── Notification ──────────────────────────────────────────────────────────
+    // ── Notification ──────────────────────────────────────────────────────
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -99,7 +105,7 @@ class ResQMeshForegroundService : Service() {
             .build()
     }
 
-    // ── BLE Peripheral ────────────────────────────────────────────────────────
+    // ── BLE Peripheral (GATT Server + Advertising) ───────────────────────
 
     private fun startBlePeripheral() {
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT)
@@ -115,11 +121,21 @@ class ResQMeshForegroundService : Service() {
             return
         }
 
-        // Open GATT server
+        // ── GATT Server（唯一實例，Bug 2 Fix）──
         gattServer = btManager.openGattServer(this, object : BluetoothGattServerCallback() {
             override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
-                Log.d(TAG, "GATT: ${device.address} -> state $newState")
+                val stateStr = if (newState == BluetoothProfile.STATE_CONNECTED) "connected" else "disconnected"
+                Log.d(TAG, "GATT: ${device.address} -> $stateStr")
+                // Bug 3 Fix: 轉發連線事件到 Flutter
+                mainHandler.post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "ble_peer",
+                        "state" to stateStr,
+                        "device" to device.address
+                    ))
+                }
             }
+
             override fun onCharacteristicWriteRequest(
                 device: BluetoothDevice, requestId: Int,
                 characteristic: BluetoothGattCharacteristic,
@@ -129,9 +145,19 @@ class ResQMeshForegroundService : Service() {
                 if (responseNeeded) {
                     gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
                 }
+
                 Log.d(TAG, "Received ${value.size} bytes from ${device.address}")
-                // TODO: Forward to Flutter via EventChannel when needed
+
+                // Bug 3 Fix: 轉發收到的資料到 Flutter（取代原本的 TODO）
+                mainHandler.post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "ble_data",
+                        "device" to device.address,
+                        "data" to value.toList()
+                    ))
+                }
             }
+
             override fun onCharacteristicReadRequest(
                 device: BluetoothDevice, requestId: Int,
                 offset: Int, characteristic: BluetoothGattCharacteristic
@@ -145,6 +171,7 @@ class ResQMeshForegroundService : Service() {
                 }
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, responseBytes)
             }
+
             override fun onDescriptorWriteRequest(
                 device: BluetoothDevice, requestId: Int,
                 descriptor: BluetoothGattDescriptor,
@@ -157,8 +184,10 @@ class ResQMeshForegroundService : Service() {
             }
         })
 
-        // Build and add service
+        // ── Build ResQMesh GATT Service ──
         val service = BluetoothGattService(ResQMeshConstants.SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+
+        // Event characteristic (read/write/notify)
         val eventChar = BluetoothGattCharacteristic(
             ResQMeshConstants.EVENT_CHAR_UUID,
             BluetoothGattCharacteristic.PROPERTY_READ or
@@ -171,14 +200,25 @@ class ResQMeshForegroundService : Service() {
             BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
         ))
         service.addCharacteristic(eventChar)
+
+        // Bloom filter characteristic (read-only)
         service.addCharacteristic(BluetoothGattCharacteristic(
             ResQMeshConstants.BLOOM_CHAR_UUID,
             BluetoothGattCharacteristic.PROPERTY_READ,
             BluetoothGattCharacteristic.PERMISSION_READ
         ))
-        gattServer?.addService(service)
 
-        // Start advertising
+        // Handshake characteristic (read/write)
+        service.addCharacteristic(BluetoothGattCharacteristic(
+            ResQMeshConstants.HANDSHAKE_CHAR_UUID,
+            BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_WRITE,
+            BluetoothGattCharacteristic.PERMISSION_READ or BluetoothGattCharacteristic.PERMISSION_WRITE
+        ))
+
+        gattServer?.addService(service)
+        Log.d(TAG, "GATT server started (single instance)")
+
+        // ── Start Advertising ──
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_ADVERTISE)
             != PackageManager.PERMISSION_GRANTED) {
             Log.w(TAG, "BLUETOOTH_ADVERTISE not granted")
@@ -201,6 +241,12 @@ class ResQMeshForegroundService : Service() {
         advertiseCallback = object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
                 Log.i(TAG, "BLE advertising started in foreground service")
+                mainHandler.post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "ble_advertising",
+                        "state" to "started"
+                    ))
+                }
             }
             override fun onStartFailure(errorCode: Int) {
                 Log.e(TAG, "BLE advertising failed: $errorCode")
@@ -222,5 +268,4 @@ class ResQMeshForegroundService : Service() {
         bleAdvertiser = null
         advertiseCallback = null
     }
-
 }

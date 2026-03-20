@@ -35,7 +35,7 @@
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
     <application
-        android:label="烽傳 IgniRelay"
+        android:label="烽傳"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
@@ -65,11 +65,12 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
-        <!-- Bridgefy SDK Background Service -->
+        <!-- Bridgefy SDK Background Service（暫時停用，啟用後取消註解）
         <service
             android:name="me.bridgefy.main.BridgefyService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice|dataSync" />
+        -->
 
         <!-- Disable Impeller: vector_map_tiles / vector_tile_renderer
              rely on Skia Canvas operations that Impeller does not fully support,
