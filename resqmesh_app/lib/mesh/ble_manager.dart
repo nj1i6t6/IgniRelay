@@ -213,12 +213,19 @@ class BleManager {
       _dlog('NORDIC CONNECTED $deviceId ✓ (MTU + services auto-negotiated)');
 
       // ── 1. 讀取對端 Bloom Filter ──
+      // Bug 6 Fix: OPPO/ColorOS GATT Server 不回應 read requests（已知 BLE stack 問題）。
+      // Nordic 端已加 5s timeout，讀取失敗時進入 blind relay 模式（發送全部事件）。
+      // 接收端已有 SKIP(seen) 去重機制，不會重複處理。
       final remoteBloomBytes = await NativeBridge.nordicReadBloom(deviceId);
       if (_isCancelled(deviceId)) { _dlog('CANCELLED(bloom) $deviceId'); return; }
       final remoteEventIds = remoteBloomBytes != null
           ? MeshEventHandler.parseBloomFilter(remoteBloomBytes.toList())
           : <String>{};
-      _dlog('BLOOM from $deviceId: ${remoteBloomBytes?.length ?? 0} bytes, ${remoteEventIds.length} event IDs');
+      if (remoteBloomBytes == null || remoteBloomBytes.isEmpty) {
+        _dlog('BLOOM_SKIP $deviceId — read failed/timeout, blind relay mode (sending all events)');
+      } else {
+        _dlog('BLOOM from $deviceId: ${remoteBloomBytes.length} bytes, ${remoteEventIds.length} event IDs');
+      }
 
       // ── 2. 推送 TriageQueue 中的高優先級事件 ──
       final queue = EventManager().queue;
