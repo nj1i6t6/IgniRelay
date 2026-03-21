@@ -305,6 +305,15 @@ class ResQMeshBleClient(context: Context) : BleManager(context) {
     fun readBloom(callback: (ByteArray?) -> Unit) {
         val char = bloomChar
         if (char == null) {
+            Log.e(TAG, "readBloom: bloomChar is NULL (service discovery failed?)")
+            Handler(Looper.getMainLooper()).post {
+                MainActivity.sharedEventSink?.success(mapOf(
+                    "type" to "gatt_op_fail",
+                    "op" to "read_bloom",
+                    "status" to -1,
+                    "reason" to "bloomChar_null"
+                ))
+            }
             callback(null)
             return
         }
@@ -314,6 +323,13 @@ class ResQMeshBleClient(context: Context) : BleManager(context) {
             })
             .fail { _, status ->
                 Log.e(TAG, "readBloom failed: status=$status")
+                Handler(Looper.getMainLooper()).post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "gatt_op_fail",
+                        "op" to "read_bloom",
+                        "status" to status
+                    ))
+                }
                 callback(null)
             }
             .enqueue()
@@ -322,6 +338,15 @@ class ResQMeshBleClient(context: Context) : BleManager(context) {
     fun writeEvent(data: ByteArray, callback: (Boolean) -> Unit) {
         val char = eventChar
         if (char == null) {
+            Log.e(TAG, "writeEvent: eventChar is NULL (service discovery failed?)")
+            Handler(Looper.getMainLooper()).post {
+                MainActivity.sharedEventSink?.success(mapOf(
+                    "type" to "gatt_op_fail",
+                    "op" to "write",
+                    "status" to -1,
+                    "reason" to "eventChar_null"
+                ))
+            }
             callback(false)
             return
         }
@@ -331,6 +356,13 @@ class ResQMeshBleClient(context: Context) : BleManager(context) {
             }
             .fail { _, status ->
                 Log.e(TAG, "writeEvent failed: status=$status")
+                Handler(Looper.getMainLooper()).post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "gatt_op_fail",
+                        "op" to "write",
+                        "status" to status
+                    ))
+                }
                 callback(false)
             }
             .enqueue()

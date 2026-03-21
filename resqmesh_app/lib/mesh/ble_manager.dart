@@ -119,6 +119,22 @@ class BleManager {
           _handleNordicDeviceFound(event);
         } else if (type == 'nordic_data') {
           _handleNordicDataReceived(event);
+        } else if (type == 'gatt_op_fail') {
+          final op = event['op'] ?? '';
+          final status = event['status'] ?? -1;
+          final reason = event['reason'] ?? '';
+          _dlog('GATT_FAIL($op) status=$status${reason.toString().isNotEmpty ? " reason=$reason" : ""}');
+        } else if (type == 'gatt_service_added') {
+          final success = event['success'] ?? false;
+          final status = event['status'] ?? -1;
+          _dlog('GATT_SVC_ADD ${success == true ? "OK" : "FAIL"} status=$status');
+        } else if (type == 'gatt_server_error') {
+          final error = event['error'] ?? '';
+          _dlog('GATT_SERVER_ERR: $error');
+        } else if (type == 'gatt_mtu') {
+          final device = event['device'] ?? '';
+          final mtu = event['mtu'] ?? 0;
+          _dlog('GATT_MTU $device → $mtu');
         }
       }
     });
@@ -255,13 +271,18 @@ class BleManager {
 
       _dlog('DB query: ${myEvents.length} events in last 24h');
 
+      int dbBloomSkipped = 0;
+      int dbAttempted = 0;
+      int dbSent = 0;
+
       for (final evt in myEvents) {
         final evtId = evt['event_id'] as String;
-        if (remoteEventIds.contains(evtId)) continue;
+        if (remoteEventIds.contains(evtId)) { dbBloomSkipped++; continue; }
         if (sentFromQueue.contains(evtId)) continue;
 
         final payload = evt['payload'] as Uint8List?;
         if (payload != null) {
+          dbAttempted++;
           try {
             final wireData = MeshEventHandler.encodeWirePayload(
               evtId,
@@ -283,17 +304,21 @@ class BleManager {
               Uint8List.fromList(wireData),
             );
             if (success) {
+              dbSent++;
               syncedEventCount++;
               _dlog('SENT(db) ${evtId.substring(0, 8)}.. urg=${evt['urgency']} → $deviceId');
             } else {
+              _dlog('WRITE_FAIL(db) ${evtId.substring(0, 8)}.. urg=${evt['urgency']} → $deviceId (wireLen=${wireData.length}B)');
               break;
             }
           } catch (e) {
-            debugPrint('[BLE] Nordic write error: $e');
+            _dlog('WRITE_ERR(db) ${evtId.substring(0, 8)}.. → $deviceId: $e');
             break;
           }
         }
       }
+
+      _dlog('RELAY_STATS → $deviceId: bloom_skip=$dbBloomSkipped attempted=$dbAttempted sent=$dbSent');
 
       // ── 4. 通知已由 Nordic 自動啟用，資料透過 EventChannel 接收 ──
       _eventStreamController.add(BleEvent.connected(deviceId));
@@ -475,14 +500,20 @@ class BleManager {
 
         _dlog('DB query: ${myEvents.length} events in last 24h');
 
+        int iosBloomSkipped = 0;
+        int iosAttempted = 0;
+        int iosSent = 0;
+
         for (final evt in myEvents) {
           final evtId = evt['event_id'] as String;
-          if (remoteEventIds.contains(evtId)) continue;
-          if (_eventHandler.hasSeen(evtId)) continue;
+          if (remoteEventIds.contains(evtId)) { iosBloomSkipped++; continue; }
+          // Fix B: 移除 hasSeen 過濾 — hasSeen 只應阻止「重複接收」，
+          // 不應阻止「繼電已收到的封包給其他 peer」
           if (sentFromQueue.contains(evtId)) continue;
 
           final payload = evt['payload'] as Uint8List?;
           if (payload != null) {
+            iosAttempted++;
             try {
               final wireData = MeshEventHandler.encodeWirePayload(
                 evtId,
@@ -500,15 +531,17 @@ class BleManager {
                 originLng: (evt['origin_lng'] as num?)?.toDouble(),
               );
               await eventChar.write(wireData, withoutResponse: false);
-              _eventHandler.markSeen(evtId);
+              iosSent++;
               syncedEventCount++;
               _dlog('SENT(db) ${evtId.substring(0, 8)}.. urg=${evt['urgency']} → $deviceId');
             } catch (e) {
-              debugPrint('[BLE] Write error: $e');
+              _dlog('WRITE_ERR(db) ${evtId.substring(0, 8)}.. → $deviceId: $e');
               break;
             }
           }
         }
+
+        _dlog('RELAY_STATS → $deviceId: bloom_skip=$iosBloomSkipped attempted=$iosAttempted sent=$iosSent');
 
         // 4. 訂閱接收對端推送過來的事件
         if (eventChar.properties.notify) {
@@ -584,9 +617,11 @@ class BleManager {
         try {
           if (Platform.isAndroid) {
             await _nordicConnectAndSync(device as String)
-                .timeout(const Duration(seconds: 30), onTimeout: () {
+                .timeout(const Duration(seconds: 30), onTimeout: () async {
               _dlog('TIMEOUT connecting to $device');
               _knownPeers.remove(device);
+              // 斷開連線以終止 orphaned sync，避免與下個裝置的 sync 並行
+              try { await NativeBridge.nordicDisconnect(device); } catch (_) {}
             });
           } else {
             await _iosConnectAndSync(device as BluetoothDevice)

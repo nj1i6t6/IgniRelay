@@ -38,6 +38,7 @@ class ResQMeshForegroundService : Service() {
     private var gattServer: BluetoothGattServer? = null
     private var advertiseCallback: AdvertiseCallback? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var serviceAddRetryCount = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -107,6 +108,48 @@ class ResQMeshForegroundService : Service() {
 
     // ── BLE Peripheral (GATT Server + Advertising) ───────────────────────
 
+    /** 建構 ResQMesh GATT Service（提取為獨立函式供重試使用） */
+    private fun buildResQMeshService(): BluetoothGattService {
+        val service = BluetoothGattService(
+            ResQMeshConstants.SERVICE_UUID,
+            BluetoothGattService.SERVICE_TYPE_PRIMARY
+        )
+
+        // Event characteristic (read/write/notify)
+        val eventChar = BluetoothGattCharacteristic(
+            ResQMeshConstants.EVENT_CHAR_UUID,
+            BluetoothGattCharacteristic.PROPERTY_READ or
+                BluetoothGattCharacteristic.PROPERTY_WRITE or
+                BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+            BluetoothGattCharacteristic.PERMISSION_READ or
+                BluetoothGattCharacteristic.PERMISSION_WRITE
+        )
+        eventChar.addDescriptor(BluetoothGattDescriptor(
+            ResQMeshConstants.CCCD_UUID,
+            BluetoothGattDescriptor.PERMISSION_READ or
+                BluetoothGattDescriptor.PERMISSION_WRITE
+        ))
+        service.addCharacteristic(eventChar)
+
+        // Bloom filter characteristic (read-only)
+        service.addCharacteristic(BluetoothGattCharacteristic(
+            ResQMeshConstants.BLOOM_CHAR_UUID,
+            BluetoothGattCharacteristic.PROPERTY_READ,
+            BluetoothGattCharacteristic.PERMISSION_READ
+        ))
+
+        // Handshake characteristic (read/write)
+        service.addCharacteristic(BluetoothGattCharacteristic(
+            ResQMeshConstants.HANDSHAKE_CHAR_UUID,
+            BluetoothGattCharacteristic.PROPERTY_READ or
+                BluetoothGattCharacteristic.PROPERTY_WRITE,
+            BluetoothGattCharacteristic.PERMISSION_READ or
+                BluetoothGattCharacteristic.PERMISSION_WRITE
+        ))
+
+        return service
+    }
+
     private fun startBlePeripheral() {
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT)
             != PackageManager.PERMISSION_GRANTED) {
@@ -125,8 +168,7 @@ class ResQMeshForegroundService : Service() {
         gattServer = btManager.openGattServer(this, object : BluetoothGattServerCallback() {
             override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
                 val stateStr = if (newState == BluetoothProfile.STATE_CONNECTED) "connected" else "disconnected"
-                Log.d(TAG, "GATT: ${device.address} -> $stateStr")
-                // Bug 3 Fix: 轉發連線事件到 Flutter
+                Log.d(TAG, "GATT: ${device.address} -> $stateStr (status=$status)")
                 mainHandler.post {
                     MainActivity.sharedEventSink?.success(mapOf(
                         "type" to "ble_peer",
@@ -142,19 +184,23 @@ class ResQMeshForegroundService : Service() {
                 preparedWrite: Boolean, responseNeeded: Boolean,
                 offset: Int, value: ByteArray
             ) {
+                Log.d(TAG, "onWriteReq: dev=${device.address} prep=$preparedWrite resp=$responseNeeded off=$offset len=${value.size}")
+
+                // Fix: 回應要回傳 offset 和 value，確保 Prepared Write 驗證通過
                 if (responseNeeded) {
-                    gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
+                    gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
                 }
 
-                Log.d(TAG, "Received ${value.size} bytes from ${device.address}")
-
-                // Bug 3 Fix: 轉發收到的資料到 Flutter（取代原本的 TODO）
-                mainHandler.post {
-                    MainActivity.sharedEventSink?.success(mapOf(
-                        "type" to "ble_data",
-                        "device" to device.address,
-                        "data" to value.toList()
-                    ))
+                // 只處理非 Prepared Write 的完整寫入（Prepared Write 的資料在 onExecuteWrite 後才完整）
+                if (!preparedWrite) {
+                    Log.d(TAG, "Received ${value.size} bytes from ${device.address}")
+                    mainHandler.post {
+                        MainActivity.sharedEventSink?.success(mapOf(
+                            "type" to "ble_data",
+                            "device" to device.address,
+                            "data" to value.toList()
+                        ))
+                    }
                 }
             }
 
@@ -162,9 +208,11 @@ class ResQMeshForegroundService : Service() {
                 device: BluetoothDevice, requestId: Int,
                 offset: Int, characteristic: BluetoothGattCharacteristic
             ) {
+                Log.d(TAG, "onReadReq: dev=${device.address} char=${characteristic.uuid} off=$offset")
                 val responseBytes = when (characteristic.uuid) {
                     ResQMeshConstants.BLOOM_CHAR_UUID -> {
                         val bloom = sharedBloomBytes
+                        Log.d(TAG, "Bloom read: bloomLen=${bloom.size} offset=$offset")
                         if (offset < bloom.size) bloom.copyOfRange(offset, bloom.size) else ByteArray(0)
                     }
                     else -> ByteArray(0)
@@ -178,45 +226,82 @@ class ResQMeshForegroundService : Service() {
                 preparedWrite: Boolean, responseNeeded: Boolean,
                 offset: Int, value: ByteArray
             ) {
+                Log.d(TAG, "onDescWriteReq: dev=${device.address} desc=${descriptor.uuid}")
                 if (responseNeeded) {
                     gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
                 }
             }
+
+            // Fix: 處理 Long Write (Prepared Write) 的 Execute 階段
+            override fun onExecuteWrite(device: BluetoothDevice, requestId: Int, execute: Boolean) {
+                Log.d(TAG, "onExecuteWrite: dev=${device.address} execute=$execute")
+                gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
+            }
+
+            // 診斷: addService 結果回報
+            override fun onServiceAdded(status: Int, service: BluetoothGattService?) {
+                val ok = status == BluetoothGatt.GATT_SUCCESS
+                Log.i(TAG, "onServiceAdded: status=$status ok=$ok uuid=${service?.uuid}")
+                mainHandler.post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "gatt_service_added",
+                        "status" to status,
+                        "success" to ok
+                    ))
+                }
+                if (!ok && serviceAddRetryCount < 3) {
+                    serviceAddRetryCount++
+                    Log.w(TAG, "addService FAILED, retrying (attempt $serviceAddRetryCount)...")
+                    mainHandler.postDelayed({
+                        try {
+                            gattServer?.clearServices()
+                            gattServer?.addService(buildResQMeshService())
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Retry addService error: ${e.message}")
+                        }
+                    }, 500L * serviceAddRetryCount)
+                }
+            }
+
+            // 診斷: MTU 協商結果
+            override fun onMtuChanged(device: BluetoothDevice?, mtu: Int) {
+                Log.d(TAG, "MTU changed: dev=${device?.address} mtu=$mtu")
+                mainHandler.post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "gatt_mtu",
+                        "device" to (device?.address ?: ""),
+                        "mtu" to mtu
+                    ))
+                }
+            }
         })
 
-        // ── Build ResQMesh GATT Service ──
-        val service = BluetoothGattService(ResQMeshConstants.SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+        // ── 檢查 openGattServer 結果 ──
+        if (gattServer == null) {
+            Log.e(TAG, "openGattServer returned NULL!")
+            mainHandler.post {
+                MainActivity.sharedEventSink?.success(mapOf(
+                    "type" to "gatt_server_error",
+                    "error" to "openGattServer_null"
+                ))
+            }
+            return
+        }
 
-        // Event characteristic (read/write/notify)
-        val eventChar = BluetoothGattCharacteristic(
-            ResQMeshConstants.EVENT_CHAR_UUID,
-            BluetoothGattCharacteristic.PROPERTY_READ or
-                BluetoothGattCharacteristic.PROPERTY_WRITE or
-                BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-            BluetoothGattCharacteristic.PERMISSION_READ or BluetoothGattCharacteristic.PERMISSION_WRITE
-        )
-        eventChar.addDescriptor(BluetoothGattDescriptor(
-            ResQMeshConstants.CCCD_UUID,
-            BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
-        ))
-        service.addCharacteristic(eventChar)
-
-        // Bloom filter characteristic (read-only)
-        service.addCharacteristic(BluetoothGattCharacteristic(
-            ResQMeshConstants.BLOOM_CHAR_UUID,
-            BluetoothGattCharacteristic.PROPERTY_READ,
-            BluetoothGattCharacteristic.PERMISSION_READ
-        ))
-
-        // Handshake characteristic (read/write)
-        service.addCharacteristic(BluetoothGattCharacteristic(
-            ResQMeshConstants.HANDSHAKE_CHAR_UUID,
-            BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_WRITE,
-            BluetoothGattCharacteristic.PERMISSION_READ or BluetoothGattCharacteristic.PERMISSION_WRITE
-        ))
-
-        gattServer?.addService(service)
-        Log.d(TAG, "GATT server started (single instance)")
+        // ── Build & Register ResQMesh GATT Service ──
+        serviceAddRetryCount = 0
+        val service = buildResQMeshService()
+        val addResult = gattServer?.addService(service)
+        Log.d(TAG, "addService initiated: result=$addResult")
+        if (addResult != true) {
+            Log.e(TAG, "addService returned false!")
+            mainHandler.post {
+                MainActivity.sharedEventSink?.success(mapOf(
+                    "type" to "gatt_server_error",
+                    "error" to "addService_false"
+                ))
+            }
+        }
 
         // ── Start Advertising ──
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_ADVERTISE)

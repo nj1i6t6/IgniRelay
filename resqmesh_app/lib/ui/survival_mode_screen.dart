@@ -220,6 +220,17 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       buf.writeln('Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
       buf.writeln('');
 
+      // 裝置資訊（方便跨設備比對日誌）
+      String manufacturer = 'unknown';
+      try {
+        manufacturer = await NativeBridge.getManufacturer();
+      } catch (_) {}
+
+      buf.writeln('--- Device Info ---');
+      buf.writeln('manufacturer: $manufacturer');
+      buf.writeln('platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
+      buf.writeln('');
+
       buf.writeln('--- Transport State ---');
       buf.writeln('active: ${_transport.isActive}');
       buf.writeln('connectedPeers: ${s.connectedPeers}');
