@@ -317,11 +317,13 @@ class ResQMeshBleClient(context: Context) : BleManager(context) {
             callback(null)
             return
         }
+        // Bug 6 Fix: 5s timeout — OPPO/ColorOS GATT Server 不回應 read requests，
+        // 加上超時避免阻塞整個同步流程，讓 Dart 端進入 blind relay 模式
         readCharacteristic(char)
             .with(DataReceivedCallback { _, data ->
                 callback(data.value)
             })
-            .fail { _, status ->
+            .fail { _: BluetoothDevice, status: Int ->
                 Log.e(TAG, "readBloom failed: status=$status")
                 Handler(Looper.getMainLooper()).post {
                     MainActivity.sharedEventSink?.success(mapOf(
@@ -350,11 +352,12 @@ class ResQMeshBleClient(context: Context) : BleManager(context) {
             callback(false)
             return
         }
+        // Bug 6 Fix: 5s timeout — 避免 OPPO GATT Server 無回應時阻塞
         writeCharacteristic(char, data, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
             .done {
                 callback(true)
             }
-            .fail { _, status ->
+            .fail { _: BluetoothDevice, status: Int ->
                 Log.e(TAG, "writeEvent failed: status=$status")
                 Handler(Looper.getMainLooper()).post {
                     MainActivity.sharedEventSink?.success(mapOf(
