@@ -236,6 +236,17 @@ class NativeBridge {
     }
   }
 
+  /// 查詢 GATT Server 狀態（持久狀態，不依賴 log buffer）
+  static Future<Map<String, dynamic>> getGattServerStatus() async {
+    try {
+      final result = await _channel.invokeMethod('getGattServerStatus');
+      if (result is Map) return Map<String, dynamic>.from(result);
+      return {'ready': false, 'status': -999};
+    } on PlatformException {
+      return {'ready': false, 'status': -999};
+    }
+  }
+
   /// 取得裝置製造商名稱
   static Future<String> getManufacturer() async {
     try {

@@ -225,6 +225,12 @@ class MainActivity : FlutterActivity() {
                         }
                         result.success(true)
                     }
+                    "getGattServerStatus" -> {
+                        result.success(mapOf(
+                            "ready" to ResQMeshForegroundService.gattServiceReady,
+                            "status" to ResQMeshForegroundService.gattServiceStatus
+                        ))
+                    }
                     else -> result.notImplemented()
                 }
             }

@@ -32,6 +32,15 @@ class ResQMeshForegroundService : Service() {
         @Volatile
         @JvmStatic
         var sharedBloomBytes: ByteArray = ByteArray(0)
+
+        // 持久 GATT Server 狀態（供 Dart 查詢，不依賴 log buffer）
+        @Volatile
+        @JvmStatic
+        var gattServiceReady: Boolean = false
+
+        @Volatile
+        @JvmStatic
+        var gattServiceStatus: Int = -999  // 尚未回報
     }
 
     private var bleAdvertiser: BluetoothLeAdvertiser? = null
@@ -39,6 +48,7 @@ class ResQMeshForegroundService : Service() {
     private var advertiseCallback: AdvertiseCallback? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var serviceAddRetryCount = 0
+    private var isAdvertising = false
 
     override fun onCreate() {
         super.onCreate()
@@ -238,9 +248,12 @@ class ResQMeshForegroundService : Service() {
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
             }
 
-            // 診斷: addService 結果回報
+            // Bug 4 Fix: addService 是非同步的，必須等 onServiceAdded 成功後才能開始廣播
+            // 否則 Central 連進來時 service 尚未註冊，characteristics 全是 null
             override fun onServiceAdded(status: Int, service: BluetoothGattService?) {
                 val ok = status == BluetoothGatt.GATT_SUCCESS
+                gattServiceReady = ok
+                gattServiceStatus = status
                 Log.i(TAG, "onServiceAdded: status=$status ok=$ok uuid=${service?.uuid}")
                 mainHandler.post {
                     MainActivity.sharedEventSink?.success(mapOf(
@@ -249,9 +262,13 @@ class ResQMeshForegroundService : Service() {
                         "success" to ok
                     ))
                 }
-                if (!ok && serviceAddRetryCount < 3) {
+                if (ok) {
+                    // Service 註冊成功，現在才可以安全地開始廣播
+                    Log.i(TAG, "Service registered OK, starting advertising...")
+                    startAdvertisingInternal()
+                } else if (serviceAddRetryCount < 3) {
                     serviceAddRetryCount++
-                    Log.w(TAG, "addService FAILED, retrying (attempt $serviceAddRetryCount)...")
+                    Log.w(TAG, "addService FAILED (status=$status), retrying (attempt $serviceAddRetryCount)...")
                     mainHandler.postDelayed({
                         try {
                             gattServer?.clearServices()
@@ -259,7 +276,16 @@ class ResQMeshForegroundService : Service() {
                         } catch (e: Exception) {
                             Log.e(TAG, "Retry addService error: ${e.message}")
                         }
-                    }, 500L * serviceAddRetryCount)
+                    }, 1000L * serviceAddRetryCount)  // 更長的延遲，給 BLE stack 恢復時間
+                } else {
+                    Log.e(TAG, "addService FAILED after ${serviceAddRetryCount} retries, giving up")
+                    mainHandler.post {
+                        MainActivity.sharedEventSink?.success(mapOf(
+                            "type" to "gatt_server_error",
+                            "error" to "addService_failed_after_retries",
+                            "status" to status
+                        ))
+                    }
                 }
             }
 
@@ -289,10 +315,19 @@ class ResQMeshForegroundService : Service() {
         }
 
         // ── Build & Register ResQMesh GATT Service ──
+        // Bug 4 Fix: addService 是非同步的！不能在這裡立即開始廣播。
+        // 必須等 onServiceAdded callback 確認成功後才能廣播。
+        // 否則 Central 連進來時 service/characteristics 尚未註冊完成。
         serviceAddRetryCount = 0
+        gattServiceReady = false
+        gattServiceStatus = -999
+
+        // 先快取 adapter，供 startAdvertisingInternal 使用
+        bleAdvertiser = adapter.bluetoothLeAdvertiser
+
         val service = buildResQMeshService()
         val addResult = gattServer?.addService(service)
-        Log.d(TAG, "addService initiated: result=$addResult")
+        Log.d(TAG, "addService initiated: result=$addResult (waiting for onServiceAdded callback...)")
         if (addResult != true) {
             Log.e(TAG, "addService returned false!")
             mainHandler.post {
@@ -302,14 +337,28 @@ class ResQMeshForegroundService : Service() {
                 ))
             }
         }
+        // 注意：廣播在 onServiceAdded 成功後才啟動，不在這裡！
+    }
 
-        // ── Start Advertising ──
+    /**
+     * 啟動 BLE 廣播（僅在 onServiceAdded 成功後呼叫）
+     *
+     * Bug 4 Fix: 這個方法從 onServiceAdded callback 中呼叫，
+     * 確保 GATT Service 已完全註冊後才開始廣播。
+     */
+    private fun startAdvertisingInternal() {
+        if (isAdvertising) return
+
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_ADVERTISE)
             != PackageManager.PERMISSION_GRANTED) {
             Log.w(TAG, "BLUETOOTH_ADVERTISE not granted")
             return
         }
-        bleAdvertiser = adapter.bluetoothLeAdvertiser ?: return
+
+        if (bleAdvertiser == null) {
+            Log.e(TAG, "bleAdvertiser is null, cannot advertise")
+            return
+        }
 
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
@@ -325,7 +374,8 @@ class ResQMeshForegroundService : Service() {
 
         advertiseCallback = object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
-                Log.i(TAG, "BLE advertising started in foreground service")
+                isAdvertising = true
+                Log.i(TAG, "BLE advertising started (after service confirmed ready)")
                 mainHandler.post {
                     MainActivity.sharedEventSink?.success(mapOf(
                         "type" to "ble_advertising",
@@ -334,7 +384,15 @@ class ResQMeshForegroundService : Service() {
                 }
             }
             override fun onStartFailure(errorCode: Int) {
-                Log.e(TAG, "BLE advertising failed: $errorCode")
+                isAdvertising = false
+                Log.e(TAG, "BLE advertising failed: errorCode=$errorCode")
+                mainHandler.post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "gatt_server_error",
+                        "error" to "advertise_failed",
+                        "status" to errorCode
+                    ))
+                }
             }
         }
 
@@ -352,5 +410,7 @@ class ResQMeshForegroundService : Service() {
         gattServer = null
         bleAdvertiser = null
         advertiseCallback = null
+        isAdvertising = false
+        gattServiceReady = false
     }
 }

@@ -239,6 +239,17 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       buf.writeln('recv: ${s.receivedCount}');
       buf.writeln('');
 
+      // 持久 GATT Server 狀態（不依賴 log buffer，確保不會被擠掉）
+      if (Platform.isAndroid) {
+        try {
+          final gattStatus = await NativeBridge.getGattServerStatus();
+          buf.writeln('--- GATT Server Status ---');
+          buf.writeln('serviceReady: ${gattStatus['ready']}');
+          buf.writeln('serviceStatus: ${gattStatus['status']}');
+          buf.writeln('');
+        } catch (_) {}
+      }
+
       buf.writeln('--- GATT Server Logs (${_gattServerLogs.length}) ---');
       for (final l in _gattServerLogs) {
         buf.writeln(l);

@@ -37,6 +37,9 @@ class BleManager {
   final List<dynamic> _pendingDevices = [];
   bool _isConnecting = false;
 
+  // Bug 5 Fix: 取消標記 — timeout 時設定，sync 每步檢查
+  final Set<String> _cancelledSyncs = {};
+
   StreamSubscription? _scanSubscription;
   StreamSubscription? _isScanningSubscription;
   StreamSubscription? _nordicEventSub;
@@ -169,7 +172,8 @@ class BleManager {
     if (deviceId.isEmpty) return;
 
     uniquePeersEverSeen.add(deviceId);
-    if (!_knownPeers.contains(deviceId) && !_isInCooldown(deviceId)) {
+    if (!_knownPeers.contains(deviceId) && !_isInCooldown(deviceId)
+        && !_pendingDevices.contains(deviceId)) {
       _knownPeers.add(deviceId);
       _pendingDevices.add(deviceId); // Android: 存 String
       _dlog('FOUND $deviceId (RSSI=$rssi) → queued (pending=${_pendingDevices.length})');
@@ -189,11 +193,18 @@ class BleManager {
     }
   }
 
+  /// Bug 5 Fix: 檢查 sync 是否已被 timeout 取消
+  bool _isCancelled(String deviceId) => _cancelledSyncs.contains(deviceId);
+
   /// Android: 使用 Nordic 連線並同步
   Future<void> _nordicConnectAndSync(String deviceId) async {
+    // Bug 5 Fix: 清除之前的取消標記（新的 sync 開始）
+    _cancelledSyncs.remove(deviceId);
+
     try {
       _dlog('NORDIC CONNECT $deviceId ...');
       final connected = await NativeBridge.nordicConnect(deviceId);
+      if (_isCancelled(deviceId)) { _dlog('CANCELLED(connect) $deviceId'); return; }
       if (!connected) {
         _dlog('NORDIC CONNECT FAILED $deviceId');
         _knownPeers.remove(deviceId);
@@ -203,6 +214,7 @@ class BleManager {
 
       // ── 1. 讀取對端 Bloom Filter ──
       final remoteBloomBytes = await NativeBridge.nordicReadBloom(deviceId);
+      if (_isCancelled(deviceId)) { _dlog('CANCELLED(bloom) $deviceId'); return; }
       final remoteEventIds = remoteBloomBytes != null
           ? MeshEventHandler.parseBloomFilter(remoteBloomBytes.toList())
           : <String>{};
@@ -213,6 +225,7 @@ class BleManager {
       final sentFromQueue = <String>{};
 
       while (!queue.isEmpty) {
+        if (_isCancelled(deviceId)) { _dlog('CANCELLED(queue) $deviceId'); return; }
         final task = queue.dequeue();
         if (task == null) break;
         if (remoteEventIds.contains(task.eventId)) continue;
@@ -228,6 +241,7 @@ class BleManager {
             deviceId,
             Uint8List.fromList(wireData),
           );
+          if (_isCancelled(deviceId)) { queue.enqueue(task); return; }
           if (success) {
             sentFromQueue.add(task.eventId);
             syncedEventCount++;
@@ -242,6 +256,8 @@ class BleManager {
           break;
         }
       }
+
+      if (_isCancelled(deviceId)) { _dlog('CANCELLED(pre-db) $deviceId'); return; }
 
       // ── 3. 從 DB 補充最近 24h 的事件 ──
       final db = await DatabaseHelper().database;
@@ -276,6 +292,7 @@ class BleManager {
       int dbSent = 0;
 
       for (final evt in myEvents) {
+        if (_isCancelled(deviceId)) { _dlog('CANCELLED(db-loop) $deviceId'); return; }
         final evtId = evt['event_id'] as String;
         if (remoteEventIds.contains(evtId)) { dbBloomSkipped++; continue; }
         if (sentFromQueue.contains(evtId)) continue;
@@ -303,6 +320,7 @@ class BleManager {
               deviceId,
               Uint8List.fromList(wireData),
             );
+            if (_isCancelled(deviceId)) return;
             if (success) {
               dbSent++;
               syncedEventCount++;
@@ -328,6 +346,7 @@ class BleManager {
       await Future.delayed(const Duration(seconds: 2));
       await NativeBridge.nordicDisconnect(deviceId);
     } catch (e) {
+      if (_isCancelled(deviceId)) return; // 被取消導致的異常，靜默處理
       _dlog('ERROR $deviceId: $e');
       _knownPeers.remove(deviceId);
     }
@@ -616,12 +635,17 @@ class BleManager {
         final device = _pendingDevices.removeAt(0);
         try {
           if (Platform.isAndroid) {
-            await _nordicConnectAndSync(device as String)
+            final deviceId = device as String;
+            await _nordicConnectAndSync(deviceId)
                 .timeout(const Duration(seconds: 30), onTimeout: () async {
-              _dlog('TIMEOUT connecting to $device');
-              _knownPeers.remove(device);
-              // 斷開連線以終止 orphaned sync，避免與下個裝置的 sync 並行
-              try { await NativeBridge.nordicDisconnect(device); } catch (_) {}
+              _dlog('TIMEOUT connecting to $deviceId');
+              _knownPeers.remove(deviceId);
+              // Bug 5 Fix: 設定取消標記，讓孤兒 sync 在下個 await 檢查後停止
+              _cancelledSyncs.add(deviceId);
+              // 斷開連線以終止底層 GATT 操作
+              try { await NativeBridge.nordicDisconnect(deviceId); } catch (_) {}
+              // 加入冷卻，避免 timeout 後的裝置立刻被重新連線
+              _peerCooldown[deviceId] = DateTime.now();
             });
           } else {
             await _iosConnectAndSync(device as BluetoothDevice)
