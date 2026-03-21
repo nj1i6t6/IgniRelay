@@ -317,22 +317,50 @@ class ResQMeshBleClient(context: Context) : BleManager(context) {
             callback(null)
             return
         }
-        // Bug 6 Fix: 5s timeout — OPPO/ColorOS GATT Server 不回應 read requests，
-        // 加上超時避免阻塞整個同步流程，讓 Dart 端進入 blind relay 模式
+
+        // Bug 6 Fix: Handler-based 5s timeout — Nordic BLE Library 沒有 .timeout() API，
+        // 改用 Handler.postDelayed 實作。OPPO/ColorOS GATT Server 不回應 read requests，
+        // 5s 後觸發 timeout 讓 Dart 端進入 blind relay 模式（發送全部事件）。
+        val handler = Handler(Looper.getMainLooper())
+        var callbackFired = false
+
+        val timeoutRunnable = Runnable {
+            if (!callbackFired) {
+                callbackFired = true
+                Log.w(TAG, "readBloom TIMEOUT (5s) — remote GATT Server not responding to read")
+                MainActivity.sharedEventSink?.success(mapOf(
+                    "type" to "gatt_op_fail",
+                    "op" to "read_bloom",
+                    "status" to -2,
+                    "reason" to "timeout_5s"
+                ))
+                callback(null)
+            }
+        }
+        handler.postDelayed(timeoutRunnable, 5000)
+
         readCharacteristic(char)
             .with(DataReceivedCallback { _, data ->
-                callback(data.value)
+                if (!callbackFired) {
+                    callbackFired = true
+                    handler.removeCallbacks(timeoutRunnable)
+                    callback(data.value)
+                }
             })
             .fail { _: BluetoothDevice, status: Int ->
-                Log.e(TAG, "readBloom failed: status=$status")
-                Handler(Looper.getMainLooper()).post {
-                    MainActivity.sharedEventSink?.success(mapOf(
-                        "type" to "gatt_op_fail",
-                        "op" to "read_bloom",
-                        "status" to status
-                    ))
+                if (!callbackFired) {
+                    callbackFired = true
+                    handler.removeCallbacks(timeoutRunnable)
+                    Log.e(TAG, "readBloom failed: status=$status")
+                    handler.post {
+                        MainActivity.sharedEventSink?.success(mapOf(
+                            "type" to "gatt_op_fail",
+                            "op" to "read_bloom",
+                            "status" to status
+                        ))
+                    }
+                    callback(null)
                 }
-                callback(null)
             }
             .enqueue()
     }
@@ -352,21 +380,48 @@ class ResQMeshBleClient(context: Context) : BleManager(context) {
             callback(false)
             return
         }
-        // Bug 6 Fix: 5s timeout — 避免 OPPO GATT Server 無回應時阻塞
+
+        // Bug 6 Fix: Handler-based 5s timeout — 避免 OPPO GATT Server 無回應時阻塞
+        val handler = Handler(Looper.getMainLooper())
+        var callbackFired = false
+
+        val timeoutRunnable = Runnable {
+            if (!callbackFired) {
+                callbackFired = true
+                Log.w(TAG, "writeEvent TIMEOUT (5s) — remote GATT Server not responding to write")
+                MainActivity.sharedEventSink?.success(mapOf(
+                    "type" to "gatt_op_fail",
+                    "op" to "write",
+                    "status" to -2,
+                    "reason" to "timeout_5s"
+                ))
+                callback(false)
+            }
+        }
+        handler.postDelayed(timeoutRunnable, 5000)
+
         writeCharacteristic(char, data, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
             .done {
-                callback(true)
+                if (!callbackFired) {
+                    callbackFired = true
+                    handler.removeCallbacks(timeoutRunnable)
+                    callback(true)
+                }
             }
             .fail { _: BluetoothDevice, status: Int ->
-                Log.e(TAG, "writeEvent failed: status=$status")
-                Handler(Looper.getMainLooper()).post {
-                    MainActivity.sharedEventSink?.success(mapOf(
-                        "type" to "gatt_op_fail",
-                        "op" to "write",
-                        "status" to status
-                    ))
+                if (!callbackFired) {
+                    callbackFired = true
+                    handler.removeCallbacks(timeoutRunnable)
+                    Log.e(TAG, "writeEvent failed: status=$status")
+                    handler.post {
+                        MainActivity.sharedEventSink?.success(mapOf(
+                            "type" to "gatt_op_fail",
+                            "op" to "write",
+                            "status" to status
+                        ))
+                    }
+                    callback(false)
                 }
-                callback(false)
             }
             .enqueue()
     }
