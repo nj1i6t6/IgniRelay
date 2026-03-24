@@ -11,6 +11,7 @@ import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * ResQMesh 後台 Foreground Service
@@ -33,6 +34,13 @@ class ResQMeshForegroundService : Service() {
         @JvmStatic
         var sharedBloomBytes: ByteArray = ByteArray(0)
 
+        // Bug 7 Fix: 預快取的事件 outbox（由 Dart 推送，供 Notify 反向推送）
+        // 當 Central 連上並 subscribe Event Char 通知時，Server 主動推送這些事件。
+        // 解決 OPPO GATT Server 壞掉導致 OPPO 無法接收資料的問題。
+        @Volatile
+        @JvmStatic
+        var sharedOutboxEvents: List<ByteArray> = emptyList()
+
         // 持久 GATT Server 狀態（供 Dart 查詢，不依賴 log buffer）
         @Volatile
         @JvmStatic
@@ -50,6 +58,12 @@ class ResQMeshForegroundService : Service() {
     private var serviceAddRetryCount = 0
     private var isAdvertising = false
 
+    // Bug 7: Notify 反向推送 — 追蹤已 subscribe 通知的 Central 裝置
+    private val notifySubscribers = ConcurrentHashMap<String, BluetoothDevice>()
+    private var eventCharRef: BluetoothGattCharacteristic? = null
+    // Bug 10: 追蹤已收到 Bloom Write 的裝置（區分新舊版 Central）
+    private val bloomReceivedDevices = ConcurrentHashMap.newKeySet<String>()
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -65,7 +79,14 @@ class ResQMeshForegroundService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
-        startBlePeripheral()
+        // Bug 9 Fix: 只在第一次啟動時初始化 GATT Server，避免重複 openGattServer + addService
+        // 造成 service 真空期（clearServices → addService 之間 characteristics 全是 null）。
+        // Dart 層有 5 個入口會觸發 startDataMuleService()，每次都會走到這裡。
+        if (gattServer == null) {
+            startBlePeripheral()
+        } else {
+            Log.d(TAG, "GATT Server already running, skip re-init")
+        }
         Log.i(TAG, "ResQMesh Data Mule service started")
         return START_STICKY
     }
@@ -141,11 +162,15 @@ class ResQMeshForegroundService : Service() {
         ))
         service.addCharacteristic(eventChar)
 
-        // Bloom filter characteristic (read-only)
+        // Bloom filter characteristic (read + write)
+        // Bug 10 Fix: 加 PROPERTY_WRITE，讓 Central 可以寫入自己的 Bloom Filter，
+        // Server 比對後只 Notify 推 Central 缺少的事件（差量推送），取代盲推全部。
         service.addCharacteristic(BluetoothGattCharacteristic(
             ResQMeshConstants.BLOOM_CHAR_UUID,
-            BluetoothGattCharacteristic.PROPERTY_READ,
-            BluetoothGattCharacteristic.PERMISSION_READ
+            BluetoothGattCharacteristic.PROPERTY_READ or
+                BluetoothGattCharacteristic.PROPERTY_WRITE,
+            BluetoothGattCharacteristic.PERMISSION_READ or
+                BluetoothGattCharacteristic.PERMISSION_WRITE
         ))
 
         // Handshake characteristic (read/write)
@@ -179,6 +204,11 @@ class ResQMeshForegroundService : Service() {
             override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
                 val stateStr = if (newState == BluetoothProfile.STATE_CONNECTED) "connected" else "disconnected"
                 Log.d(TAG, "GATT: ${device.address} -> $stateStr (status=$status)")
+                // Bug 7: 清除已斷線的 subscriber
+                if (newState != BluetoothProfile.STATE_CONNECTED) {
+                    notifySubscribers.remove(device.address)
+                    bloomReceivedDevices.remove(device.address)
+                }
                 mainHandler.post {
                     MainActivity.sharedEventSink?.success(mapOf(
                         "type" to "ble_peer",
@@ -194,7 +224,7 @@ class ResQMeshForegroundService : Service() {
                 preparedWrite: Boolean, responseNeeded: Boolean,
                 offset: Int, value: ByteArray
             ) {
-                Log.d(TAG, "onWriteReq: dev=${device.address} prep=$preparedWrite resp=$responseNeeded off=$offset len=${value.size}")
+                Log.d(TAG, "onWriteReq: dev=${device.address} char=${characteristic.uuid} prep=$preparedWrite resp=$responseNeeded off=$offset len=${value.size}")
 
                 // Fix: 回應要回傳 offset 和 value，確保 Prepared Write 驗證通過
                 if (responseNeeded) {
@@ -203,13 +233,31 @@ class ResQMeshForegroundService : Service() {
 
                 // 只處理非 Prepared Write 的完整寫入（Prepared Write 的資料在 onExecuteWrite 後才完整）
                 if (!preparedWrite) {
-                    Log.d(TAG, "Received ${value.size} bytes from ${device.address}")
-                    mainHandler.post {
-                        MainActivity.sharedEventSink?.success(mapOf(
-                            "type" to "ble_data",
-                            "device" to device.address,
-                            "data" to value.toList()
-                        ))
+                    when (characteristic.uuid) {
+                        // Bug 10 Fix: Central 寫入自己的 Bloom Filter → 比對差量 → Notify 推送 Central 缺少的事件
+                        ResQMeshConstants.BLOOM_CHAR_UUID -> {
+                            Log.i(TAG, "BLOOM_WRITE from ${device.address}: ${value.size} bytes → diff push")
+                            mainHandler.post {
+                                MainActivity.sharedEventSink?.success(mapOf(
+                                    "type" to "bloom_received",
+                                    "device" to device.address,
+                                    "size" to value.size
+                                ))
+                            }
+                            // 解析 Central 的 Bloom → 比對 → 只推 Central 缺少的事件 + 本機 Bloom
+                            mainHandler.post { pushDiffToDevice(device, value) }
+                        }
+                        // Event 寫入（Central 推事件給 Peripheral）
+                        else -> {
+                            Log.d(TAG, "EVENT_WRITE from ${device.address}: ${value.size} bytes")
+                            mainHandler.post {
+                                MainActivity.sharedEventSink?.success(mapOf(
+                                    "type" to "ble_data",
+                                    "device" to device.address,
+                                    "data" to value.toList()
+                                ))
+                            }
+                        }
                     }
                 }
             }
@@ -237,8 +285,37 @@ class ResQMeshForegroundService : Service() {
                 offset: Int, value: ByteArray
             ) {
                 Log.d(TAG, "onDescWriteReq: dev=${device.address} desc=${descriptor.uuid}")
+                // Bug 8 Fix: 必須儲存 descriptor value，否則 BLE stack 不知道 Central 已 subscribe，
+                // notifyCharacteristicChanged 會靜默失敗（API 33+ 永遠回傳 SUCCESS 但不送通知）
+                @Suppress("DEPRECATION")
+                descriptor.value = value
                 if (responseNeeded) {
-                    gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
+                    gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value)
+                }
+
+                // Bug 10 Fix: subscribe 時只記錄訂閱者，不再盲推全部事件。
+                // 推送改由 Bloom Write 觸發（pushDiffToDevice），做差量比對後才推。
+                // 如果 Central 10 秒內沒寫 Bloom（舊版 client），才降級盲推。
+                if (descriptor.uuid == ResQMeshConstants.CCCD_UUID &&
+                    descriptor.characteristic?.uuid == ResQMeshConstants.EVENT_CHAR_UUID
+                ) {
+                    val isEnableNotify = value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                    if (isEnableNotify) {
+                        Log.i(TAG, "Notify subscribed by ${device.address} (waiting for Bloom write to trigger diff push)")
+                        notifySubscribers[device.address] = device
+                        // 10 秒後若還沒收到 Bloom Write，降級盲推（向下相容舊版 Central）
+                        mainHandler.postDelayed({
+                            if (notifySubscribers.containsKey(device.address) &&
+                                !bloomReceivedDevices.contains(device.address)) {
+                                Log.w(TAG, "No Bloom received from ${device.address} after 10s → fallback blind push")
+                                pushOutboxToDevice(device)
+                            }
+                        }, 10_000)
+                    } else {
+                        Log.d(TAG, "Notify unsubscribed by ${device.address}")
+                        notifySubscribers.remove(device.address)
+                        bloomReceivedDevices.remove(device.address)
+                    }
                 }
             }
 
@@ -255,6 +332,11 @@ class ResQMeshForegroundService : Service() {
                 gattServiceReady = ok
                 gattServiceStatus = status
                 Log.i(TAG, "onServiceAdded: status=$status ok=$ok uuid=${service?.uuid}")
+                // Bug 7: 儲存 Event Characteristic 參考（供 Notify 推送使用）
+                if (ok && service != null) {
+                    eventCharRef = service.getCharacteristic(ResQMeshConstants.EVENT_CHAR_UUID)
+                    Log.d(TAG, "eventCharRef saved: ${eventCharRef != null}")
+                }
                 mainHandler.post {
                     MainActivity.sharedEventSink?.success(mapOf(
                         "type" to "gatt_service_added",
@@ -286,6 +368,23 @@ class ResQMeshForegroundService : Service() {
                             "status" to status
                         ))
                     }
+                }
+            }
+
+            // Bug 8 Fix: 追蹤 notification 是否真的送達 BLE 層
+            // 之前只靠 timer 判斷 NOTIFY_PUSH_DONE，但 notifyCharacteristicChanged
+            // 在 API 33+ 永遠回傳 SUCCESS，即使實際沒送出。
+            // onNotificationSent 是唯一可靠的送達確認。
+            override fun onNotificationSent(device: BluetoothDevice?, status: Int) {
+                val ok = status == BluetoothGatt.GATT_SUCCESS
+                Log.d(TAG, "onNotificationSent: dev=${device?.address} status=$status ok=$ok")
+                mainHandler.post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "notify_sent",
+                        "device" to (device?.address ?: ""),
+                        "status" to status,
+                        "ok" to ok
+                    ))
                 }
             }
 
@@ -399,6 +498,200 @@ class ResQMeshForegroundService : Service() {
         bleAdvertiser?.startAdvertising(settings, data, advertiseCallback)
     }
 
+    // ── Bug 7: Notify 反向推送 ─────────────────────────────────────────────
+    /**
+     * 把預快取的 outbox 事件透過 Notify 推送給指定 Central
+     *
+     * 當 OPPO (Central) 連上我方 GATT Server 並 subscribe Event Char 通知時呼叫。
+     * OPPO 的 GATT Server 壞掉（read/write 都 timeout），但 Central 角色正常。
+     * 透過 Notify 反向推送，讓 OPPO 能「透過 Central 角色」接收資料。
+     *
+     * 使用 onNotificationSent callback 做流量控制（等前一個 notification 送完再送下一個），
+     * 避免 BLE stack 溢出丟包。
+     */
+    private fun pushOutboxToDevice(device: BluetoothDevice) {
+        val events = sharedOutboxEvents
+        val char = eventCharRef
+        if (char == null || events.isEmpty()) {
+            Log.d(TAG, "pushOutbox: skip (char=${char != null}, events=${events.size})")
+            return
+        }
+
+        Log.i(TAG, "pushOutbox: pushing ${events.size} events to ${device.address}")
+        mainHandler.post {
+            MainActivity.sharedEventSink?.success(mapOf(
+                "type" to "notify_push_start",
+                "device" to device.address,
+                "count" to events.size
+            ))
+        }
+
+        // Bug 8 Fix: 逐筆推送，每筆間隔 100ms 避免 BLE 壅塞
+        // 加入 notifyCharacteristicChanged 回傳值診斷日誌
+        var successCount = 0
+        var failCount = 0
+        for ((index, event) in events.withIndex()) {
+            mainHandler.postDelayed({
+                if (!notifySubscribers.containsKey(device.address)) {
+                    Log.d(TAG, "pushOutbox: ${device.address} disconnected, abort at event $index")
+                    return@postDelayed
+                }
+                try {
+                    val result: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        gattServer?.notifyCharacteristicChanged(device, char, false, event) ?: -1
+                    } else {
+                        @Suppress("DEPRECATION")
+                        char.value = event
+                        @Suppress("DEPRECATION")
+                        gattServer?.notifyCharacteristicChanged(device, char, false) ?: false
+                    }
+                    // 診斷: API 33+ 永遠回傳 0 (SUCCESS)，但不代表真的送出
+                    // 真正的送達確認靠 onNotificationSent callback
+                    Log.d(TAG, "pushOutbox: event ${index + 1}/${events.size} → ${device.address} (result=$result, ${event.size}B)")
+                    if (result == 0 || result == true) successCount++ else failCount++
+                } catch (e: Exception) {
+                    failCount++
+                    Log.e(TAG, "pushOutbox: notify failed at event $index: ${e.message}")
+                    mainHandler.post {
+                        MainActivity.sharedEventSink?.success(mapOf(
+                            "type" to "notify_push_error",
+                            "device" to device.address,
+                            "index" to index,
+                            "error" to (e.message ?: "unknown")
+                        ))
+                    }
+                }
+            }, (index * 100L)) // 100ms 間隔（從 50ms 加大，給 BLE stack 更多處理時間）
+        }
+
+        // 推送完成通知 Dart（含成功/失敗計數）
+        mainHandler.postDelayed({
+            Log.i(TAG, "pushOutbox DONE: ${device.address} success=$successCount fail=$failCount")
+            MainActivity.sharedEventSink?.success(mapOf(
+                "type" to "notify_push_done",
+                "device" to device.address,
+                "count" to events.size,
+                "success" to successCount,
+                "fail" to failCount
+            ))
+        }, (events.size * 100L) + 200)
+    }
+
+    // ── Bug 10: 差量推送（Bloom 比對後推送 Central 缺少的事件 + 本機 Bloom）──
+    /**
+     * 收到 Central 寫入的 Bloom Filter 後，比對差量，只推 Central 缺少的事件。
+     * 推送結尾附加本機 Bloom，讓 Central 知道本機已有哪些事件，
+     * 反向用 GATT Write 補送 Peripheral 缺少的事件。
+     *
+     * 協議格式：
+     * - 事件封包：正常 Protobuf MeshEvent bytes
+     * - 本機 Bloom：前綴 4 bytes magic [0xFF, 0xB1, 0x00, 0x4D] + Bloom bytes
+     * - 結束標記：[0xFF, 0xE7, 0xD0, 0x7E]（"END" magic）
+     */
+    private fun pushDiffToDevice(device: BluetoothDevice, remoteBloomBytes: ByteArray) {
+        bloomReceivedDevices.add(device.address)
+
+        val char = eventCharRef
+        if (char == null) {
+            Log.w(TAG, "pushDiff: eventCharRef is null, skip")
+            return
+        }
+
+        // 解析 Central 的 Bloom Filter（換行分隔的 event ID 列表）
+        val remoteEventIds = try {
+            String(remoteBloomBytes, Charsets.UTF_8)
+                .split("\n")
+                .filter { it.isNotBlank() }
+                .toSet()
+        } catch (_: Exception) { emptySet() }
+
+        val events = sharedOutboxEvents
+        // 比對差量：只推 Central 沒有的事件
+        val diffEvents = mutableListOf<ByteArray>()
+        var bloomSkipped = 0
+        for (event in events) {
+            // 嘗試從 Protobuf 中提取 event_id 做比對
+            val eventId = tryExtractEventId(event)
+            if (eventId != null && remoteEventIds.contains(eventId)) {
+                bloomSkipped++
+                continue
+            }
+            diffEvents.add(event)
+        }
+
+        Log.i(TAG, "pushDiff: ${device.address} remote_bloom=${remoteEventIds.size} total=${events.size} skip=$bloomSkipped diff=${diffEvents.size}")
+
+        // 需要推送的封包：差量事件 + 本機 Bloom + 結束標記
+        val localBloom = sharedBloomBytes
+        val bloomPacket = byteArrayOf(0xFF.toByte(), 0xB1.toByte(), 0x00, 0x4D) + localBloom
+        val endMarker = byteArrayOf(0xFF.toByte(), 0xE7.toByte(), 0xD0.toByte(), 0x7E)
+
+        val allPackets = diffEvents + listOf(bloomPacket, endMarker)
+
+        mainHandler.post {
+            MainActivity.sharedEventSink?.success(mapOf(
+                "type" to "notify_push_start",
+                "device" to device.address,
+                "count" to diffEvents.size,
+                "bloom_skip" to bloomSkipped,
+                "mode" to "diff"
+            ))
+        }
+
+        var successCount = 0
+        var failCount = 0
+        for ((index, packet) in allPackets.withIndex()) {
+            mainHandler.postDelayed({
+                if (!notifySubscribers.containsKey(device.address)) {
+                    Log.d(TAG, "pushDiff: ${device.address} disconnected, abort at packet $index")
+                    return@postDelayed
+                }
+                try {
+                    val result: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        gattServer?.notifyCharacteristicChanged(device, char, false, packet) ?: -1
+                    } else {
+                        @Suppress("DEPRECATION")
+                        char.value = packet
+                        @Suppress("DEPRECATION")
+                        gattServer?.notifyCharacteristicChanged(device, char, false) ?: false
+                    }
+                    Log.d(TAG, "pushDiff: packet ${index + 1}/${allPackets.size} → ${device.address} (result=$result, ${packet.size}B)")
+                    if (result == 0 || result == true) successCount++ else failCount++
+                } catch (e: Exception) {
+                    failCount++
+                    Log.e(TAG, "pushDiff: notify failed at packet $index: ${e.message}")
+                }
+            }, (index * 100L))
+        }
+
+        mainHandler.postDelayed({
+            Log.i(TAG, "pushDiff DONE: ${device.address} events=${diffEvents.size} bloom_skip=$bloomSkipped success=$successCount fail=$failCount")
+            MainActivity.sharedEventSink?.success(mapOf(
+                "type" to "notify_push_done",
+                "device" to device.address,
+                "count" to diffEvents.size,
+                "bloom_skip" to bloomSkipped,
+                "success" to successCount,
+                "fail" to failCount,
+                "mode" to "diff"
+            ))
+        }, (allPackets.size * 100L) + 200)
+    }
+
+    /** 嘗試從 Protobuf MeshEvent bytes 中提取 event_id */
+    private fun tryExtractEventId(data: ByteArray): String? {
+        return try {
+            // Protobuf field 1 (event_id) = tag 0x0A + length + string
+            // 簡易解析：找 tag byte 0x0A，下一 byte 是長度，後面是 UTF-8 string
+            if (data.size > 2 && data[0] == 0x0A.toByte()) {
+                val len = data[1].toInt() and 0xFF
+                if (data.size >= 2 + len) {
+                    String(data, 2, len, Charsets.UTF_8)
+                } else null
+            } else null
+        } catch (_: Exception) { null }
+    }
+
     private fun stopBlePeripheral() {
         try {
             if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_ADVERTISE)
@@ -412,5 +705,8 @@ class ResQMeshForegroundService : Service() {
         advertiseCallback = null
         isAdvertising = false
         gattServiceReady = false
+        notifySubscribers.clear()
+        bloomReceivedDevices.clear()
+        eventCharRef = null
     }
 }

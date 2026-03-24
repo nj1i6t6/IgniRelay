@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -77,6 +78,22 @@ class NativeBridge {
     }
   }
 
+  /// Bug 10 Fix: 寫入本機 Bloom Filter 到對端 Bloom Characteristic
+  /// 觸發對端 GATT Server 做差量比對後 Notify 推送缺少的事件。
+  static Future<bool> nordicWriteBloom(
+      String deviceId, Uint8List data) async {
+    try {
+      final bool result = await _channel.invokeMethod('nordicWriteBloom', {
+        'deviceId': deviceId,
+        'data': data,
+      });
+      return result;
+    } on PlatformException catch (e) {
+      debugPrint("Nordic writeBloom failed: '${e.message}'.");
+      return false;
+    }
+  }
+
   /// 寫入事件到對端 Event Characteristic
   static Future<bool> nordicWriteEvent(
       String deviceId, Uint8List data) async {
@@ -134,6 +151,33 @@ class NativeBridge {
       return result;
     } on PlatformException catch (e) {
       debugPrint("Failed to update bloom filter: '${e.message}'.");
+      return false;
+    }
+  }
+
+  /// Bug 7 Fix: 更新事件 outbox（供 GATT Server Notify 反向推送）
+  /// 當 Central 連上並 subscribe Event Char 通知時，Server 主動推送這些事件。
+  /// 解決 OPPO GATT Server 壞掉導致 OPPO 無法接收資料的問題。
+  static Future<bool> updateEventOutbox(List<Uint8List> events) async {
+    try {
+      // Length-prefix framed 格式: [4-byte len][event bytes] ...
+      final buffer = BytesBuilder();
+      for (final event in events) {
+        final len = event.length;
+        buffer.add([
+          (len >> 24) & 0xFF,
+          (len >> 16) & 0xFF,
+          (len >> 8) & 0xFF,
+          len & 0xFF,
+        ]);
+        buffer.add(event);
+      }
+      final bool result = await _channel.invokeMethod('updateEventOutbox', {
+        'data': buffer.toBytes(),
+      });
+      return result;
+    } on PlatformException catch (e) {
+      debugPrint("Failed to update event outbox: '${e.message}'.");
       return false;
     }
   }

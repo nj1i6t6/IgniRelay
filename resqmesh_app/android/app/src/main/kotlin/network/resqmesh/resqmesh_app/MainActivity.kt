@@ -97,6 +97,18 @@ class MainActivity : FlutterActivity() {
                             result.success(data)
                         }
                     }
+                    // Bug 10 Fix: 寫入本機 Bloom 到對端（觸發差量推送）
+                    "nordicWriteBloom" -> {
+                        val deviceId = call.argument<String>("deviceId") ?: ""
+                        val data = call.argument<ByteArray>("data")
+                        if (deviceId.isEmpty() || data == null) {
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+                        nordicManager?.writeBloom(deviceId, data) { success ->
+                            result.success(success)
+                        }
+                    }
                     "nordicWriteEvent" -> {
                         val deviceId = call.argument<String>("deviceId") ?: ""
                         val data = call.argument<ByteArray>("data")
@@ -222,6 +234,33 @@ class MainActivity : FlutterActivity() {
                             localBloomBytes = bytes
                             ResQMeshForegroundService.sharedBloomBytes = bytes
                             Log.d(TAG, "Bloom filter updated: ${bytes.size} bytes")
+                        }
+                        result.success(true)
+                    }
+                    // Bug 7 Fix: 更新事件 outbox（供 GATT Server Notify 反向推送使用）
+                    // Dart 端把最近的事件序列化後推送到 native，GATT Server 在 Central
+                    // subscribe 通知時主動推送，讓 OPPO (Central 角色) 能接收資料。
+                    "updateEventOutbox" -> {
+                        val data = call.argument<ByteArray>("data")
+                        if (data != null && data.isNotEmpty()) {
+                            // 解析 length-prefix framed 格式: [4-byte len][event bytes] ...
+                            val events = mutableListOf<ByteArray>()
+                            var pos = 0
+                            while (pos + 4 <= data.size) {
+                                val len = ((data[pos].toInt() and 0xFF) shl 24) or
+                                          ((data[pos + 1].toInt() and 0xFF) shl 16) or
+                                          ((data[pos + 2].toInt() and 0xFF) shl 8) or
+                                          (data[pos + 3].toInt() and 0xFF)
+                                pos += 4
+                                if (pos + len <= data.size) {
+                                    events.add(data.copyOfRange(pos, pos + len))
+                                    pos += len
+                                } else break
+                            }
+                            ResQMeshForegroundService.sharedOutboxEvents = events
+                            Log.d(TAG, "Event outbox updated: ${events.size} events")
+                        } else {
+                            ResQMeshForegroundService.sharedOutboxEvents = emptyList()
                         }
                         result.success(true)
                     }

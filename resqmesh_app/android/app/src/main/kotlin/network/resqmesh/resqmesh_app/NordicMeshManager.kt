@@ -199,6 +199,21 @@ class NordicMeshManager(private val context: Context) {
     }
 
     /**
+     * Bug 10 Fix: 寫入本機 Bloom Filter 到對端 Bloom Characteristic
+     * 讓對端比對差量後只 Notify 推送缺少的事件。
+     */
+    fun writeBloom(deviceAddress: String, data: ByteArray, callback: (Boolean) -> Unit) {
+        val client = connections[deviceAddress]
+        if (client == null) {
+            callback(false)
+            return
+        }
+        client.writeBloom(data) { success ->
+            mainHandler.post { callback(success) }
+        }
+    }
+
+    /**
      * 寫入事件到對端 Event Characteristic
      */
     fun writeEvent(deviceAddress: String, data: ByteArray, callback: (Boolean) -> Unit) {
@@ -360,6 +375,46 @@ class ResQMeshBleClient(context: Context) : BleManager(context) {
                         ))
                     }
                     callback(null)
+                }
+            }
+            .enqueue()
+    }
+
+    /** Bug 10 Fix: 寫入本機 Bloom Filter 到對端 Bloom Characteristic */
+    fun writeBloom(data: ByteArray, callback: (Boolean) -> Unit) {
+        val char = bloomChar
+        if (char == null) {
+            Log.e(TAG, "writeBloom: bloomChar is NULL")
+            callback(false)
+            return
+        }
+
+        val handler = Handler(Looper.getMainLooper())
+        var callbackFired = false
+
+        val timeoutRunnable = Runnable {
+            if (!callbackFired) {
+                callbackFired = true
+                Log.w(TAG, "writeBloom TIMEOUT (5s)")
+                callback(false)
+            }
+        }
+        handler.postDelayed(timeoutRunnable, 5000)
+
+        writeCharacteristic(char, data, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+            .done {
+                if (!callbackFired) {
+                    callbackFired = true
+                    handler.removeCallbacks(timeoutRunnable)
+                    callback(true)
+                }
+            }
+            .fail { _: BluetoothDevice, status: Int ->
+                if (!callbackFired) {
+                    callbackFired = true
+                    handler.removeCallbacks(timeoutRunnable)
+                    Log.e(TAG, "writeBloom failed: status=$status")
+                    callback(false)
                 }
             }
             .enqueue()

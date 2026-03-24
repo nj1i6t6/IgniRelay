@@ -232,6 +232,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       buf.writeln('');
 
       buf.writeln('--- Transport State ---');
+      buf.writeln('syncProtocol: v2 (WriteBloom+NotifyDiff)');
       buf.writeln('active: ${_transport.isActive}');
       buf.writeln('connectedPeers: ${s.connectedPeers}');
       buf.writeln('seenEvents: ${s.seenEventsCount}');

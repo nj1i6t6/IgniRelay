@@ -138,6 +138,19 @@ class BleManager {
           final device = event['device'] ?? '';
           final mtu = event['mtu'] ?? 0;
           _dlog('GATT_MTU $device → $mtu');
+        } else if (type == 'notify_push_start') {
+          final device = event['device'] ?? '';
+          final count = event['count'] ?? 0;
+          _dlog('NOTIFY_PUSH → $device: $count events queued');
+        } else if (type == 'notify_push_done') {
+          final device = event['device'] ?? '';
+          final count = event['count'] ?? 0;
+          _dlog('NOTIFY_PUSH_DONE → $device: $count events sent');
+        } else if (type == 'notify_sent') {
+          final device = event['device'] ?? '';
+          final status = event['status'] ?? -1;
+          final ok = event['ok'] ?? false;
+          _dlog('NOTIFY_SENT → $device: status=$status ok=$ok');
         }
       }
     });
@@ -196,7 +209,14 @@ class BleManager {
   /// Bug 5 Fix: 檢查 sync 是否已被 timeout 取消
   bool _isCancelled(String deviceId) => _cancelledSyncs.contains(deviceId);
 
-  /// Android: 使用 Nordic 連線並同步
+  /// Android: 使用 Nordic 連線並同步（v2 協議 — Write Bloom + Notify 差量推送）
+  ///
+  /// 流程：
+  /// 1. 連線 → Nordic 自動 subscribe Event Char Notify
+  /// 2. Write 本機 Bloom 到對端 Bloom Char → 觸發對端差量比對
+  /// 3. 等待對端 Notify 推送缺少的事件 + 對端 Bloom + 結束標記
+  /// 4. 用對端 Bloom 比對，Write 對端缺少的事件
+  /// 5. 斷線
   Future<void> _nordicConnectAndSync(String deviceId) async {
     // Bug 5 Fix: 清除之前的取消標記（新的 sync 開始）
     _cancelledSyncs.remove(deviceId);
@@ -212,22 +232,65 @@ class BleManager {
       }
       _dlog('NORDIC CONNECTED $deviceId ✓ (MTU + services auto-negotiated)');
 
-      // ── 1. 讀取對端 Bloom Filter ──
-      // Bug 6 Fix: OPPO/ColorOS GATT Server 不回應 read requests（已知 BLE stack 問題）。
-      // Nordic 端已加 5s timeout，讀取失敗時進入 blind relay 模式（發送全部事件）。
-      // 接收端已有 SKIP(seen) 去重機制，不會重複處理。
-      final remoteBloomBytes = await NativeBridge.nordicReadBloom(deviceId);
-      if (_isCancelled(deviceId)) { _dlog('CANCELLED(bloom) $deviceId'); return; }
-      final remoteEventIds = remoteBloomBytes != null
-          ? MeshEventHandler.parseBloomFilter(remoteBloomBytes.toList())
-          : <String>{};
-      if (remoteBloomBytes == null || remoteBloomBytes.isEmpty) {
-        _dlog('BLOOM_SKIP $deviceId — read failed/timeout, blind relay mode (sending all events)');
-      } else {
-        _dlog('BLOOM from $deviceId: ${remoteBloomBytes.length} bytes, ${remoteEventIds.length} event IDs');
-      }
+      // ── 1. Write 本機 Bloom Filter 到對端 ──
+      // 對端 GATT Server 收到後會比對差量，只 Notify 推送我們缺少的事件 + 對端 Bloom。
+      // 不再用 GATT Read（繞過 GATT Server Read 壞掉的問題）。
+      final localBloom = await MeshEventHandler.buildLocalBloomFilter();
+      final bloomWriteOk = await NativeBridge.nordicWriteBloom(deviceId, localBloom);
+      if (_isCancelled(deviceId)) { _dlog('CANCELLED(write-bloom) $deviceId'); return; }
+      _dlog('BLOOM_WRITE → $deviceId: ${localBloom.length} bytes, ok=$bloomWriteOk');
 
-      // ── 2. 推送 TriageQueue 中的高優先級事件 ──
+      // ── 2. 等待對端 Notify 推送（事件 + Bloom + 結束標記）──
+      // Magic bytes: Bloom 前綴 [0xFF, 0xB1, 0x00, 0x4D], 結束標記 [0xFF, 0xE7, 0xD0, 0x7E]
+      Set<String> remoteEventIds = {};
+      int notifyRecvCount = 0;
+      final completer = Completer<void>();
+      StreamSubscription? notifySub;
+
+      // 監聯 nordic_data 事件（Notify 推送的資料）
+      notifySub = NativeBridge.nativeEventStream.listen((event) {
+        if (event is Map && event['type'] == 'nordic_data' && event['device'] == deviceId) {
+          final dataList = event['data'];
+          if (dataList is List && dataList.isNotEmpty) {
+            final data = Uint8List.fromList(List<int>.from(dataList));
+
+            // 檢查結束標記
+            if (data.length == 4 && data[0] == 0xFF && data[1] == 0xE7 && data[2] == 0xD0 && data[3] == 0x7E) {
+              _dlog('NOTIFY_END from $deviceId (received $notifyRecvCount events)');
+              if (!completer.isCompleted) completer.complete();
+              return;
+            }
+
+            // 檢查 Bloom 封包（前綴 [0xFF, 0xB1, 0x00, 0x4D]）
+            if (data.length > 4 && data[0] == 0xFF && data[1] == 0xB1 && data[2] == 0x00 && data[3] == 0x4D) {
+              final bloomBytes = data.sublist(4);
+              remoteEventIds = MeshEventHandler.parseBloomFilter(bloomBytes.toList());
+              _dlog('NOTIFY_BLOOM from $deviceId: ${bloomBytes.length} bytes, ${remoteEventIds.length} event IDs');
+              return;
+            }
+
+            // 正常事件資料
+            _dlog('NOTIFY from $deviceId: ${data.length} bytes');
+            _eventHandler.handleIncomingData(data, deviceId);
+            notifyRecvCount++;
+            receivedEventCount++;
+            _eventStreamController.add(BleEvent.received(deviceId, data.toList()));
+          }
+        }
+      });
+
+      // 15 秒超時保底（避免對端不支援新協議或推送卡住）
+      try {
+        await completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
+          _dlog('NOTIFY_WAIT timeout (15s) for $deviceId — proceeding with available data');
+        });
+      } catch (_) {}
+      await notifySub.cancel();
+
+      if (_isCancelled(deviceId)) { _dlog('CANCELLED(notify-wait) $deviceId'); return; }
+
+      // ── 3. 用對端 Bloom 比對，Write 對端缺少的事件 ──
+      // 先推 TriageQueue
       final queue = EventManager().queue;
       final sentFromQueue = <String>{};
 
@@ -266,7 +329,7 @@ class BleManager {
 
       if (_isCancelled(deviceId)) { _dlog('CANCELLED(pre-db) $deviceId'); return; }
 
-      // ── 3. 從 DB 補充最近 24h 的事件 ──
+      // 從 DB 補充最近 24h 的事件
       final db = await DatabaseHelper().database;
       final cutoff24h =
           DateTime.now().millisecondsSinceEpoch - (24 * 3600 * 1000);
@@ -343,9 +406,8 @@ class BleManager {
         }
       }
 
-      _dlog('RELAY_STATS → $deviceId: bloom_skip=$dbBloomSkipped attempted=$dbAttempted sent=$dbSent');
+      _dlog('SYNC_STATS → $deviceId: notify_recv=$notifyRecvCount bloom_skip=$dbBloomSkipped write_attempted=$dbAttempted write_sent=$dbSent remote_bloom=${remoteEventIds.length}');
 
-      // ── 4. 通知已由 Nordic 自動啟用，資料透過 EventChannel 接收 ──
       _eventStreamController.add(BleEvent.connected(deviceId));
       _peerCooldown[deviceId] = DateTime.now();
       _dlog('DONE with $deviceId (sent=$syncedEventCount, recv=$receivedEventCount) → cooldown ${kPeerCooldownSec}s');
@@ -609,7 +671,7 @@ class BleManager {
   // ── 共用邏輯 ─────────────────────────────────────────────────────────
   // ══════════════════════════════════════════════════════════════════════
 
-  /// 推送本機 Bloom Filter 到 Native GATT Server
+  /// 推送本機 Bloom Filter + Event Outbox 到 Native GATT Server
   Future<void> _updateNativeBloomFilter() async {
     try {
       final bloomBytes = await MeshEventHandler.buildLocalBloomFilter();
@@ -618,6 +680,74 @@ class BleManager {
     } catch (e) {
       _dlog('Bloom filter push failed: $e');
     }
+
+    // Bug 7 Fix: 推送事件 outbox 到 native（供 GATT Server Notify 反向推送）
+    // 當 OPPO (Central) 連上我方 GATT Server 並 subscribe Event Char 通知時，
+    // Server 主動把 outbox 中的事件透過 Notify 推送給 OPPO。
+    // 這讓 OPPO 能透過「能正常運作的 Central 角色」接收資料。
+    if (Platform.isAndroid) {
+      try {
+        final outboxEvents = await _buildEventOutbox();
+        if (outboxEvents.isNotEmpty) {
+          await NativeBridge.updateEventOutbox(outboxEvents);
+          _dlog('Event outbox pushed to native: ${outboxEvents.length} events');
+        }
+      } catch (e) {
+        _dlog('Event outbox push failed: $e');
+      }
+    }
+  }
+
+  /// Bug 7: 建構事件 outbox（最近 24h 的事件，供 Notify 反向推送）
+  Future<List<Uint8List>> _buildEventOutbox() async {
+    final db = await DatabaseHelper().database;
+    final cutoff24h =
+        DateTime.now().millisecondsSinceEpoch - (24 * 3600 * 1000);
+    final myEvents = await db.query(
+      'Event_Logs',
+      columns: [
+        'event_id',
+        'payload',
+        'signature',
+        'urgency',
+        'event_type',
+        'sender_pub_key',
+        'hlc_timestamp',
+        'hlc_counter',
+        'received_lat',
+        'received_lng',
+        'origin_lat',
+        'origin_lng',
+      ],
+      where: 'hlc_timestamp > ?',
+      whereArgs: [cutoff24h],
+      orderBy: 'urgency DESC, hlc_timestamp DESC',
+      limit: 50,
+    );
+
+    final events = <Uint8List>[];
+    for (final evt in myEvents) {
+      final evtId = evt['event_id'] as String;
+      final payload = evt['payload'] as Uint8List?;
+      if (payload != null) {
+        final wireData = MeshEventHandler.encodeWirePayload(
+          evtId,
+          payload.toList(),
+          urgency: (evt['urgency'] as int?) ?? 0,
+          eventType: (evt['event_type'] as int?) ?? 0,
+          signature: (evt['signature'] as Uint8List?)?.toList(),
+          senderPubKey: (evt['sender_pub_key'] as Uint8List?)?.toList(),
+          hlcTimestamp: (evt['hlc_timestamp'] as int?) ?? 0,
+          hlcCounter: (evt['hlc_counter'] as int?) ?? 0,
+          lat: (evt['received_lat'] as num?)?.toDouble(),
+          lng: (evt['received_lng'] as num?)?.toDouble(),
+          originLat: (evt['origin_lat'] as num?)?.toDouble(),
+          originLng: (evt['origin_lng'] as num?)?.toDouble(),
+        );
+        events.add(Uint8List.fromList(wireData));
+      }
+    }
+    return events;
   }
 
   bool _isInCooldown(String deviceId) {
