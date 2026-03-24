@@ -196,6 +196,8 @@ class BleManager {
 
   void _handleNordicDataReceived(Map event) {
     final deviceId = event['device'] as String? ?? 'unknown';
+    // Bug 11 Fix: v2 同步中的裝置由 notifySub 處理，這裡跳過避免重複
+    if (_syncingDevices.contains(deviceId)) return;
     final dataList = event['data'];
     if (dataList is List && dataList.isNotEmpty) {
       final data = Uint8List.fromList(List<int>.from(dataList));
@@ -208,6 +210,9 @@ class BleManager {
 
   /// Bug 5 Fix: 檢查 sync 是否已被 timeout 取消
   bool _isCancelled(String deviceId) => _cancelledSyncs.contains(deviceId);
+
+  /// Bug 11 Fix: 追蹤正在 v2 同步中的裝置，避免 _handleNordicDataReceived 重複處理
+  final Set<String> _syncingDevices = {};
 
   /// Android: 使用 Nordic 連線並同步（v2 協議 — Write Bloom + Notify 差量推送）
   ///
@@ -232,12 +237,15 @@ class BleManager {
       }
       _dlog('NORDIC CONNECTED $deviceId ✓ (MTU + services auto-negotiated)');
 
+      // Bug 11 Fix: 標記此裝置正在 v2 同步中，防止 _handleNordicDataReceived 重複處理
+      _syncingDevices.add(deviceId);
+
       // ── 1. Write 本機 Bloom Filter 到對端 ──
       // 對端 GATT Server 收到後會比對差量，只 Notify 推送我們缺少的事件 + 對端 Bloom。
       // 不再用 GATT Read（繞過 GATT Server Read 壞掉的問題）。
       final localBloom = await MeshEventHandler.buildLocalBloomFilter();
       final bloomWriteOk = await NativeBridge.nordicWriteBloom(deviceId, localBloom);
-      if (_isCancelled(deviceId)) { _dlog('CANCELLED(write-bloom) $deviceId'); return; }
+      if (_isCancelled(deviceId)) { _dlog('CANCELLED(write-bloom) $deviceId'); _syncingDevices.remove(deviceId); return; }
       _dlog('BLOOM_WRITE → $deviceId: ${localBloom.length} bytes, ok=$bloomWriteOk');
 
       // ── 2. 等待對端 Notify 推送（事件 + Bloom + 結束標記）──
@@ -287,7 +295,7 @@ class BleManager {
       } catch (_) {}
       await notifySub.cancel();
 
-      if (_isCancelled(deviceId)) { _dlog('CANCELLED(notify-wait) $deviceId'); return; }
+      if (_isCancelled(deviceId)) { _dlog('CANCELLED(notify-wait) $deviceId'); _syncingDevices.remove(deviceId); return; }
 
       // ── 3. 用對端 Bloom 比對，Write 對端缺少的事件 ──
       // 先推 TriageQueue
@@ -295,7 +303,7 @@ class BleManager {
       final sentFromQueue = <String>{};
 
       while (!queue.isEmpty) {
-        if (_isCancelled(deviceId)) { _dlog('CANCELLED(queue) $deviceId'); return; }
+        if (_isCancelled(deviceId)) { _dlog('CANCELLED(queue) $deviceId'); _syncingDevices.remove(deviceId); return; }
         final task = queue.dequeue();
         if (task == null) break;
         if (remoteEventIds.contains(task.eventId)) continue;
@@ -311,7 +319,7 @@ class BleManager {
             deviceId,
             Uint8List.fromList(wireData),
           );
-          if (_isCancelled(deviceId)) { queue.enqueue(task); return; }
+          if (_isCancelled(deviceId)) { queue.enqueue(task); _syncingDevices.remove(deviceId); return; }
           if (success) {
             sentFromQueue.add(task.eventId);
             syncedEventCount++;
@@ -327,7 +335,7 @@ class BleManager {
         }
       }
 
-      if (_isCancelled(deviceId)) { _dlog('CANCELLED(pre-db) $deviceId'); return; }
+      if (_isCancelled(deviceId)) { _dlog('CANCELLED(pre-db) $deviceId'); _syncingDevices.remove(deviceId); return; }
 
       // 從 DB 補充最近 24h 的事件
       final db = await DatabaseHelper().database;
@@ -362,7 +370,7 @@ class BleManager {
       int dbSent = 0;
 
       for (final evt in myEvents) {
-        if (_isCancelled(deviceId)) { _dlog('CANCELLED(db-loop) $deviceId'); return; }
+        if (_isCancelled(deviceId)) { _dlog('CANCELLED(db-loop) $deviceId'); _syncingDevices.remove(deviceId); return; }
         final evtId = evt['event_id'] as String;
         if (remoteEventIds.contains(evtId)) { dbBloomSkipped++; continue; }
         if (sentFromQueue.contains(evtId)) continue;
@@ -390,7 +398,7 @@ class BleManager {
               deviceId,
               Uint8List.fromList(wireData),
             );
-            if (_isCancelled(deviceId)) return;
+            if (_isCancelled(deviceId)) { _syncingDevices.remove(deviceId); return; }
             if (success) {
               dbSent++;
               syncedEventCount++;
@@ -413,8 +421,10 @@ class BleManager {
       _dlog('DONE with $deviceId (sent=$syncedEventCount, recv=$receivedEventCount) → cooldown ${kPeerCooldownSec}s');
 
       await Future.delayed(const Duration(seconds: 2));
+      _syncingDevices.remove(deviceId);
       await NativeBridge.nordicDisconnect(deviceId);
     } catch (e) {
+      _syncingDevices.remove(deviceId);
       if (_isCancelled(deviceId)) return; // 被取消導致的異常，靜默處理
       _dlog('ERROR $deviceId: $e');
       _knownPeers.remove(deviceId);
