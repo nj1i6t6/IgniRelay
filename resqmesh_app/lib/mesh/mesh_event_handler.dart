@@ -375,12 +375,75 @@ class MeshEventHandler {
     }
   }
 
-  // ── Bloom Filter 工具 ──────────────────────────────────────────
+  // ── Bloom Filter 工具（Bit-Vector）──────────────────────────────
+
+  /// Bloom filter 參數：2048 bytes (16384 bits), 7 hash functions
+  static const int kBloomSizeBytes = 2048;
+  static const int kBloomHashCount = 7;
+  static const List<int> kBloomMagic = [0xFF, 0xBF, 0x02, 0x00];
+
+  /// 檢測 bytes 是否帶有 bit-vector bloom magic header
+  static bool _hasBloomMagic(List<int> bytes) {
+    if (bytes.length < 4) return false;
+    return bytes[0] == 0xFF && bytes[1] == 0xBF &&
+           bytes[2] == 0x02 && bytes[3] == 0x00;
+  }
+
+  /// 簡易 MurmurHash3（32-bit）— 與 Kotlin 端完全一致
+  static int _murmurHash(String s, {required int seed}) {
+    int h = seed;
+    for (final c in s.codeUnits) {
+      int k = c;
+      k = (k * 0xcc9e2d51) & 0xFFFFFFFF;
+      k = ((k << 15) | (k >> 17)) & 0xFFFFFFFF;
+      k = (k * 0x1b873593) & 0xFFFFFFFF;
+      h ^= k;
+      h = ((h << 13) | (h >> 19)) & 0xFFFFFFFF;
+      h = (h * 5 + 0xe6546b64) & 0xFFFFFFFF;
+    }
+    h ^= s.length;
+    h ^= h >> 16;
+    h = (h * 0x85ebca6b) & 0xFFFFFFFF;
+    h ^= h >> 13;
+    h = (h * 0xc2b2ae35) & 0xFFFFFFFF;
+    h ^= h >> 16;
+    return h;
+  }
+
+  /// 從事件 ID 集合建構 bit-vector Bloom Filter（含 magic header）
+  static Uint8List buildBitVectorBloom(Set<String> eventIds) {
+    final bits = Uint8List(kBloomSizeBytes + 4); // +4 for magic header
+    bits[0] = 0xFF; bits[1] = 0xBF; bits[2] = 0x02; bits[3] = 0x00;
+    for (final id in eventIds) {
+      for (int i = 0; i < kBloomHashCount; i++) {
+        final hash = _murmurHash(id, seed: i) % (kBloomSizeBytes * 8);
+        bits[4 + (hash >> 3)] |= (1 << (hash & 7));
+      }
+    }
+    return bits;
+  }
+
+  /// 檢查 bloom filter 是否 **可能** 包含指定 event ID
+  static bool bloomMayContain(List<int> bloom, String eventId) {
+    final offset = _hasBloomMagic(bloom) ? 4 : 0;
+    final size = bloom.length - offset;
+    if (size <= 0) return false;
+    for (int i = 0; i < kBloomHashCount; i++) {
+      final hash = _murmurHash(eventId, seed: i) % (size * 8);
+      if ((bloom[offset + (hash >> 3)] & (1 << (hash & 7))) == 0) return false;
+    }
+    return true;
+  }
 
   /// 將 Bloom Filter bytes 解析為事件 ID 集合
+  /// 向下相容：如果帶 magic header 則為 bit-vector 格式（回傳空集合，
+  /// 呼叫端應改用 bloomMayContain 逐一比對）；否則 fallback 到舊版文字格式。
   static Set<String> parseBloomFilter(List<int> bytes) {
     final result = <String>{};
     if (bytes.isEmpty) return result;
+    // 新格式 bit-vector：不再能還原為 ID 集合，回傳空集合
+    if (_hasBloomMagic(bytes)) return result;
+    // 舊格式：換行分隔的 event ID 列表
     try {
       final str = utf8.decode(bytes);
       for (final id in str.split('\n')) {
@@ -391,8 +454,8 @@ class MeshEventHandler {
     return result;
   }
 
-  /// 建構本機 Bloom Filter（最近事件 ID 列表）
-  static Future<Uint8List> buildLocalBloomFilter({int limit = 50}) async {
+  /// 建構本機 Bloom Filter（bit-vector 格式）
+  static Future<Uint8List> buildLocalBloomFilter({int limit = 500}) async {
     final db = await DatabaseHelper().database;
     final rows = await db.query(
       'Event_Logs',
@@ -400,8 +463,70 @@ class MeshEventHandler {
       orderBy: 'hlc_timestamp DESC',
       limit: limit,
     );
-    final ids = rows.map((r) => r['event_id'] as String).join('\n');
-    return Uint8List.fromList(utf8.encode(ids));
+    final ids = rows.map((r) => r['event_id'] as String).toSet();
+    return buildBitVectorBloom(ids);
+  }
+
+  /// 取得本機事件 ID 集合（供 IBLT 同步使用）
+  /// [excludeChat] 為 true 時排除聊天訊息事件
+  Future<Set<String>> getLocalEventIds({bool excludeChat = true}) async {
+    final db = await DatabaseHelper().database;
+    String where = '';
+    if (excludeChat) where = 'WHERE event_type != ${EventType.chatMessage}';
+    final rows = await db.rawQuery('SELECT event_id FROM Event_Logs $where');
+    return rows.map((r) => r['event_id'] as String).toSet();
+  }
+
+  /// 根據 CRC32 keyHash 集合查詢對應事件的完整資料（供 IBLT Fast Path 使用）
+  Future<List<Map<String, dynamic>>> getEventsByKeyHashes(
+      Set<int> keyHashes) async {
+    if (keyHashes.isEmpty) return [];
+    final db = await DatabaseHelper().database;
+    final cutoff24h =
+        DateTime.now().millisecondsSinceEpoch - (24 * 3600 * 1000);
+    final allEvents = await db.query(
+      'Event_Logs',
+      columns: [
+        'event_id',
+        'payload',
+        'signature',
+        'urgency',
+        'event_type',
+        'sender_pub_key',
+        'hlc_timestamp',
+        'hlc_counter',
+        'received_lat',
+        'received_lng',
+        'origin_lat',
+        'origin_lng',
+      ],
+      where: 'hlc_timestamp > ? AND event_type != ${EventType.chatMessage}',
+      whereArgs: [cutoff24h],
+      orderBy: 'urgency DESC, hlc_timestamp DESC',
+    );
+
+    // 過濾出 keyHash 匹配的事件
+    final result = <Map<String, dynamic>>[];
+    for (final evt in allEvents) {
+      final evtId = evt['event_id'] as String;
+      final crc = _crc32EventId(evtId);
+      if (keyHashes.contains(crc)) {
+        result.add(evt);
+      }
+    }
+    return result;
+  }
+
+  /// CRC32 — 與 IBLT._crc32 一致
+  static int _crc32EventId(String s) {
+    int crc = 0xFFFFFFFF;
+    for (final b in s.codeUnits) {
+      crc ^= b;
+      for (int j = 0; j < 8; j++) {
+        crc = (crc & 1) == 1 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
+      }
+    }
+    return crc ^ 0xFFFFFFFF;
   }
 
   void dispose() {

@@ -49,6 +49,11 @@ class ResQMeshForegroundService : Service() {
         @Volatile
         @JvmStatic
         var gattServiceStatus: Int = -999  // 尚未回報
+
+        // Bloom filter bit-vector 參數：2048 bytes (16384 bits), 7 hash functions
+        const val BLOOM_SIZE_BYTES = 2048
+        const val BLOOM_HASH_COUNT = 7
+        val BLOOM_MAGIC = byteArrayOf(0xFF.toByte(), 0xBF.toByte(), 0x02, 0x00)
     }
 
     private var bleAdvertiser: BluetoothLeAdvertiser? = null
@@ -577,11 +582,72 @@ class ResQMeshForegroundService : Service() {
         }, (events.size * 100L) + 200)
     }
 
+    // ── Bloom Filter Bit-Vector 工具 ─────────────────────────────────────
+
+    /** 檢測 bytes 是否帶有 bit-vector bloom magic header */
+    private fun hasBloomMagic(bytes: ByteArray): Boolean {
+        if (bytes.size < 4) return false
+        return bytes[0] == 0xFF.toByte() && bytes[1] == 0xBF.toByte() &&
+               bytes[2] == 0x02.toByte() && bytes[3] == 0x00.toByte()
+    }
+
+    /** 簡易 MurmurHash3（32-bit）— 與 Dart 端完全一致 */
+    private fun murmurHash(s: String, seed: Int): Int {
+        var h = seed
+        for (c in s.toCharArray()) {
+            var k = c.code
+            k = (k.toLong() * 0xcc9e2d51L and 0xFFFFFFFFL).toInt()
+            k = (k shl 15) or (k ushr 17)
+            k = (k.toLong() * 0x1b873593L and 0xFFFFFFFFL).toInt()
+            h = h xor k
+            h = (h shl 13) or (h ushr 19)
+            h = (h.toLong() * 5L + 0xe6546b64L and 0xFFFFFFFFL).toInt()
+        }
+        h = h xor s.length
+        h = h xor (h ushr 16)
+        h = (h.toLong() * 0x85ebca6bL and 0xFFFFFFFFL).toInt()
+        h = h xor (h ushr 13)
+        h = (h.toLong() * 0xc2b2ae35L and 0xFFFFFFFFL).toInt()
+        h = h xor (h ushr 16)
+        return h
+    }
+
+    /** 從事件 ID 集合建構 bit-vector Bloom Filter（含 magic header） */
+    private fun buildBitVectorBloom(eventIds: Set<String>): ByteArray {
+        val bits = ByteArray(BLOOM_SIZE_BYTES + 4)
+        bits[0] = 0xFF.toByte(); bits[1] = 0xBF.toByte(); bits[2] = 0x02; bits[3] = 0x00
+        for (id in eventIds) {
+            for (i in 0 until BLOOM_HASH_COUNT) {
+                val hash = (murmurHash(id, i).toLong() and 0xFFFFFFFFL) % (BLOOM_SIZE_BYTES * 8)
+                val idx = hash.toInt()
+                bits[4 + (idx shr 3)] = (bits[4 + (idx shr 3)].toInt() or (1 shl (idx and 7))).toByte()
+            }
+        }
+        return bits
+    }
+
+    /** 檢查 bloom filter 是否可能包含指定 event ID */
+    private fun bloomMayContain(bloom: ByteArray, eventId: String): Boolean {
+        val offset = if (hasBloomMagic(bloom)) 4 else 0
+        val size = bloom.size - offset
+        if (size <= 0) return false
+        for (i in 0 until BLOOM_HASH_COUNT) {
+            val hash = (murmurHash(eventId, i).toLong() and 0xFFFFFFFFL) % (size * 8)
+            val idx = hash.toInt()
+            if ((bloom[offset + (idx shr 3)].toInt() and (1 shl (idx and 7))) == 0) return false
+        }
+        return true
+    }
+
     // ── Bug 10: 差量推送（Bloom 比對後推送 Central 缺少的事件 + 本機 Bloom）──
     /**
      * 收到 Central 寫入的 Bloom Filter 後，比對差量，只推 Central 缺少的事件。
      * 推送結尾附加本機 Bloom，讓 Central 知道本機已有哪些事件，
      * 反向用 GATT Write 補送 Peripheral 缺少的事件。
+     *
+     * 支援兩種格式：
+     * - 新版 bit-vector：帶 magic [0xFF, 0xBF, 0x02, 0x00]，用 bloomMayContain 比對
+     * - 舊版文字格式：換行分隔的 event ID 列表（向下相容）
      *
      * 協議格式：
      * - 事件封包：正常 Protobuf MeshEvent bytes
@@ -597,13 +663,17 @@ class ResQMeshForegroundService : Service() {
             return
         }
 
-        // 解析 Central 的 Bloom Filter（換行分隔的 event ID 列表）
-        val remoteEventIds = try {
-            String(remoteBloomBytes, Charsets.UTF_8)
-                .split("\n")
-                .filter { it.isNotBlank() }
-                .toSet()
-        } catch (_: Exception) { emptySet() }
+        val isBitVector = hasBloomMagic(remoteBloomBytes)
+
+        // 舊格式 fallback：換行分隔的 event ID 列表
+        val remoteEventIds: Set<String> = if (!isBitVector) {
+            try {
+                String(remoteBloomBytes, Charsets.UTF_8)
+                    .split("\n")
+                    .filter { it.isNotBlank() }
+                    .toSet()
+            } catch (_: Exception) { emptySet() }
+        } else emptySet()
 
         val events = sharedOutboxEvents
         // 比對差量：只推 Central 沒有的事件
@@ -612,14 +682,22 @@ class ResQMeshForegroundService : Service() {
         for (event in events) {
             // 嘗試從 Protobuf 中提取 event_id 做比對
             val eventId = tryExtractEventId(event)
-            if (eventId != null && remoteEventIds.contains(eventId)) {
-                bloomSkipped++
-                continue
+            if (eventId != null) {
+                val alreadyHas = if (isBitVector) {
+                    bloomMayContain(remoteBloomBytes, eventId)
+                } else {
+                    remoteEventIds.contains(eventId)
+                }
+                if (alreadyHas) {
+                    bloomSkipped++
+                    continue
+                }
             }
             diffEvents.add(event)
         }
 
-        Log.i(TAG, "pushDiff: ${device.address} remote_bloom=${remoteEventIds.size} total=${events.size} skip=$bloomSkipped diff=${diffEvents.size}")
+        val bloomFmt = if (isBitVector) "bitvec(${remoteBloomBytes.size}B)" else "text(${remoteEventIds.size}ids)"
+        Log.i(TAG, "pushDiff: ${device.address} bloom=$bloomFmt total=${events.size} skip=$bloomSkipped diff=${diffEvents.size}")
 
         // 需要推送的封包：差量事件 + 本機 Bloom + 結束標記
         val localBloom = sharedBloomBytes

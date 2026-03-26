@@ -196,6 +196,10 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
 
                   // 快速預設
                   _buildPresetRow(),
+                  const SizedBox(height: 12),
+
+                  // 從系統健康資料匯入
+                  _buildHealthImportButton(),
                   const SizedBox(height: 20),
 
                   // ── 基本生理 ──
@@ -312,6 +316,48 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
         const SizedBox(width: 8),
         _presetChip('全部分享', MedicalField.presetFull),
       ],
+    );
+  }
+
+  // ── 從系統健康資料匯入按鈕 ──
+  Widget _buildHealthImportButton() {
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.cyanAccent,
+        side: const BorderSide(color: Colors.cyanAccent),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      ),
+      onPressed: () {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF1a1a2e),
+            title: const Row(
+              children: [
+                Icon(Icons.health_and_safety, color: Colors.cyanAccent, size: 22),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text('系統健康資料匯入',
+                      style: TextStyle(color: Colors.white, fontSize: 16)),
+                ),
+              ],
+            ),
+            content: const Text(
+              '此功能需要 Health Connect API (Android 14+) 支援，目前尚在整合中。\n\n'
+              '未來將支援自動匯入身高、體重、血型等資料，減少手動輸入。',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('了解', style: TextStyle(color: Colors.cyanAccent)),
+              ),
+            ],
+          ),
+        );
+      },
+      icon: const Icon(Icons.download, size: 18),
+      label: const Text('從系統健康資料匯入', style: TextStyle(fontSize: 13)),
     );
   }
 

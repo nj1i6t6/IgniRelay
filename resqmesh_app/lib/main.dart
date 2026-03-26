@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'ui/survival_mode_screen.dart';
 import 'ui/map_screen.dart';
 import 'ui/match_screen.dart';
+import 'ui/chat_list_screen.dart';
 import 'ui/onboarding_screen.dart';
 import 'ui/battery_optimization_guide.dart';
 import 'ui/medical_card_screen.dart';
@@ -289,6 +290,7 @@ class _MainTabControllerState extends State<MainTabController> {
   final List<Widget> _pages = [
     const MapScreen(),
     const SurvivalModeScreen(),
+    const ChatListScreen(),
     const MatchScreen(),
     const _ProfilePage(),
   ];
@@ -445,6 +447,11 @@ class _MainTabControllerState extends State<MainTabController> {
             icon: Icon(Icons.bluetooth_outlined),
             activeIcon: Icon(Icons.bluetooth),
             label: 'Mesh 守護',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.chat_outlined),
+            activeIcon: Icon(Icons.chat),
+            label: '聊天',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.handshake_outlined),

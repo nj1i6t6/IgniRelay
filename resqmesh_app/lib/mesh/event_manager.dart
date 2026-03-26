@@ -414,6 +414,63 @@ class EventManager {
     return hazardId;
   }
 
+  // ── 發布聊天訊息 ─────────────────────────────────────────────
+  Future<String> publishChatMessage({
+    required String roomId,
+    required String roomType,
+    required String content,
+    String? replyTo,
+  }) async {
+    await _checkRateLimit();
+
+    final eventId = _uuid.v4();
+    final hlc = HLC.now();
+    final pubKeyBytes = await _identity.getPublicKeyBytes();
+
+    // Build payload: JSON with room info + content
+    final payloadMap = <String, dynamic>{
+      'room_id': roomId,
+      'room_type': roomType,
+      'content': content,
+      if (replyTo != null) 'reply_to': replyTo,
+    };
+    final payload = Uint8List.fromList(utf8.encode(jsonEncode(payloadMap)));
+    final signature = await Signer.signPayload(payload);
+
+    final db = await _db.database;
+
+    // 寫入事件溯源日誌
+    await db.insert('Event_Logs', {
+      'event_id': eventId,
+      'sender_pub_key': Uint8List.fromList(pubKeyBytes),
+      'identity_level': _identity.getIdentityLevel(),
+      'event_type': EventType.chatMessage,
+      'urgency': 0, // INFO level
+      'hlc_timestamp': hlc.timestamp,
+      'hlc_counter': hlc.counter,
+      'ttl': 5,
+      'node_tier': 1,
+      'chunk_index': 0,
+      'total_chunks': 1,
+      'payload': payload,
+      'signature': Uint8List.fromList(signature),
+      'is_synced': 0,
+    });
+
+    // 寫入 Chat_Messages 供本機顯示
+    await db.insert('Chat_Messages', {
+      'event_id': eventId,
+      'room_id': roomId,
+      'sender_pub_key': Uint8List.fromList(pubKeyBytes),
+      'content': content,
+      'reply_to': replyTo,
+      'hlc_timestamp': hlc.timestamp,
+    });
+
+    _queue.enqueue(MeshTask(eventId, 0, payload, eventType: EventType.chatMessage));
+    return eventId;
+  }
+
   // ── 超時自動釋放配對 ─────────────────────────────────────────
   /// PENDING 超過 30 分鐘 → AVAILABLE，LOCKED 超過 4 小時 → AVAILABLE
   Future<void> expireStaleMatches() async {

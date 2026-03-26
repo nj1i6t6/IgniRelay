@@ -64,6 +64,7 @@ class _MapScreenState extends State<MapScreen>
   List<Marker> _hazardCenterMarkers = [];
   List<Map<String, dynamic>> _hazardData = [];
   List<Marker> _eventMarkers = [];
+  List<Marker> _poiMarkers = [];
   Timer? _refreshTimer;
   bool _showLegend = false;
   String _myReporterHex = '';
@@ -71,6 +72,9 @@ class _MapScreenState extends State<MapScreen>
   // ── 圖層設定 ──
   final MapLayerSettings _layerSettings = MapLayerSettings();
   int _themeGeneration = 0;
+
+  // ── POI 標記防抖 ──
+  Timer? _poiRefreshTimer;
 
   // ── 危險標記模式 ──
   bool _isMarkingMode = false;
@@ -118,6 +122,7 @@ class _MapScreenState extends State<MapScreen>
     _mbTiles?.dispose();
     _positionStream?.cancel();
     _refreshTimer?.cancel();
+    _poiRefreshTimer?.cancel();
     _markDescCtrl.dispose();
     _layerSettings.removeListener(_onLayerSettingsChanged);
     _layerSettings.dispose();
@@ -236,6 +241,7 @@ class _MapScreenState extends State<MapScreen>
           _mbtilesAvailable = true;
 
         });
+        _refreshPoiMarkers();
       }
     } catch (e, stack) {
       debugPrint('[Map] MBTiles init error: $e\n$stack');
@@ -846,6 +852,89 @@ class _MapScreenState extends State<MapScreen>
         sub == 'university') return Colors.orange;
     if (sub == 'supermarket' || sub == 'convenience') return Colors.green;
     return Colors.cyan;
+  }
+
+  IconData _poiCategoryIcon(String cls, String sub) {
+    if (cls == 'hospital' || sub == 'hospital') return Icons.local_hospital;
+    if (sub == 'clinic' || sub == 'doctors') return Icons.medical_services;
+    if (sub == 'nursing_home') return Icons.elderly;
+    if (cls == 'pharmacy' || sub == 'pharmacy') return Icons.local_pharmacy;
+    if (sub == 'police') return Icons.local_police;
+    if (sub == 'fire_station') return Icons.fire_truck;
+    if (sub == 'school' || sub == 'kindergarten') return Icons.school;
+    if (sub == 'college' || sub == 'university') return Icons.account_balance;
+    if (sub == 'supermarket' || sub == 'convenience') return Icons.shopping_cart;
+    if (sub == 'mall' || sub == 'department_store') return Icons.store;
+    if (sub == 'fuel') return Icons.local_gas_station;
+    if (sub == 'restaurant') return Icons.restaurant;
+    if (sub == 'cafe') return Icons.local_cafe;
+    if (sub == 'bank') return Icons.account_balance_wallet;
+    if (sub == 'post_office') return Icons.local_post_office;
+    if (sub == 'place_of_worship') return Icons.church;
+    if (sub == 'parking') return Icons.local_parking;
+    if (cls == 'shop') return Icons.shopping_bag;
+    return Icons.place;
+  }
+
+  List<Marker> _buildPoiMarkers(List<Map<String, String>> pois) {
+    return pois.map((poi) {
+      final lat = double.tryParse(poi['lat'] ?? '') ?? 0;
+      final lng = double.tryParse(poi['lng'] ?? '') ?? 0;
+      final cls = poi['class'] ?? '';
+      final sub = poi['subclass'] ?? '';
+      final color = _poiCategoryColor(cls, sub);
+      final icon = _poiCategoryIcon(cls, sub);
+
+      return Marker(
+        point: LatLng(lat, lng),
+        width: 24,
+        height: 24,
+        child: GestureDetector(
+          onTap: () => _showPoiInfoSheet(poi),
+          child: Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: const [
+                BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
+              ],
+            ),
+            child: Icon(icon, size: 12, color: Colors.white),
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  void _refreshPoiMarkers() {
+    _poiRefreshTimer?.cancel();
+    _poiRefreshTimer = Timer(const Duration(milliseconds: 300), () {
+      _doRefreshPoiMarkers();
+    });
+  }
+
+  Future<void> _doRefreshPoiMarkers() async {
+    if (_poiQuery == null) return;
+    final zoom = _mapController.camera.zoom;
+    if (zoom < 12) {
+      if (_poiMarkers.isNotEmpty) {
+        setState(() => _poiMarkers = []);
+      }
+      return;
+    }
+    final bounds = _mapController.camera.visibleBounds;
+    final pois = await _poiQuery!.queryVisiblePois(
+      south: bounds.south,
+      west: bounds.west,
+      north: bounds.north,
+      east: bounds.east,
+      zoom: zoom,
+    );
+    if (!mounted) return;
+    setState(() => _poiMarkers = _buildPoiMarkers(pois));
   }
 
   Future<void> _onMapLongPress(TapPosition tapPosition, LatLng latlng) async {
@@ -1542,6 +1631,9 @@ class _MapScreenState extends State<MapScreen>
             maxZoom: 18.0,
             onTap: _onMapTap,
             onLongPress: _onMapLongPress,
+            onPositionChanged: (pos, hasGesture) {
+              if (hasGesture) _refreshPoiMarkers();
+            },
           ),
           children: [
             // 1. 離線向量圖磚底圖 (含自動 POI 顯示)
@@ -1556,10 +1648,13 @@ class _MapScreenState extends State<MapScreen>
                 sprites: null,
                 layerMode: VectorTileLayerMode.vector,
               ),
-            // 2. GPS 精度圈
+            // 2. POI 圓點標記
+            if (_poiMarkers.isNotEmpty)
+              MarkerLayer(markers: _poiMarkers),
+            // 3. GPS 精度圈
             if (accuracyCircles.isNotEmpty)
               CircleLayer(circles: accuracyCircles),
-            // 3. 危險區域覆蓋層
+            // 4. 危險區域覆蓋層
             if (_hazardPolygons.isNotEmpty)
               PolygonLayer(polygons: _hazardPolygons),
             // 3.5 預覽標記多邊形

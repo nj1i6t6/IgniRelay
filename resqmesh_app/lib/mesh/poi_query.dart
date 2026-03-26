@@ -17,6 +17,30 @@ class PoiQuery {
     // DB 連線在 isolate 內管理，此處無需清理
   }
 
+  /// 查詢可視範圍內所有 POI（用於地圖標記顯示）
+  /// [bounds] 可視範圍的四個角：south, west, north, east
+  /// [zoom] 當前地圖縮放等級
+  /// 回傳所有 POI 屬性 Map 列表
+  Future<List<Map<String, String>>> queryVisiblePois({
+    required double south,
+    required double west,
+    required double north,
+    required double east,
+    required double zoom,
+  }) async {
+    return compute(
+        _queryVisibleInIsolate,
+        _VisibleQueryParams(
+          dbPath: mbtilesPath,
+          poiDbPath: poiDetailsPath ?? '',
+          south: south,
+          west: west,
+          north: north,
+          east: east,
+          zoom: zoom,
+        ));
+  }
+
   /// 查詢點擊座標附近的最近 POI
   /// [point] 點擊的經緯度
   /// [zoom] 當前地圖縮放等級
@@ -232,6 +256,90 @@ class PoiQuery {
     return result;
   }
 
+  /// 在 isolate 中查詢可視範圍內所有 POI
+  static List<Map<String, String>> _queryVisibleInIsolate(
+      _VisibleQueryParams params) {
+    final db = sql.sqlite3.open(params.dbPath, mode: sql.OpenMode.readOnly);
+    try {
+      final z = params.zoom.floor().clamp(12, 14);
+      final minTileX = _lngToTileX(params.west, z);
+      final maxTileX = _lngToTileX(params.east, z);
+      final minTileY = _latToTileY(params.north, z); // north = smaller Y
+      final maxTileY = _latToTileY(params.south, z);
+
+      final results = <Map<String, String>>[];
+      final seen = <String>{};
+
+      for (int tx = minTileX; tx <= maxTileX; tx++) {
+        for (int ty = minTileY; ty <= maxTileY; ty++) {
+          final tileYtms = (1 << z) - 1 - ty;
+          if (tx < 0 || tileYtms < 0) continue;
+
+          final rows = db.select(
+            'SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1',
+            [z, tx, tileYtms],
+          );
+          if (rows.isEmpty) continue;
+
+          final raw = rows.first['tile_data'] as Uint8List;
+          final bytes = Uint8List.fromList(gzip.decode(raw));
+          final tile = VectorTile.fromBytes(bytes: bytes);
+
+          for (final layer in tile.layers) {
+            if (layer.name != 'poi') continue;
+            final extent = layer.extent;
+
+            for (final feature in layer.features) {
+              if (feature.type != VectorTileGeomType.POINT) continue;
+              final geom = feature.decodeGeometry();
+              if (geom == null) continue;
+
+              List<double>? coords;
+              if (geom is GeometryPoint) {
+                coords = geom.coordinates;
+              } else if (geom is GeometryMultiPoint) {
+                final pts = geom.coordinates;
+                if (pts.isNotEmpty) coords = pts.first;
+              }
+              if (coords == null || coords.length < 2) continue;
+
+              final featureLon =
+                  _tileXToLng(tx, coords[0], ty, z, extent, isX: true);
+              final featureLat =
+                  _tileYToLat(tileYtms, coords[1], ty, z, extent);
+
+              // 確認在可視範圍內
+              if (featureLat < params.south ||
+                  featureLat > params.north ||
+                  featureLon < params.west ||
+                  featureLon > params.east) continue;
+
+              final props = feature.decodeProperties();
+              final name = _vtStr(props['name']);
+              if (name.isEmpty) continue;
+
+              // 去重（同名同位置）
+              final key = '$name|${featureLat.toStringAsFixed(5)}|${featureLon.toStringAsFixed(5)}';
+              if (seen.contains(key)) continue;
+              seen.add(key);
+
+              results.add({
+                'name': name,
+                'class': _vtStr(props['class']),
+                'subclass': _vtStr(props['subclass']),
+                'lat': featureLat.toString(),
+                'lng': featureLon.toString(),
+              });
+            }
+          }
+        }
+      }
+      return results;
+    } finally {
+      db.dispose();
+    }
+  }
+
   // ── 工具函式 ──
 
   static String _vtStr(VectorTileValue? v) {
@@ -305,5 +413,25 @@ class _QueryParams {
     required this.lon,
     required this.zoom,
     required this.toleranceMeters,
+  });
+}
+
+class _VisibleQueryParams {
+  final String dbPath;
+  final String poiDbPath;
+  final double south;
+  final double west;
+  final double north;
+  final double east;
+  final double zoom;
+
+  const _VisibleQueryParams({
+    required this.dbPath,
+    required this.poiDbPath,
+    required this.south,
+    required this.west,
+    required this.north,
+    required this.east,
+    required this.zoom,
   });
 }

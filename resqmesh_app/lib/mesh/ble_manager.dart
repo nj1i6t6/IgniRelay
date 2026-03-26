@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'event_manager.dart';
+import 'iblt.dart';
 import 'mesh_constants.dart';
 import 'mesh_event_handler.dart';
 import 'native_bridge.dart';
@@ -21,6 +23,12 @@ class BleManager {
   static final BleManager _instance = BleManager._internal();
   factory BleManager() => _instance;
   BleManager._internal();
+
+  // BLE Sync Protocol Control Codes
+  static const int kControlIBLT = 0x01;
+  static const int kControlSlowPath = 0x02;
+  static const int kControlChatWatermark = 0x03;
+  static const int kControlEventData = 0x04;
 
   bool _isScanning = false;
   bool _isActive = false;
@@ -257,8 +265,186 @@ class BleManager {
     }
   }
 
+  /// IBLT Fast Path 同步嘗試
+  ///
+  /// 流程：
+  /// 1. 建構本機 IBLT（排除聊天事件）
+  /// 2. 取得本機聊天水位線（Chat_Messages 的最大 hlc_timestamp）
+  /// 3. 打包 517 byte 封包：[0x01](1B) + [watermark](8B) + [IBLT](504B) + [padding](4B)
+  /// 4. 寫入對端，等待對端 IBLT 回應
+  /// 5. 做 IBLT 相減並嘗試 peel
+  /// 6. 成功 → 只交換缺少的事件（Fast Path）
+  /// 7. 失敗 → 回傳 false，由呼叫端 fallback 到 Bloom-based Slow Path
+  Future<bool> _tryIBLTSync(String deviceId) async {
+    try {
+      // ── 1. 建構本機 IBLT（排除聊天事件）──
+      final handler = MeshEventHandler();
+      final localEventIds = await handler.getLocalEventIds(excludeChat: true);
+      final localIblt = IBLT();
+      for (final id in localEventIds) {
+        localIblt.insert(id);
+      }
+
+      // ── 2. 取得聊天水位線 ──
+      final db = await DatabaseHelper().database;
+      final wmResult = await db.rawQuery(
+          'SELECT MAX(hlc_timestamp) as wm FROM Chat_Messages');
+      final chatWatermark = (wmResult.first['wm'] as int?) ?? 0;
+
+      // ── 3. 打包封包：control(1) + watermark(8) + iblt(504) + padding(4) = 517 ──
+      final packet = Uint8List(517);
+      packet[0] = kControlIBLT;
+      final wmData = ByteData(8)..setInt64(0, chatWatermark, Endian.little);
+      packet.setRange(1, 9, wmData.buffer.asUint8List());
+      packet.setRange(9, 513, localIblt.toBytes());
+      // padding bytes 513-516 保留為 0
+
+      // ── 4. 寫入 IBLT 封包到對端 ──
+      final writeOk = await NativeBridge.nordicWriteBloom(deviceId, packet);
+      if (_isCancelled(deviceId)) {
+        _dlog('IBLT CANCELLED(write) $deviceId');
+        return false;
+      }
+      _dlog('IBLT_WRITE → $deviceId: ${packet.length} bytes, ok=$writeOk');
+      if (!writeOk) return false;
+
+      // ── 5. 等待對端 IBLT 回應封包 ──
+      Uint8List? peerIbltBytes;
+      int peerChatWatermark = 0;
+      final ibltCompleter = Completer<bool>();
+      StreamSubscription? ibltSub;
+
+      ibltSub = NativeBridge.nativeEventStream.listen((event) {
+        if (event is Map &&
+            event['type'] == 'nordic_data' &&
+            event['device'] == deviceId) {
+          final dataList = event['data'];
+          if (dataList is List && dataList.isNotEmpty) {
+            final data = Uint8List.fromList(List<int>.from(dataList));
+            // 檢查是否為 IBLT 回應封包（control byte = 0x01, 長度 = 517）
+            if (data.length == 517 && data[0] == kControlIBLT) {
+              final wmView = ByteData.sublistView(data, 1, 9);
+              peerChatWatermark = wmView.getInt64(0, Endian.little);
+              peerIbltBytes = Uint8List.sublistView(data, 9, 513);
+              if (!ibltCompleter.isCompleted) ibltCompleter.complete(true);
+              return;
+            }
+            // 收到 Slow Path 控制碼代表對端不支援 IBLT
+            if (data.isNotEmpty && data[0] == kControlSlowPath) {
+              if (!ibltCompleter.isCompleted) ibltCompleter.complete(false);
+              return;
+            }
+          }
+        }
+      });
+
+      // 8 秒超時（IBLT 交換應很快）
+      bool gotResponse = false;
+      try {
+        gotResponse = await ibltCompleter.future
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+      } catch (_) {}
+      await ibltSub.cancel();
+
+      if (!gotResponse || peerIbltBytes == null) {
+        _dlog('IBLT_TIMEOUT or no response from $deviceId → fallback to Bloom');
+        return false;
+      }
+
+      // ── 6. IBLT 相減並嘗試 peel ──
+      final peerIblt = IBLT.fromBytes(peerIbltBytes!);
+      final diff = localIblt.subtract(peerIblt);
+      final peelResult = diff.peel();
+
+      if (peelResult == null) {
+        _dlog('IBLT_PEEL failed for $deviceId (too many differences) → fallback to Bloom');
+        return false;
+      }
+
+      _dlog('IBLT_PEEL OK for $deviceId: onlyLocal=${peelResult.onlyInA.length}, onlyRemote=${peelResult.onlyInB.length}');
+
+      // ── 7. Fast Path: 推送對端缺少的事件（onlyInA = 我們有、對端沒有的）──
+      if (peelResult.onlyInA.isNotEmpty) {
+        final eventsToSend =
+            await handler.getEventsByKeyHashes(peelResult.onlyInA);
+        int fastPathSent = 0;
+        for (final evt in eventsToSend) {
+          if (_isCancelled(deviceId)) return false;
+          final evtId = evt['event_id'] as String;
+          final payload = evt['payload'] as Uint8List?;
+          if (payload == null) continue;
+          try {
+            final wireData = MeshEventHandler.encodeWirePayload(
+              evtId,
+              payload.toList(),
+              urgency: (evt['urgency'] as int?) ?? 0,
+              eventType: (evt['event_type'] as int?) ?? 0,
+              signature: (evt['signature'] as Uint8List?)?.toList(),
+              senderPubKey: (evt['sender_pub_key'] as Uint8List?)?.toList(),
+              hlcTimestamp: (evt['hlc_timestamp'] as int?) ?? 0,
+              hlcCounter: (evt['hlc_counter'] as int?) ?? 0,
+              lat: (evt['received_lat'] as num?)?.toDouble(),
+              lng: (evt['received_lng'] as num?)?.toDouble(),
+              originLat: (evt['origin_lat'] as num?)?.toDouble(),
+              originLng: (evt['origin_lng'] as num?)?.toDouble(),
+            );
+            final success = await NativeBridge.nordicWriteEvent(
+              deviceId,
+              Uint8List.fromList(wireData),
+            );
+            if (success) {
+              fastPathSent++;
+              syncedEventCount++;
+              _dlog('IBLT_SENT ${evtId.substring(0, 8)}.. → $deviceId');
+            }
+          } catch (e) {
+            _dlog('IBLT_WRITE_ERR ${evtId.substring(0, 8)}.. → $deviceId: $e');
+            break;
+          }
+        }
+        _dlog('IBLT_FAST_PATH → $deviceId: sent=$fastPathSent/${eventsToSend.length}');
+      }
+
+      // ── 8. 比較聊天水位線，若不同則請求缺少的聊天訊息 ──
+      if (chatWatermark != peerChatWatermark) {
+        final lowerWm = chatWatermark < peerChatWatermark
+            ? chatWatermark
+            : peerChatWatermark;
+        _dlog('CHAT_WM_DIFF local=$chatWatermark peer=$peerChatWatermark → requesting missing chat since $lowerWm');
+        // 發送聊天水位線請求封包
+        final wmPacket = Uint8List(9);
+        wmPacket[0] = kControlChatWatermark;
+        final wmReqData = ByteData(8)..setInt64(0, lowerWm, Endian.little);
+        wmPacket.setRange(1, 9, wmReqData.buffer.asUint8List());
+        await NativeBridge.nordicWriteEvent(deviceId, wmPacket);
+      }
+
+      _dlog('IBLT_SYNC OK for $deviceId (Fast Path complete)');
+      return true;
+    } catch (e) {
+      _dlog('IBLT sync failed for $deviceId: $e → fallback to Bloom');
+      return false;
+    }
+  }
+
   /// v2 同步協議核心邏輯（從 _nordicConnectAndSync 抽出，方便 try...finally 包裹）
+  ///
+  /// 新增 IBLT Fast Path：先嘗試 IBLT 差量同步，失敗再 fallback 到 Bloom Slow Path。
   Future<void> _nordicSyncProtocolV2(String deviceId) async {
+      // ── IBLT Fast Path 嘗試 ──
+      // 如果成功，跳過後續 Bloom-based Slow Path
+      final ibltOk = await _tryIBLTSync(deviceId);
+      if (_isCancelled(deviceId)) { _dlog('CANCELLED(iblt) $deviceId'); return; }
+      if (ibltOk) {
+        _dlog('IBLT Fast Path succeeded for $deviceId, skipping Bloom Slow Path');
+        _eventStreamController.add(BleEvent.connected(deviceId));
+        _peerCooldown[deviceId] = DateTime.now();
+        _dlog('DONE(IBLT) with $deviceId (sent=$syncedEventCount, recv=$receivedEventCount) → cooldown ${kPeerCooldownSec}s');
+        return;
+      }
+      _dlog('IBLT Fast Path unavailable for $deviceId, using Bloom Slow Path');
+
+      // ── Bloom Slow Path（原有流程）──
       // ── 1. Write 本機 Bloom Filter 到對端 ──
       // 對端 GATT Server 收到後會比對差量，只 Notify 推送我們缺少的事件 + 對端 Bloom。
       // 不再用 GATT Read（繞過 GATT Server Read 壞掉的問題）。
