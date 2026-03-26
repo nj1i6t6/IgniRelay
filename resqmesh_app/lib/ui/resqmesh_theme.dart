@@ -71,6 +71,21 @@ Theme buildResQMeshTheme({Logger? logger, Set<String>? disabledPoi}) {
     }
   }
 
+  // ── 水體標籤 minzoom 調高 (避免縮小時顯示太多河流名) ──
+  for (final layer in layers) {
+    if (layer is Map<String, dynamic>) {
+      final id = layer['id'] as String? ?? '';
+      final sourceLayer = layer['source-layer'] as String? ?? '';
+      if (id.contains('water') ||
+          sourceLayer == 'water_name' ||
+          sourceLayer == 'waterway') {
+        if (layer['type'] == 'symbol') {
+          layer['minzoom'] = 14;
+        }
+      }
+    }
+  }
+
   // ── 5. 救災 POI 定義 (5 類) ──
   final poiDefs = <Map<String, dynamic>>[
     {

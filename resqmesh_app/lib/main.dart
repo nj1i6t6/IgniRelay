@@ -13,6 +13,7 @@ import 'ui/battery_optimization_guide.dart';
 import 'ui/medical_card_screen.dart';
 import 'db/database_helper.dart';
 import 'crypto/identity_manager.dart';
+import 'mesh/event_manager.dart';
 import 'geo/village_geofence.dart';
 import 'mesh/mesh_transport.dart';
 import 'mesh/mesh_event_handler.dart';
@@ -85,6 +86,9 @@ class _StartupRouterState extends State<_StartupRouter> {
       await VillageGeofence.init();
       LocationService().init(); // 不 await，GPS 冷啟動耗時
 
+      // 過期配對自動釋放
+      EventManager().expireStaleMatches().catchError((_) {});
+
       // 檢查是否需要 onboarding
       final prefs = await SharedPreferences.getInstance();
       final done = prefs.getBool('onboarding_done') ?? false;
@@ -103,10 +107,35 @@ class _StartupRouterState extends State<_StartupRouter> {
       // 權限在 UI 已顯示後才請求（對話框會疊在 onboarding/主畫面上）
       await _requestPermissions();
 
-      // 嘗試啟動 Mesh Transport
-      _transport.initialize().then((_) => _transport.start()).catchError((e) {
-        debugPrint('[Init] Mesh transport start failed: $e');
-      });
+      // 檢查藍牙硬體是否開啟
+      bool btOn = false;
+      try {
+        btOn = await NativeBridge.isBluetoothEnabled();
+      } catch (_) {}
+
+      if (!btOn && mounted) {
+        await _showBluetoothEnableDialog();
+        // 再次檢查
+        try {
+          btOn = await NativeBridge.isBluetoothEnabled();
+        } catch (_) {}
+      }
+
+      if (btOn) {
+        try {
+          await _transport.initialize();
+          await _transport.start();
+        } catch (e) {
+          debugPrint('[Init] Mesh transport start failed: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text('BLE Mesh 啟動失敗：$e'),
+                  backgroundColor: Colors.red),
+            );
+          }
+        }
+      }
 
       // Android: 自動掛載前景服務
       if (Platform.isAndroid) {
@@ -124,6 +153,47 @@ class _StartupRouterState extends State<_StartupRouter> {
           _showOnboarding = true;
         });
       }
+    }
+  }
+
+  Future<void> _showBluetoothEnableDialog() async {
+    if (!mounted) return;
+    final shouldEnable = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a2e),
+        title: const Row(
+          children: [
+            Icon(Icons.bluetooth_disabled, color: Colors.orangeAccent),
+            SizedBox(width: 8),
+            Text('需要開啟藍牙', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: const Text(
+          '烽傳需要藍牙才能建立 Mesh 網路，與周圍裝置交換求救與物資訊號。\n\n請開啟藍牙以啟用離線通訊功能。',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('稍後', style: TextStyle(color: Colors.white38)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blueAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('開啟藍牙'),
+          ),
+        ],
+      ),
+    );
+    if (shouldEnable == true) {
+      await NativeBridge.requestBluetoothEnable();
+      // 等待藍牙開啟
+      await Future.delayed(const Duration(seconds: 2));
     }
   }
 

@@ -11,6 +11,12 @@ enum EventType {
   QUARANTINE_VOTE   = 5;   // 惡意節點檢舉投票 (去中心化隔離)
   MATCH_CANCEL      = 6;   // 釋放配對 (PIN 解鎖失敗取消)
   FIRE_ALARM_RF     = 7;   // 433MHz RF 住警器火警訊號（由 Tier 0 基地台轉譯注入）
+  MATCH_CONFIRM     = 8;   // 需求者確認媒合（回覆給供給者 + 廣播預訂通知）
+  MATCH_REJECT      = 9;   // 需求者拒絕媒合（request 已失效）
+  MATCH_INQUIRY     = 10;  // 詢問物資是否還在
+  MATCH_AVAILABLE   = 11;  // 回覆：還在
+  MATCH_GONE        = 12;  // 回覆：沒了
+  CHAT_MESSAGE      = 13;  // 聊天訊息
 }
 
 // 檢傷及優先級定義 (QoS & Triage)
@@ -71,6 +77,12 @@ message ResourceData {
   double lat = 7;                // Provider 目前緯度
   double lng = 8;                // Provider 目前經度
   int64 expires_at = 9;          // 物資有效期限 (Unix ms, 0 = 無期限)
+  bool is_station = 10;                    // 據點旗標
+  int32 per_user_category_limit = 11;      // 每人每子類別上限
+  int32 per_user_total_limit = 12;         // 每人總上限
+  int64 reset_interval_ms = 13;            // 額度重置間隔 (0=手動)
+  repeated string visible_zones = 14;      // 里代碼列表（多選）
+  string visible_township = 15;            // 鄉鎮區代碼（單選，可選）
 }
 
 // 需求廣播 (EventType.REQUEST_BROADCAST)
@@ -169,6 +181,57 @@ message FireAlarmRfData {
   int64  detected_at      = 6;  // 偵測時間 (HLC timestamp, Unix ms)
   bytes  raw_rf_payload   = 7;  // 原始 RF 資料幀 (供後續分析/擴充解碼)
 }
+
+// 媒合確認 (EventType.MATCH_CONFIRM)
+message MatchConfirmData {
+  string request_id = 1;
+  string resource_id = 2;
+  bytes requester_pub_key = 3;
+  bytes provider_pub_key = 4;
+}
+
+// 媒合拒絕 (EventType.MATCH_REJECT)
+message MatchRejectData {
+  string request_id = 1;
+  string resource_id = 2;
+  string reason = 3;         // "REQUEST_EXPIRED" / "ALREADY_MATCHED" / "ALREADY_LOCKED"
+}
+
+// 物資確認詢問 (EventType.MATCH_INQUIRY)
+message MatchInquiryData {
+  string resource_id = 1;       // 要確認的物資 ID
+  bytes inquirer_pub_key = 2;   // 詢問者公鑰
+  string inquiry_id = 3;        // 詢問唯一 ID（用於追蹤回覆）
+}
+
+// 物資確認回覆 (EventType.MATCH_AVAILABLE / MATCH_GONE)
+message MatchInquiryResponse {
+  string inquiry_id = 1;
+  string resource_id = 2;
+  bool is_available = 3;
+}
+
+// 聊天訊息 (EventType.CHAT_MESSAGE)
+message ChatMessageData {
+  string room_id = 1;          // 行政區代碼或自訂 ID
+  string room_type = 2;        // "nation" / "county" / "township" / "village" / "custom"
+  string content = 3;          // 文字內容
+  string reply_to = 4;         // 回覆的 message event_id（可選）
+}
+
+// 聊天室設定
+message ChatRoomConfig {
+  string room_id = 1;
+  string room_name = 2;
+  string room_type = 3;
+  int32 rate_limit_seconds = 4;     // 發言間隔秒數（預設 180）
+  bool admin_only = 5;              // 公告頻道（唯讀）
+  string join_token_hash = 6;       // 加入驗證 hash
+  repeated bytes admin_pub_keys = 7; // 管理員公鑰列表
+}
+
+// 據點物資擴充欄位（附加在 ResourceData 中）
+// 注意：ResourceData 新增 field 10-15 給據點使用
 
 // ── Bridgefy 廣播驅動 Mesh 封包 ──────────────────────────────────
 

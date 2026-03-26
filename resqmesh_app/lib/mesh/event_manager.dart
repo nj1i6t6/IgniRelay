@@ -19,6 +19,13 @@ class EventType {
   static const int hazardMarker = 4;
   static const int quarantineVote = 5;
   static const int matchCancel = 6;
+  static const int fireAlarmRf = 7;
+  static const int matchConfirm = 8;
+  static const int matchReject = 9;
+  static const int matchInquiry = 10;
+  static const int matchAvailable = 11;
+  static const int matchGone = 12;
+  static const int chatMessage = 13;
 }
 
 // 物資狀態常數
@@ -405,6 +412,102 @@ class EventManager {
 
     _queue.enqueue(MeshTask(eventId, 2, payload, eventType: EventType.hazardMarker));
     return hazardId;
+  }
+
+  // ── 超時自動釋放配對 ─────────────────────────────────────────
+  /// PENDING 超過 30 分鐘 → AVAILABLE，LOCKED 超過 4 小時 → AVAILABLE
+  Future<void> expireStaleMatches() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final db = await _db.database;
+
+    // PENDING 超過 30 分鐘 → 回到 AVAILABLE
+    await db.update(
+      'Materials_State',
+      {
+        'status': MaterialStatus.available,
+        'matched_request_id': null,
+        'match_expires_at': null,
+      },
+      where: "status = 'PENDING' AND match_expires_at IS NOT NULL AND match_expires_at < ?",
+      whereArgs: [now],
+    );
+
+    // LOCKED 超過 4 小時 → 回到 AVAILABLE
+    await db.update(
+      'Materials_State',
+      {
+        'status': MaterialStatus.available,
+        'matched_request_id': null,
+        'match_expires_at': null,
+      },
+      where: "status = 'LOCKED' AND match_expires_at IS NOT NULL AND match_expires_at < ?",
+      whereArgs: [now],
+    );
+  }
+
+  // ── 發布配對意向（鎖定 supply 為 PENDING）──────────────────────
+  Future<String> publishMatchIntent({
+    required String resourceId,
+    required String requestId,
+    required List<int> requesterPubKey,
+    required double matchScore,
+  }) async {
+    final hlc = HLC.now();
+    final db = await _db.database;
+
+    // 檢查 supply 是否仍為 AVAILABLE
+    final mat = await db.query('Materials_State',
+        where: 'resource_id = ? AND status = ?',
+        whereArgs: [resourceId, MaterialStatus.available]);
+    if (mat.isEmpty) throw Exception('Supply no longer available');
+
+    // 立刻改為 PENDING + 設定 30 分鐘超時
+    final expiresAt = DateTime.now().millisecondsSinceEpoch + (30 * 60 * 1000);
+    await db.update(
+      'Materials_State',
+      {
+        'status': MaterialStatus.pending,
+        'matched_request_id': requestId,
+        'match_expires_at': expiresAt,
+        'hlc_timestamp': hlc.timestamp,
+        'hlc_counter': hlc.counter,
+      },
+      where: 'resource_id = ?',
+      whereArgs: [resourceId],
+    );
+
+    // 建立 MatchIntentData 並廣播
+    final pubKeyBytes = await _identity.getPublicKeyBytes();
+    final intentData = pb.MatchIntentData()
+      ..requestId = requestId
+      ..resourceId = resourceId
+      ..requesterPubKey = requesterPubKey
+      ..providerPubKey = pubKeyBytes
+      ..matchScore = matchScore;
+    final payload = Uint8List.fromList(intentData.writeToBuffer());
+    final signature = await Signer.signPayload(payload);
+
+    final eventId = _uuid.v4();
+    await db.insert('Event_Logs', {
+      'event_id': eventId,
+      'sender_pub_key': Uint8List.fromList(pubKeyBytes),
+      'identity_level': _identity.getIdentityLevel(),
+      'event_type': EventType.matchIntent,
+      'urgency': 1,
+      'hlc_timestamp': hlc.timestamp,
+      'hlc_counter': hlc.counter,
+      'ttl': 10,
+      'node_tier': 1,
+      'chunk_index': 0,
+      'total_chunks': 1,
+      'payload': payload,
+      'signature': Uint8List.fromList(signature),
+      'is_synced': 0,
+    });
+
+    _queue.enqueue(
+        MeshTask(eventId, 1, payload, eventType: EventType.matchIntent));
+    return eventId;
   }
 
   // ── 處理 PIN 完成實體交接 ─────────────────────────────────────

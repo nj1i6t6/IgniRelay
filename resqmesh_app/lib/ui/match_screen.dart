@@ -25,6 +25,7 @@ class _MatchScreenState extends State<MatchScreen>
   final _eventManager = EventManager();
   final _locationService = LocationService();
   List<MatchEntry> _matches = [];
+  List<MatchEntry> _inboundMatches = [];
   List<MyPublish> _myPublishes = [];
   List<CommunityItem> _communityItems = [];
   bool _loading = true;
@@ -96,22 +97,35 @@ class _MatchScreenState extends State<MatchScreen>
       _error = null;
     });
     try {
+      // 過期配對自動釋放
+      await _eventManager.expireStaleMatches();
+
       final results = await Future.wait([
         _repo.getAvailableSupplies(),
         _repo.getRequests(),
         _repo.getMyPublishes(),
         _repo.getCommunityItems(),
+        _repo.getOthersSupplies(),
+        _repo.getMyRequests(),
       ]);
       final supplies = results[0] as List<DecodedSupply>;
       final requests = results[1] as List<DecodedRequest>;
       final publishes = results[2] as List<MyPublish>;
       final community = results[3] as List<CommunityItem>;
+      final othersSupplies = results[4] as List<DecodedSupply>;
+      final myRequests = results[5] as List<DecodedRequest>;
 
-      final matches = _matchService.computeMatches(supplies, requests);
+      final matchResult = _matchService.computeFullMatches(
+        mySupplies: supplies,
+        allRequests: requests,
+        othersSupplies: othersSupplies,
+        myRequests: myRequests,
+      );
 
       if (mounted) {
         setState(() {
-          _matches = matches;
+          _matches = matchResult.outboundMatches;
+          _inboundMatches = matchResult.inboundMatches;
           _myPublishes = publishes;
           _communityItems = community;
           _loading = false;
@@ -289,6 +303,7 @@ class _MatchScreenState extends State<MatchScreen>
 
     if (_myPublishes.isEmpty &&
         _matches.isEmpty &&
+        _inboundMatches.isEmpty &&
         _communityItems.isEmpty) {
       return _buildEmpty();
     }
@@ -311,15 +326,18 @@ class _MatchScreenState extends State<MatchScreen>
           const SizedBox(height: 16),
           const Divider(color: Colors.white12),
         ],
-        // ── 媒合結果 ──
+        // ── 媒合結果：我能幫助 ──
         if (_matches.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
-                const Text('媒合結果',
+                const Icon(Icons.volunteer_activism,
+                    color: Colors.greenAccent, size: 18),
+                const SizedBox(width: 6),
+                const Text('我能幫助',
                     style: TextStyle(
-                        color: Colors.white70,
+                        color: Colors.greenAccent,
                         fontSize: 16,
                         fontWeight: FontWeight.bold)),
                 const SizedBox(width: 8),
@@ -329,7 +347,42 @@ class _MatchScreenState extends State<MatchScreen>
               ],
             ),
           ),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text('我的物資可以幫助以下需求者',
+                style: TextStyle(color: Colors.white30, fontSize: 11)),
+          ),
           ..._matches.map((m) => _buildMatchCard(m)),
+          const SizedBox(height: 16),
+          const Divider(color: Colors.white12),
+        ],
+        // ── 媒合結果：可以幫我 ──
+        if (_inboundMatches.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.handshake,
+                    color: Colors.amberAccent, size: 18),
+                const SizedBox(width: 6),
+                const Text('可以幫我',
+                    style: TextStyle(
+                        color: Colors.amberAccent,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
+                const SizedBox(width: 8),
+                Text('${_inboundMatches.length} 筆',
+                    style:
+                        const TextStyle(color: Colors.white38, fontSize: 12)),
+              ],
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text('他人的物資可以滿足我的需求',
+                style: TextStyle(color: Colors.white30, fontSize: 11)),
+          ),
+          ..._inboundMatches.map((m) => _buildMatchCard(m)),
           const SizedBox(height: 16),
           const Divider(color: Colors.white12),
         ],
@@ -363,6 +416,7 @@ class _MatchScreenState extends State<MatchScreen>
         // ── 空狀態提示 ──
         if (_myPublishes.isNotEmpty &&
             _matches.isEmpty &&
+            _inboundMatches.isEmpty &&
             _communityItems.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),

@@ -159,6 +159,90 @@ class MatchRepository {
     return results;
   }
 
+  /// 查詢別人的可用物資供給（需求者反向媒合用）
+  Future<List<DecodedSupply>> getOthersSupplies() async {
+    final pubKeyBytes = await _identity.getPublicKeyBytes();
+    final myPubKey = Uint8List.fromList(pubKeyBytes);
+    final db = await _db.database;
+
+    // 查詢 Materials_State AVAILABLE 且 sender 不是自己的
+    final rows = await db.rawQuery('''
+      SELECT m.resource_id, m.payload
+      FROM Materials_State m
+      JOIN Event_Logs e ON m.payload = e.payload AND e.event_type = 0
+      WHERE m.status = 'AVAILABLE' AND e.sender_pub_key != ?
+    ''', [myPubKey]);
+
+    final results = <DecodedSupply>[];
+    for (final row in rows) {
+      final payload = row['payload'] as Uint8List?;
+      if (payload == null) continue;
+      try {
+        final rd = pb.ResourceData.fromBuffer(payload);
+        results.add(DecodedSupply(
+          resourceId: rd.resourceId,
+          resourceType: rd.resourceType,
+          quantity: rd.quantity,
+          deliveryMode:
+              (rd.description == 'PICKUP' || rd.description == 'DELIVER')
+                  ? rd.description
+                  : 'PICKUP',
+          lat: rd.lat != 0 ? rd.lat : null,
+          lng: rd.lng != 0 ? rd.lng : null,
+          maxRangeMeters: rd.maxRangeMeters,
+        ));
+      } catch (_) {
+        continue;
+      }
+    }
+    return results;
+  }
+
+  /// 查詢我自己發布的需求（反向媒合用）
+  Future<List<DecodedRequest>> getMyRequests({int limit = 50}) async {
+    final pubKeyBytes = await _identity.getPublicKeyBytes();
+    final myPubKey = Uint8List.fromList(pubKeyBytes);
+    final db = await _db.database;
+
+    final rows = await db.query(
+      'Event_Logs',
+      where: 'sender_pub_key = ? AND event_type = ?',
+      whereArgs: [myPubKey, EventType.requestBroadcast],
+      orderBy: 'hlc_timestamp DESC',
+      limit: limit,
+    );
+
+    final results = <DecodedRequest>[];
+    for (final row in rows) {
+      final payload = row['payload'] as Uint8List?;
+      if (payload == null) continue;
+      try {
+        final rd = pb.RequestData.fromBuffer(payload);
+        if (rd.resourceType.isEmpty) continue;
+        final descParts = rd.description.split('|');
+        final mode = descParts.isNotEmpty ? descParts[0] : 'CAN_GO';
+        final note =
+            descParts.length > 1 ? descParts.sublist(1).join('|') : '';
+        results.add(DecodedRequest(
+          eventId: (row['event_id'] as String?) ?? '',
+          resourceType: rd.resourceType,
+          quantityNeeded: rd.quantityNeeded,
+          mobilityMode: mode,
+          note: note,
+          urgency: (row['urgency'] as int?) ?? 0,
+          identityLevel: (row['identity_level'] as int?) ?? 0,
+          hlcTimestamp: (row['hlc_timestamp'] as int?) ?? 0,
+          lat: rd.lat != 0 ? rd.lat : null,
+          lng: rd.lng != 0 ? rd.lng : null,
+          maxRangeMeters: rd.maxRangeMeters,
+        ));
+      } catch (_) {
+        continue;
+      }
+    }
+    return results;
+  }
+
   /// 查詢同里/同鄉鎮的他人供給與需求（社區動態）
   ///
   /// 篩選邏輯：
@@ -186,6 +270,18 @@ class MatchRepository {
       orderBy: 'urgency DESC, hlc_timestamp DESC',
       limit: limit,
     );
+
+    // 取得已配對的 resource_id，從社群動態排除
+    final matchedResourceIds = <String>{};
+    try {
+      final matchedRows = await db.query('Materials_State',
+          columns: ['resource_id'],
+          where: "status IN ('PENDING', 'LOCKED', 'CONSUMED')");
+      for (final r in matchedRows) {
+        final rid = r['resource_id'] as String?;
+        if (rid != null) matchedResourceIds.add(rid);
+      }
+    } catch (_) {}
 
     final myLoc = LocationService().currentLocation;
     final results = <CommunityItem>[];
@@ -220,6 +316,8 @@ class MatchRepository {
       if (isSupply) {
         try {
           final rd = pb.ResourceData.fromBuffer(payload);
+          // 排除已配對的物資
+          if (matchedResourceIds.contains(rd.resourceId)) continue;
           results.add(CommunityItem(
             eventId: (row['event_id'] as String?) ?? '',
             isSupply: true,

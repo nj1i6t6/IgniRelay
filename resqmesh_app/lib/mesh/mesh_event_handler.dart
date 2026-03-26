@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:fixnum/fixnum.dart' as fixnum;
 import '../crdt/hlc.dart';
+import '../crypto/signer.dart';
 import '../db/database_helper.dart';
-import '../geo/village_geofence.dart';
 import '../proto/mesh_protocol.pb.dart' as pb;
 import '../services/location_service.dart';
 import 'mesh_router.dart';
@@ -20,6 +20,12 @@ class EventType {
   static const int quarantineVote = 5;
   static const int matchCancel = 6;
   static const int fireAlarmRf = 7;
+  static const int matchConfirm = 8;
+  static const int matchReject = 9;
+  static const int matchInquiry = 10;
+  static const int matchAvailable = 11;
+  static const int matchGone = 12;
+  static const int chatMessage = 13;
 }
 
 /// Wire payload 解碼結果
@@ -69,6 +75,9 @@ class MeshEventHandler {
 
   // 已看過的 event_id（去重）
   final Set<String> _seenEvents = {};
+
+  // 全網聊天限流：pubKeyHex → last chat HLC timestamp
+  final Map<String, int> _chatRateMap = {};
 
   // 接收事件 stream（供上層 UI 監聽）
   final StreamController<MeshDataReceived> _eventStreamController =
@@ -120,7 +129,37 @@ class MeshEventHandler {
         _dlog('RECV SKIP(seen) ${evtId.substring(0, 8)}..');
         return;
       }
+      // ── DB 層級去重（防重啟後重播攻擊）─────────────────────────
+      final db = await DatabaseHelper().database;
+      final existingEvt = await db.query('Event_Logs',
+          columns: ['event_id'],
+          where: 'event_id = ?',
+          whereArgs: [evtId],
+          limit: 1);
+      if (existingEvt.isNotEmpty) {
+        _seenEvents.add(evtId); // 補進記憶體快取
+        _dlog('RECV SKIP(db-dup) ${evtId.substring(0, 8)}..');
+        return;
+      }
       _seenEvents.add(evtId);
+
+      // ── Ed25519 簽章驗證 ──────────────────────────────────────
+      if (decoded.signature == null ||
+          decoded.signature!.isEmpty ||
+          decoded.senderPubKey == null ||
+          decoded.senderPubKey!.isEmpty) {
+        _dlog('RECV REJECT(no-sig) ${evtId.substring(0, 8)}..');
+        return;
+      }
+      final verified = await Signer.verifySignature(
+        payloadBytes: decoded.payload,
+        signatureBytes: decoded.signature!,
+        publicKeyBytes: decoded.senderPubKey!,
+      );
+      if (!verified) {
+        _dlog('RECV REJECT(sig-fail) ${evtId.substring(0, 8)}..');
+        return;
+      }
 
       // ── Zone-Based 地理圍欄路由判斷 ─────────────────────────────
       // 僅當封包帶有原始座標時判斷；無座標（舊版或本機事件）直接通過。
@@ -153,8 +192,24 @@ class MeshEventHandler {
         HLC.merge(HLC(DateTime.now().millisecondsSinceEpoch, 0));
       }
 
+      // ── 全網 PubKey 聊天限流 ─────────────────────────────────────
+      if (decoded.eventType == EventType.chatMessage) {
+        final pubKeyHex = decoded.senderPubKey != null
+            ? decoded.senderPubKey!
+                .map((b) => b.toRadixString(16).padLeft(2, '0'))
+                .join()
+            : '';
+        final lastHlc = _chatRateMap[pubKeyHex];
+        if (lastHlc != null &&
+            (decoded.hlcTimestamp - lastHlc) < 180000) {
+          _dlog(
+              'RECV RATE_DROP(chat) ${evtId.substring(0, 8)}.. from $pubKeyHex');
+          return; // 丟棄，不存 DB，不中繼
+        }
+        _chatRateMap[pubKeyHex] = decoded.hlcTimestamp;
+      }
+
       // 存入本地資料庫
-      final db = await DatabaseHelper().database;
       try {
         await db.insert('Event_Logs', {
           'event_id': evtId,

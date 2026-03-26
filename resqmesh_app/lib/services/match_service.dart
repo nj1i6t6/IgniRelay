@@ -61,12 +61,35 @@ class MatchEntry {
   });
 }
 
+/// 媒合結果（含正向與反向）
+class MatchResult {
+  final List<MatchEntry> outboundMatches; // 我能幫誰
+  final List<MatchEntry> inboundMatches; // 誰能幫我
+
+  const MatchResult({
+    required this.outboundMatches,
+    required this.inboundMatches,
+  });
+}
+
 /// 純媒合邏輯 (不碰 DB、不碰 UI)
 class MatchService {
   final LocationService _location;
 
   MatchService({LocationService? locationService})
       : _location = locationService ?? LocationService();
+
+  /// 執行完整媒合：正向（我能幫誰）+ 反向（誰能幫我）
+  MatchResult computeFullMatches({
+    required List<DecodedSupply> mySupplies,
+    required List<DecodedRequest> allRequests,
+    required List<DecodedSupply> othersSupplies,
+    required List<DecodedRequest> myRequests,
+  }) {
+    final outbound = computeMatches(mySupplies, allRequests);
+    final inbound = computeMatches(othersSupplies, myRequests);
+    return MatchResult(outboundMatches: outbound, inboundMatches: inbound);
+  }
 
   /// 執行媒合：將供給與需求做 cross-join，過濾+評分
   List<MatchEntry> computeMatches(

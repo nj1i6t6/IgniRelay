@@ -7,6 +7,7 @@ import '../mesh/mesh_transport.dart';
 import '../mesh/mesh_event_handler.dart';
 import '../mesh/native_bridge.dart';
 import '../mesh/event_manager.dart';
+import '../mesh/tier_manager.dart';
 
 class SurvivalModeScreen extends StatefulWidget {
   const SurvivalModeScreen({super.key});
@@ -59,6 +60,9 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       battery = await NativeBridge.getBatteryLevel();
     } catch (_) {
       battery = -1;
+    }
+    if (battery >= 0) {
+      TierManager().updateBattery(battery);
     }
     if (mounted) {
       setState(() {
@@ -330,7 +334,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
               ),
               const SizedBox(height: 12),
               Text(
-                _isDataMule ? 'Data Mule 模式 (Tier 1)' : 'BLE 省電中繼模式 (Tier 2)',
+                TierManager().getTierLabel(),
                 style: TextStyle(
                   color: muleColor,
                   fontSize: 20,
@@ -396,7 +400,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                   Expanded(
                     child: _ControlButton(
                       icon: Icons.bluetooth,
-                      label: _isBleActive ? 'BLE 掃描中' : '啟動 BLE',
+                      label: _isBleActive ? '暫停 BLE' : '恢復 BLE',
                       color: _isBleActive ? Colors.blueAccent : Colors.white24,
                       onTap: _toggleBle,
                     ),

@@ -21,7 +21,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -46,6 +46,45 @@ class DatabaseHelper {
           'ALTER TABLE Event_Logs ADD COLUMN origin_lat REAL');
       await db.execute(
           'ALTER TABLE Event_Logs ADD COLUMN origin_lng REAL');
+    }
+    if (oldVersion < 5) {
+      // v5: 據點額度追蹤 + 聊天室
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS Station_Quotas (
+          station_resource_id TEXT NOT NULL,
+          user_pub_key BLOB NOT NULL,
+          category TEXT NOT NULL,
+          used_quantity INTEGER NOT NULL DEFAULT 0,
+          total_used INTEGER NOT NULL DEFAULT 0,
+          last_reset_at INTEGER NOT NULL,
+          PRIMARY KEY (station_resource_id, user_pub_key, category)
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS Chat_Rooms (
+          room_id TEXT PRIMARY KEY,
+          room_name TEXT NOT NULL,
+          room_type TEXT NOT NULL,
+          rate_limit_seconds INTEGER NOT NULL DEFAULT 180,
+          admin_only INTEGER NOT NULL DEFAULT 0,
+          join_token_hash TEXT,
+          joined_at INTEGER NOT NULL,
+          last_read_hlc INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS Chat_Messages (
+          event_id TEXT PRIMARY KEY,
+          room_id TEXT NOT NULL,
+          sender_pub_key BLOB NOT NULL,
+          content TEXT NOT NULL,
+          reply_to TEXT,
+          hlc_timestamp INTEGER NOT NULL,
+          FOREIGN KEY (room_id) REFERENCES Chat_Rooms(room_id)
+        )
+      ''');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_chat_messages_room ON Chat_Messages(room_id, hlc_timestamp)');
     }
   }
 
@@ -135,6 +174,49 @@ class DatabaseHelper {
         nearest_place_class TEXT
       )
     ''');
+
+    // Station_Quotas (據點個人申請額度)
+    await db.execute('''
+      CREATE TABLE Station_Quotas (
+        station_resource_id TEXT NOT NULL,
+        user_pub_key BLOB NOT NULL,
+        category TEXT NOT NULL,
+        used_quantity INTEGER NOT NULL DEFAULT 0,
+        total_used INTEGER NOT NULL DEFAULT 0,
+        last_reset_at INTEGER NOT NULL,
+        PRIMARY KEY (station_resource_id, user_pub_key, category)
+      )
+    ''');
+
+    // Chat_Rooms (聊天室)
+    await db.execute('''
+      CREATE TABLE Chat_Rooms (
+        room_id TEXT PRIMARY KEY,
+        room_name TEXT NOT NULL,
+        room_type TEXT NOT NULL,
+        rate_limit_seconds INTEGER NOT NULL DEFAULT 180,
+        admin_only INTEGER NOT NULL DEFAULT 0,
+        join_token_hash TEXT,
+        joined_at INTEGER NOT NULL,
+        last_read_hlc INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+
+    // Chat_Messages (聊天訊息)
+    await db.execute('''
+      CREATE TABLE Chat_Messages (
+        event_id TEXT PRIMARY KEY,
+        room_id TEXT NOT NULL,
+        sender_pub_key BLOB NOT NULL,
+        content TEXT NOT NULL,
+        reply_to TEXT,
+        hlc_timestamp INTEGER NOT NULL,
+        FOREIGN KEY (room_id) REFERENCES Chat_Rooms(room_id)
+      )
+    ''');
+
+    await db.execute(
+        'CREATE INDEX idx_chat_messages_room ON Chat_Messages(room_id, hlc_timestamp)');
 
     // 初始化 GeoContext
     await db.execute('''

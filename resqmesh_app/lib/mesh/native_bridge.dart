@@ -17,6 +17,28 @@ class NativeBridge {
     return _sharedEventStream!;
   }
 
+  // ── 藍牙硬體狀態檢查 ─────────────────────────────────────────────────
+
+  /// 檢查藍牙硬體是否已開啟
+  static Future<bool> isBluetoothEnabled() async {
+    try {
+      final bool result = await _channel.invokeMethod('isBluetoothEnabled');
+      return result;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// 請求系統開啟藍牙（觸發 ACTION_REQUEST_ENABLE）
+  static Future<bool> requestBluetoothEnable() async {
+    try {
+      final bool result = await _channel.invokeMethod('requestBluetoothEnable');
+      return result;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   // ── Nordic BLE Central 操作（Android 專用）─────────────────────────────
 
   /// 啟動 Nordic BLE 掃描（軟體 UUID 過濾，解決 MediaTek 晶片 bug）

@@ -63,6 +63,24 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
 
+                    // ── 藍牙硬體狀態檢查 ──────────────────────────────────
+                    "isBluetoothEnabled" -> {
+                        val adapter = android.bluetooth.BluetoothManager::class.java
+                            .let { getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager }
+                            ?.adapter
+                        result.success(adapter?.isEnabled ?: false)
+                    }
+                    "requestBluetoothEnable" -> {
+                        try {
+                            val enableBtIntent = Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                            startActivity(enableBtIntent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "requestBluetoothEnable failed: ${e.message}")
+                            result.success(false)
+                        }
+                    }
+
                     // ── Nordic BLE Central 操作 ──────────────────────────
                     "startNordicScan" -> {
                         val success = nordicManager?.startScan() ?: false

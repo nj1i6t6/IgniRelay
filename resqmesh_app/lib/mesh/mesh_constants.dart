@@ -50,3 +50,14 @@ const int kScanRestartDelaySec = 5;
 
 /// 掃描持續時間（秒）
 const int kScanDurationSec = 30;
+
+// ── 電量 Tier 定義 ──────────────────────────────────────────────────────────
+
+/// Tier 1 (全功能) 電量門檻
+const int kTier1MinBattery = 50;
+
+/// Tier 2 (省電中繼) 電量門檻
+const int kTier2MinBattery = 20;
+
+/// 遲滯帶：需高於門檻 +10% 才升級，防止邊界震盪
+const int kTierHysteresis = 10;
