@@ -1,6 +1,6 @@
 // chat_service_test.dart
 //
-// 測試聊天服務：速率限制、訊息 CRUD、房間管理、自動加入邏輯
+// 測試聊天服務：速率限制、訊息 CRUD、房間管理、自動加入邏輯、未讀標記
 //
 // 使用 sqflite_common_ffi (in-memory SQLite)
 
@@ -103,6 +103,37 @@ void main() {
       expect(found.first['admin_only'], equals(1));
       expect(found.first['rate_limit_seconds'], equals(0));
     });
+
+    test('changeVillageRoom leaves old rooms and joins new', () async {
+      final service = ChatService();
+      // 先加入一個 village 房間
+      await service.joinRoom(
+        roomId: 'old-village',
+        roomName: 'Old Village',
+        roomType: 'village',
+      );
+      await service.joinRoom(
+        roomId: 'TW_old-county',
+        roomName: 'Old County',
+        roomType: 'county',
+      );
+
+      // 切換到新區域
+      final result = await service.changeVillageRoom(
+        newVillageCode: '6400006000101',
+        countyName: '高雄市',
+        townName: '新興區',
+        villName: '大勇里',
+      );
+      expect(result, isNotNull);
+
+      final rooms = await service.getJoinedRooms();
+      // 舊的 village/county 應被移除
+      expect(rooms.where((r) => r['room_id'] == 'old-village').length, equals(0));
+      expect(rooms.where((r) => r['room_id'] == 'TW_old-county').length, equals(0));
+      // 新的應存在
+      expect(rooms.where((r) => r['room_type'] == 'village').length, greaterThan(0));
+    });
   });
 
   group('ChatService — Messages', () {
@@ -142,6 +173,19 @@ void main() {
         content: '   ',
       );
       expect(result, isFalse);
+    });
+
+    test('markAsRead updates last_read_hlc', () async {
+      final service = ChatService();
+      await service.joinRoom(
+        roomId: 'test-markread-1',
+        roomName: 'Mark Read Test',
+        roomType: 'village',
+      );
+      // markAsRead 不應拋出例外
+      await service.markAsRead('test-markread-1');
+      final count = await service.getUnreadCount('test-markread-1');
+      expect(count, equals(0));
     });
 
     test('purgeExpiredMessages runs without error', () async {

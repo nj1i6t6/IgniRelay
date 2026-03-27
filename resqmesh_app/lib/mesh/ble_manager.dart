@@ -124,6 +124,8 @@ class BleManager {
     // 監聽 Nordic EventChannel 事件
     _nordicEventSub?.cancel();
     _nordicEventSub = NativeBridge.nativeEventStream.listen((event) {
+      // Bug 12 Fix: try-catch 防止任何事件處理例外導致整個 stream 崩潰
+      try {
       if (event is Map) {
         final type = event['type'] as String?;
         if (type == 'nordic_found') {
@@ -160,6 +162,9 @@ class BleManager {
           final ok = event['ok'] ?? false;
           _dlog('NOTIFY_SENT → $device: status=$status ok=$ok');
         }
+      }
+      } catch (e) {
+        _dlog('EVENT_HANDLER_ERR: $e');
       }
     });
 
@@ -203,16 +208,20 @@ class BleManager {
   }
 
   void _handleNordicDataReceived(Map event) {
-    final deviceId = event['device'] as String? ?? 'unknown';
-    // Bug 11 Fix: v2 同步中的裝置由 notifySub 處理，這裡跳過避免重複
-    if (_syncingDevices.contains(deviceId)) return;
-    final dataList = event['data'];
-    if (dataList is List && dataList.isNotEmpty) {
-      final data = Uint8List.fromList(List<int>.from(dataList));
-      _dlog('NOTIFY from $deviceId: ${data.length} bytes (Nordic)');
-      _eventHandler.handleIncomingData(data, deviceId);
-      receivedEventCount++;
-      _eventStreamController.add(BleEvent.received(deviceId, data.toList()));
+    try {
+      final deviceId = event['device'] as String? ?? 'unknown';
+      // Bug 11 Fix: v2 同步中的裝置由 notifySub 處理，這裡跳過避免重複
+      if (_syncingDevices.contains(deviceId)) return;
+      final dataList = event['data'];
+      if (dataList is List && dataList.isNotEmpty) {
+        final data = Uint8List.fromList(List<int>.from(dataList));
+        _dlog('NOTIFY from $deviceId: ${data.length} bytes (Nordic)');
+        _eventHandler.handleIncomingData(data, deviceId);
+        receivedEventCount++;
+        _eventStreamController.add(BleEvent.received(deviceId, data.toList()));
+      }
+    } catch (e) {
+      _dlog('DATA_RECV_ERR: $e');
     }
   }
 
@@ -257,11 +266,14 @@ class BleManager {
 
       await Future.delayed(const Duration(seconds: 2));
       await NativeBridge.nordicDisconnect(deviceId);
-    } catch (e) {
+    } catch (e, st) {
       _syncingDevices.remove(deviceId); // 連線階段就失敗的情況
       if (_isCancelled(deviceId)) return;
       _dlog('ERROR $deviceId: $e');
+      debugPrint('[BLE] Sync error stack: $st');
       _knownPeers.remove(deviceId);
+      // Bug 12 Fix: 確保斷線，避免 GATT 連線洩漏
+      try { await NativeBridge.nordicDisconnect(deviceId); } catch (_) {}
     }
   }
 
@@ -315,6 +327,7 @@ class BleManager {
       StreamSubscription? ibltSub;
 
       ibltSub = NativeBridge.nativeEventStream.listen((event) {
+        try {
         if (event is Map &&
             event['type'] == 'nordic_data' &&
             event['device'] == deviceId) {
@@ -335,6 +348,10 @@ class BleManager {
               return;
             }
           }
+        }
+        } catch (e) {
+          debugPrint('[BLE] IBLT listener error: $e');
+          if (!ibltCompleter.isCompleted) ibltCompleter.complete(false);
         }
       });
 
@@ -468,6 +485,7 @@ class BleManager {
 
       // 監聽 nordic_data 事件（Notify 推送的資料）
       notifySub = NativeBridge.nativeEventStream.listen((event) {
+        try {
         if (event is Map && event['type'] == 'nordic_data' && event['device'] == deviceId) {
           final dataList = event['data'];
           if (dataList is List && dataList.isNotEmpty) {
@@ -495,6 +513,9 @@ class BleManager {
             receivedEventCount++;
             _eventStreamController.add(BleEvent.received(deviceId, data.toList()));
           }
+        }
+        } catch (e) {
+          debugPrint('[BLE] Notify listener error: $e');
         }
       });
 

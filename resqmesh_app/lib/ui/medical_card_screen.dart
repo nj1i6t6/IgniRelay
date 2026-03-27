@@ -347,26 +347,71 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
     ];
 
     try {
-      // 請求授權
+      // ── 1. 檢查 Health Connect 是否可用 ──
+      final status = await health.getHealthConnectSdkStatus();
+      if (status != HealthConnectSdkStatus.sdkAvailable) {
+        if (!mounted) return;
+        // Health Connect 未安裝或不支援 → 引導用戶安裝
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('需要 Health Connect'),
+            content: const Text(
+              '此功能需要 Google Health Connect 應用。\n\n'
+              '請前往 Google Play 商店安裝「Health Connect」後再試。\n\n'
+              '安裝後，請先在 Health Connect 中新增您的健康資料（身高、體重、血型），'
+              '然後回到此頁面匯入。',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('了解'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  health.installHealthConnect();
+                },
+                child: const Text('前往安裝'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      // ── 2. 請求授權 ──
       final hasPermissions = await health.hasPermissions(types,
           permissions: types.map((_) => HealthDataAccess.READ).toList());
       if (hasPermissions != true) {
         final granted = await health.requestAuthorization(types,
             permissions: types.map((_) => HealthDataAccess.READ).toList());
         if (!granted) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('未獲得 Health Connect 授權，請在系統設定中允許存取'),
-                backgroundColor: Colors.orange,
+          if (!mounted) return;
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('授權失敗'),
+              content: const Text(
+                '未獲得 Health Connect 讀取權限。\n\n'
+                '請手動授權：\n'
+                '1. 開啟「Health Connect」應用\n'
+                '2. 點選「應用程式權限」\n'
+                '3. 找到「烽傳」並允許讀取身高、體重、血型',
               ),
-            );
-          }
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('了解'),
+                ),
+              ],
+            ),
+          );
           return;
         }
       }
 
-      // 讀取最近 365 天的資料
+      // ── 3. 讀取最近 365 天的資料 ──
       final now = DateTime.now();
       final oneYearAgo = now.subtract(const Duration(days: 365));
       final healthData = await health.getHealthDataFromTypes(
@@ -387,7 +432,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
         return;
       }
 
-      // 取最新的各類型數據
+      // ── 4. 取最新的各類型數據 ──
       int imported = 0;
       for (final dp in healthData.reversed) {
         switch (dp.type) {
@@ -410,7 +455,6 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
           case HealthDataType.BLOOD_TYPE:
             final val = dp.value.toString();
             if (val.isNotEmpty && _card.bloodType.isEmpty) {
-              // Health Connect 回傳如 "A_POSITIVE" → 轉換為 "A+"
               final mapped = _mapBloodType(val);
               if (mapped != null) {
                 _card.bloodType = mapped;

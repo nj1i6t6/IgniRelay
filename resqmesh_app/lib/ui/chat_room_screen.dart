@@ -282,6 +282,34 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 
   Widget _buildInputBar() {
+    // Bug 12 Fix: admin-only 頻道完全禁止一般用戶發言
+    // TODO: 未來可根據 IdentityManager.getIdentityLevel() >= 3 判斷是否為管理員
+    if (widget.adminOnly) {
+      return Container(
+        padding: EdgeInsets.only(
+          left: 16, right: 16, top: 12,
+          bottom: MediaQuery.of(context).padding.bottom + 12,
+        ),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          boxShadow: [
+            BoxShadow(color: Colors.black12, blurRadius: 4, offset: const Offset(0, -1))
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.lock_outline, size: 16, color: Colors.grey[500]),
+            const SizedBox(width: 8),
+            Text(
+              '公告頻道 — 僅管理員（L3）可發言',
+              style: TextStyle(color: Colors.grey[500], fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
     final canSend = _cooldownRemaining == 0;
     return Container(
       padding: EdgeInsets.only(
@@ -307,9 +335,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               maxLines: 3,
               minLines: 1,
               decoration: InputDecoration(
-                hintText: widget.adminOnly
-                    ? '公告頻道（僅管理員可發言）'
-                    : '輸入訊息...',
+                hintText: '輸入訊息...',
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20)),
                 contentPadding:

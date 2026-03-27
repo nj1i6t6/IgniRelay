@@ -524,7 +524,8 @@ class IgniRelayForegroundService : Service() {
      * 避免 BLE stack 溢出丟包。
      */
     private fun pushOutboxToDevice(device: BluetoothDevice) {
-        val events = sharedOutboxEvents
+        // Bug 12 Fix: snapshot 避免 ConcurrentModificationException
+        val events = sharedOutboxEvents.toList()
         val char = eventCharRef
         if (char == null || events.isEmpty()) {
             Log.d(TAG, "pushOutbox: skip (char=${char != null}, events=${events.size})")
@@ -648,9 +649,12 @@ class IgniRelayForegroundService : Service() {
             }
 
             // Build local IBLT from outbox events
+            // Bug 12 Fix: 取得 snapshot 避免 ConcurrentModificationException
+            // (Dart 端可能在 iteration 中透過 updateEventOutbox 更新 sharedOutboxEvents)
+            val eventsSnapshot = sharedOutboxEvents.toList()
             val localIblt = IBLT()
             val eventIds = mutableSetOf<String>()
-            for (event in sharedOutboxEvents) {
+            for (event in eventsSnapshot) {
                 val eventId = tryExtractEventId(event)
                 if (eventId != null) {
                     localIblt.insert(eventId)
@@ -777,7 +781,8 @@ class IgniRelayForegroundService : Service() {
             } catch (_: Exception) { emptySet() }
         } else emptySet()
 
-        val events = sharedOutboxEvents
+        // Bug 12 Fix: snapshot 避免 ConcurrentModificationException
+        val events = sharedOutboxEvents.toList()
         // 比對差量：只推 Central 沒有的事件
         val diffEvents = mutableListOf<ByteArray>()
         var bloomSkipped = 0

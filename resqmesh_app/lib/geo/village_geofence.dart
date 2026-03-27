@@ -51,6 +51,9 @@ class VillageGeofence {
   static sql.Database? _db;
   static String? _cachedPath;
 
+  /// 取得內部 SQLite 資料庫實例（供搜尋用）
+  static sql.Database? getDb() => _db;
+
   // ── 初始化 ───────────────────────────────────────────────────────────
   static Future<void> init() async {
     if (_db != null) return;
