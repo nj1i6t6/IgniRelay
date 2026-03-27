@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resqmesh_app/models/medical_card.dart';
+import 'package:ignirelay_app/models/medical_card.dart';
 
 void main() {
   group('MedicalCard — hasData', () {

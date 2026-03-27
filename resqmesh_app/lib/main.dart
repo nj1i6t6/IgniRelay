@@ -26,12 +26,12 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // 直接 runApp，所有 init 在 _StartupRouter._init() 背景執行
   // 讓 Flutter 第一幀立即渲染 loading 畫面，不黑屏
-  runApp(ResQMeshApp(transport: TransportFactory.create()));
+  runApp(IgniRelayApp(transport: TransportFactory.create()));
 }
 
-class ResQMeshApp extends StatelessWidget {
+class IgniRelayApp extends StatelessWidget {
   final MeshTransport transport;
-  const ResQMeshApp({super.key, required this.transport});
+  const IgniRelayApp({super.key, required this.transport});
 
   @override
   Widget build(BuildContext context) {

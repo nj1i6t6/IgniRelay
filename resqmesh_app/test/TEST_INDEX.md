@@ -1,4 +1,4 @@
-# ResQMesh 測試索引
+# IgniRelay 烽傳 測試索引
 
 > 所有可在電腦上執行的 unit test（不需實機/BLE 硬體）。
 > 需要 VillageGeofence geodata asset 的測試已標記 `skip`，歸類為 integration test。
@@ -8,7 +8,7 @@
 ## 執行方式
 
 ```bash
-cd resqmesh_app
+cd ignirelay_app
 
 # 全部跑
 flutter test

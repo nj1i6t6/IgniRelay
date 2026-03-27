@@ -4,7 +4,7 @@ import 'package:vector_tile_renderer/vector_tile_renderer.dart';
 // ignore: implementation_imports
 import 'package:vector_tile_renderer/src/themes/light_theme.dart';
 
-/// 建立 ResQMesh 專用地圖主題
+/// 建立 IgniRelay 烽傳專用地圖主題
 /// 基於 lightTheme (OSM Liberty) 加上：
 /// 1. 移除原有 POI 層 (避免搶佔 label space 導致救災圖標無法顯示)
 /// 2. 救災 POI 彩色圓形圖標 (醫院/警消/學校/藥局/物資)
@@ -13,7 +13,7 @@ import 'package:vector_tile_renderer/src/themes/light_theme.dart';
 ///
 /// [disabledPoi] 傳入要隱藏的 POI category ID 集合
 ///   (如 {'resq_hospital', 'resq_school'})，對應的圖標+文字層會被排除。
-Theme buildResQMeshTheme({Logger? logger, Set<String>? disabledPoi}) {
+Theme buildIgniRelayTheme({Logger? logger, Set<String>? disabledPoi}) {
   final json = lightThemeData();
   final originalLayers = json['layers'] as List;
   final layers = List<dynamic>.from(originalLayers);
@@ -166,16 +166,8 @@ Theme buildResQMeshTheme({Logger? logger, Set<String>? disabledPoi}) {
       ? poiDefs.where((d) => !disabledPoi.contains(d['id'])).toList()
       : poiDefs;
 
-  // 7A. 救災 POI 文字層 (最高碰撞優先)
-  final rescueTextLayers = enabledDefs
-      .map((d) => _poiTextLayer(
-            id: '${d['id']}_text',
-            minzoom: d['minzoom'] as int,
-            filter: d['filter'] as List<dynamic>,
-            textColor: d['color'] as String,
-          ))
-      .toList();
-  layers.addAll(rescueTextLayers);
+  // 7A. 救災 POI 文字層已移除 — 改用 Flutter Marker 圓點顯示五大類別 POI
+  // 不再在 vector tile 層渲染彩色文字名稱
 
   // 7B. 主幹道路名 (次高碰撞優先，minzoom 12)
   if (roadLabelOriginal != null) {
@@ -244,17 +236,7 @@ Theme buildResQMeshTheme({Logger? logger, Set<String>? disabledPoi}) {
     },
   });
 
-  // 7E. 救災 POI 圖標層 (無 text-field → 繞過碰撞偵測，永遠渲染)
-  final rescueIconLayers = enabledDefs
-      .map((d) => _poiIconLayer(
-            id: '${d['id']}_icon',
-            iconImage: d['icon'] as String,
-            minzoom: d['minzoom'] as int,
-            filter: d['filter'] as List<dynamic>,
-            iconSize: d['iconSize'] as double,
-          ))
-      .toList();
-  layers.addAll(rescueIconLayers);
+  // 7E. 救災 POI 圖標層已移除 — sprites 未啟用，改用 Flutter Marker 圓點
 
   return ThemeReader(logger: logger).read(json);
 }

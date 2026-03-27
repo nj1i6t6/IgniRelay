@@ -1,6 +1,6 @@
-# resqmesh_app
+# 烽傳 IgniRelay
 
-A new Flutter project.
+離線 BLE Mesh 災難應急系統 Flutter App。
 
 ## Getting Started
 

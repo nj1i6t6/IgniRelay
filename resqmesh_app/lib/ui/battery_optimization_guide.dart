@@ -94,25 +94,25 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
   };
 
   static const _manufacturerInstructions = {
-    'xiaomi': '請在「自啟動管理」中找到 ResQMesh → 開啟自啟動\n'
+    'xiaomi': '請在「自啟動管理」中找到 烽傳 → 開啟自啟動\n'
         '另外在「省電策略」→ 選擇「無限制」',
-    'redmi': '請在「自啟動管理」中找到 ResQMesh → 開啟自啟動\n'
+    'redmi': '請在「自啟動管理」中找到 烽傳 → 開啟自啟動\n'
         '另外在「省電策略」→ 選擇「無限制」',
-    'huawei': '請在「啟動管理」中找到 ResQMesh\n'
+    'huawei': '請在「啟動管理」中找到 烽傳\n'
         '→ 關閉「自動管理」→ 手動開啟所有開關\n'
         '另在「鎖屏清理」中不要清理本 App',
-    'honor': '請在「啟動管理」中找到 ResQMesh\n'
+    'honor': '請在「啟動管理」中找到 烽傳\n'
         '→ 關閉「自動管理」→ 手動開啟所有開關',
-    'oppo': '請在「自啟動管理」中允許 ResQMesh 自啟動\n'
+    'oppo': '請在「自啟動管理」中允許 烽傳 自啟動\n'
         '另在「省電」→「App 電池管理」→ 選擇「不優化」',
-    'realme': '請在「自啟動管理」中允許 ResQMesh 自啟動\n'
+    'realme': '請在「自啟動管理」中允許 烽傳 自啟動\n'
         '另在「省電」→「App 電池管理」→ 選擇「不優化」',
-    'vivo': '請在「後臺管理」中允許 ResQMesh 高耗電運行\n'
+    'vivo': '請在「後臺管理」中允許 烽傳 高耗電運行\n'
         '另在「自啟動」中開啟本 App',
     'samsung': '請在「電池」→「背景使用限制」\n'
-        '→ 將 ResQMesh 從「受限 App」清單移除\n'
+        '→ 將 烽傳 從「受限 App」清單移除\n'
         '或加入「永不進入休眠」清單',
-    'asus': '請在「自動啟動管理員」中允許 ResQMesh\n'
+    'asus': '請在「自動啟動管理員」中允許 烽傳\n'
         '另在「電池」中選擇「不受限」',
   };
 
@@ -142,7 +142,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
     for (final entry in _manufacturerInstructions.entries) {
       if (_manufacturer.contains(entry.key)) return entry.value;
     }
-    return '請到手機的「設定」→「電池」→「背景執行管理」中\n允許 ResQMesh 在背景運行。';
+    return '請到手機的「設定」→「電池」→「背景執行管理」中\n允許 烽傳 在背景運行。';
   }
 
   @override
@@ -218,7 +218,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
         ),
         const SizedBox(height: 16),
         const Text(
-          'ResQMesh 依賴藍牙 Mesh 在背景持續廣播與中繼救援資訊。\n\n'
+          '烽傳 依賴藍牙 Mesh 在背景持續廣播與中繼救援資訊。\n\n'
           '若 Android 系統將 App 殺掉，您的裝置將：',
           style: TextStyle(color: Colors.white70, fontSize: 13),
         ),
@@ -245,7 +245,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
         const SizedBox(height: 12),
         const Text(
           '點擊下方按鈕，系統會彈出確認視窗。\n'
-          '請選擇「允許」，讓 ResQMesh 不受 Doze 省電限制。',
+          '請選擇「允許」，讓 烽傳 不受 Doze 省電限制。',
           style: TextStyle(color: Colors.white70, fontSize: 13),
         ),
         const SizedBox(height: 16),
@@ -353,7 +353,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
         ),
         const SizedBox(height: 8),
         const Text(
-          'ResQMesh 現在可以在背景持續運行 Mesh 網路，\n'
+          '烽傳 現在可以在背景持續運行 Mesh 網路，\n'
           '即使螢幕關閉也能接收並中繼救援資訊。',
           style: TextStyle(color: Colors.white70, fontSize: 13),
           textAlign: TextAlign.center,

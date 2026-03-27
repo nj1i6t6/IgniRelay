@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:health/health.dart';
 import '../crypto/identity_manager.dart';
 import '../db/database_helper.dart';
 import '../models/medical_card.dart';
@@ -321,44 +323,143 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
 
   // ── 從系統健康資料匯入按鈕 ──
   Widget _buildHealthImportButton() {
+    if (!Platform.isAndroid) return const SizedBox.shrink();
     return OutlinedButton.icon(
       style: OutlinedButton.styleFrom(
         foregroundColor: Colors.cyanAccent,
         side: const BorderSide(color: Colors.cyanAccent),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       ),
-      onPressed: () {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: const Color(0xFF1a1a2e),
-            title: const Row(
-              children: [
-                Icon(Icons.health_and_safety, color: Colors.cyanAccent, size: 22),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text('系統健康資料匯入',
-                      style: TextStyle(color: Colors.white, fontSize: 16)),
-                ),
-              ],
-            ),
-            content: const Text(
-              '此功能需要 Health Connect API (Android 14+) 支援，目前尚在整合中。\n\n'
-              '未來將支援自動匯入身高、體重、血型等資料，減少手動輸入。',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('了解', style: TextStyle(color: Colors.cyanAccent)),
+      onPressed: _importFromHealthConnect,
+      icon: const Icon(Icons.download, size: 18),
+      label: const Text('從 Health Connect 匯入', style: TextStyle(fontSize: 13)),
+    );
+  }
+
+  Future<void> _importFromHealthConnect() async {
+    final health = Health();
+
+    // 要讀取的資料類型
+    final types = <HealthDataType>[
+      HealthDataType.HEIGHT,
+      HealthDataType.WEIGHT,
+      HealthDataType.BLOOD_TYPE,
+    ];
+
+    try {
+      // 請求授權
+      final hasPermissions = await health.hasPermissions(types,
+          permissions: types.map((_) => HealthDataAccess.READ).toList());
+      if (hasPermissions != true) {
+        final granted = await health.requestAuthorization(types,
+            permissions: types.map((_) => HealthDataAccess.READ).toList());
+        if (!granted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('未獲得 Health Connect 授權，請在系統設定中允許存取'),
+                backgroundColor: Colors.orange,
               ),
-            ],
+            );
+          }
+          return;
+        }
+      }
+
+      // 讀取最近 365 天的資料
+      final now = DateTime.now();
+      final oneYearAgo = now.subtract(const Duration(days: 365));
+      final healthData = await health.getHealthDataFromTypes(
+        types: types,
+        startTime: oneYearAgo,
+        endTime: now,
+      );
+
+      if (healthData.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Health Connect 中沒有找到健康資料'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // 取最新的各類型數據
+      int imported = 0;
+      for (final dp in healthData.reversed) {
+        switch (dp.type) {
+          case HealthDataType.HEIGHT:
+            final cm = (dp.value as NumericHealthValue).numericValue.toInt();
+            if (cm > 0 && _card.heightCm == null) {
+              _heightCtrl.text = cm.toString();
+              _card.heightCm = cm;
+              imported++;
+            }
+            break;
+          case HealthDataType.WEIGHT:
+            final kg = (dp.value as NumericHealthValue).numericValue.toInt();
+            if (kg > 0 && _card.weightKg == null) {
+              _weightCtrl.text = kg.toString();
+              _card.weightKg = kg;
+              imported++;
+            }
+            break;
+          case HealthDataType.BLOOD_TYPE:
+            final val = dp.value.toString();
+            if (val.isNotEmpty && _card.bloodType.isEmpty) {
+              // Health Connect 回傳如 "A_POSITIVE" → 轉換為 "A+"
+              final mapped = _mapBloodType(val);
+              if (mapped != null) {
+                _card.bloodType = mapped;
+                imported++;
+              }
+            }
+            break;
+          default:
+            break;
+        }
+      }
+
+      if (mounted) {
+        setState(() {}); // 刷新 UI
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(imported > 0
+                ? '已從 Health Connect 匯入 $imported 項資料'
+                : '未匯入新資料（欄位已有值或無可用資料）'),
+            backgroundColor: imported > 0 ? Colors.green : Colors.orange,
           ),
         );
-      },
-      icon: const Icon(Icons.download, size: 18),
-      label: const Text('從系統健康資料匯入', style: TextStyle(fontSize: 13)),
-    );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Health Connect 匯入失敗：$e\n請確認已安裝 Health Connect 應用'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  String? _mapBloodType(String healthConnectValue) {
+    final v = healthConnectValue.toUpperCase();
+    const map = {
+      'A_POSITIVE': 'A+',
+      'A_NEGATIVE': 'A-',
+      'B_POSITIVE': 'B+',
+      'B_NEGATIVE': 'B-',
+      'AB_POSITIVE': 'AB+',
+      'AB_NEGATIVE': 'AB-',
+      'O_POSITIVE': 'O+',
+      'O_NEGATIVE': 'O-',
+    };
+    return map[v];
   }
 
   Widget _presetChip(String label, Set<String> preset) {

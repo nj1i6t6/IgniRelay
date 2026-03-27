@@ -1,4 +1,4 @@
-package network.resqmesh.resqmesh_app
+package network.ignirelay.ignirelay_app
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder

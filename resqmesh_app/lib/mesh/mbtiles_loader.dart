@@ -7,8 +7,8 @@ import 'package:sqlite3/sqlite3.dart' as sqlite3;
 /// MBTiles 首次啟動解壓縮管理員
 /// 將 asset 中的 MBTiles 複製到 app 文件目錄供 vector_map_tiles_mbtiles 使用
 class MBTilesLoader {
-  static const String _assetPath = 'assets/maps/taiwan_resqmesh.mbtiles';
-  static const String _fileName = 'taiwan_resqmesh.mbtiles';
+  static const String _assetPath = 'assets/maps/taiwan_ignirelay.mbtiles';
+  static const String _fileName = 'taiwan_ignirelay.mbtiles';
 
   static String? _cachedPath;
 

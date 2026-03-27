@@ -16,8 +16,8 @@ import '../mesh/mbtiles_loader.dart';
 import '../mesh/event_manager.dart';
 import '../mesh/poi_query.dart';
 import '../db/database_helper.dart';
-import 'resqmesh_sprites.dart';
-import 'resqmesh_theme.dart';
+import 'ignirelay_sprites.dart';
+import 'ignirelay_theme.dart';
 import 'triage_input.dart';
 import 'map_layer_settings.dart';
 
@@ -136,15 +136,16 @@ class _MapScreenState extends State<MapScreen>
   void _onLayerSettingsChanged() {
     _rebuildTheme();
     _loadHazards();
+    _refreshPoiMarkers(); // #3 Fix: 圖層控制變化時刷新 POI 圓點
   }
 
   void _rebuildTheme() {
     if (!_mbtilesAvailable || _mbTiles == null) return;
     final theme =
-        buildResQMeshTheme(disabledPoi: _layerSettings.disabledPoiIds);
+        buildIgniRelayTheme(disabledPoi: _layerSettings.disabledPoiIds);
     SpriteStyle? sprites;
     try {
-      sprites = buildResQMeshSprites();
+      sprites = buildIgniRelaySprites();
     } catch (e) {
       debugPrint('[Map] rebuildTheme sprite 失敗 (非致命): $e');
     }
@@ -171,7 +172,7 @@ class _MapScreenState extends State<MapScreen>
         if (mounted) {
           setState(() {
             _mbtilesLoading = false;
-            _mbtilesError = '找不到離線地圖檔案 (taiwan_resqmesh.mbtiles)';
+            _mbtilesError = '找不到離線地圖檔案 (taiwan_ignirelay.mbtiles)';
           });
         }
         return;
@@ -185,12 +186,12 @@ class _MapScreenState extends State<MapScreen>
 
       final mbTiles = MbTiles(mbtilesPath: path, gzip: true);
       final provider = MbTilesVectorTileProvider(mbtiles: mbTiles);
-      final theme = buildResQMeshTheme();
+      final theme = buildIgniRelayTheme();
 
       // sprites 載入失敗不應阻止地圖渲染
       SpriteStyle? sprites;
       try {
-        sprites = buildResQMeshSprites();
+        sprites = buildIgniRelaySprites();
       } catch (e) {
         debugPrint('[Map] Sprite 載入失敗 (非致命): $e');
       }
@@ -320,6 +321,7 @@ class _MapScreenState extends State<MapScreen>
         if (_isInTaiwanBounds(loc)) {
           setState(() => _center = loc);
           _mapController.move(loc, 15.0);
+          _refreshPoiMarkers(); // #2 Fix: GPS 跳轉後主動刷新 POI
         }
       }
 
@@ -837,21 +839,28 @@ class _MapScreenState extends State<MapScreen>
     return sub.isNotEmpty ? sub : cls;
   }
 
+  /// 判斷 POI 是否屬於五大救災類別，不屬於則回傳 null
+  String? _poiCategoryId(String cls, String sub) {
+    if (cls == 'hospital' || sub == 'hospital' || sub == 'clinic' ||
+        sub == 'doctors' || sub == 'nursing_home') return 'resq_hospital';
+    if (cls == 'pharmacy' || sub == 'pharmacy') return 'resq_pharmacy';
+    if (sub == 'police' || sub == 'fire_station') return 'resq_police';
+    if (sub == 'school' || sub == 'kindergarten' ||
+        sub == 'college' || sub == 'university') return 'resq_school';
+    if (sub == 'supermarket' || sub == 'convenience' ||
+        cls == 'grocery') return 'resq_grocery';
+    return null;
+  }
+
   Color _poiCategoryColor(String cls, String sub) {
-    if (cls == 'hospital' ||
-        sub == 'hospital' ||
-        sub == 'clinic' ||
-        sub == 'doctors' ||
-        sub == 'nursing_home') return Colors.red;
-    if (cls == 'pharmacy' || sub == 'pharmacy') return Colors.purple;
-    if (sub == 'police' || sub == 'fire_station')
-      return const Color(0xFF3366ff);
-    if (sub == 'school' ||
-        sub == 'kindergarten' ||
-        sub == 'college' ||
-        sub == 'university') return Colors.orange;
-    if (sub == 'supermarket' || sub == 'convenience') return Colors.green;
-    return Colors.cyan;
+    switch (_poiCategoryId(cls, sub)) {
+      case 'resq_hospital': return Colors.red;
+      case 'resq_pharmacy': return Colors.purple;
+      case 'resq_police': return const Color(0xFF3366ff);
+      case 'resq_school': return Colors.orange;
+      case 'resq_grocery': return Colors.green;
+      default: return Colors.cyan;
+    }
   }
 
   IconData _poiCategoryIcon(String cls, String sub) {
@@ -864,28 +873,30 @@ class _MapScreenState extends State<MapScreen>
     if (sub == 'school' || sub == 'kindergarten') return Icons.school;
     if (sub == 'college' || sub == 'university') return Icons.account_balance;
     if (sub == 'supermarket' || sub == 'convenience') return Icons.shopping_cart;
-    if (sub == 'mall' || sub == 'department_store') return Icons.store;
-    if (sub == 'fuel') return Icons.local_gas_station;
-    if (sub == 'restaurant') return Icons.restaurant;
-    if (sub == 'cafe') return Icons.local_cafe;
-    if (sub == 'bank') return Icons.account_balance_wallet;
-    if (sub == 'post_office') return Icons.local_post_office;
-    if (sub == 'place_of_worship') return Icons.church;
-    if (sub == 'parking') return Icons.local_parking;
-    if (cls == 'shop') return Icons.shopping_bag;
+    if (cls == 'grocery') return Icons.store;
     return Icons.place;
   }
 
   List<Marker> _buildPoiMarkers(List<Map<String, String>> pois) {
-    return pois.map((poi) {
+    final markers = <Marker>[];
+    for (final poi in pois) {
       final lat = double.tryParse(poi['lat'] ?? '') ?? 0;
       final lng = double.tryParse(poi['lng'] ?? '') ?? 0;
       final cls = poi['class'] ?? '';
       final sub = poi['subclass'] ?? '';
+
+      // #1 Fix: 只顯示五大救災類別的 POI
+      final catId = _poiCategoryId(cls, sub);
+      if (catId == null) continue;
+
+      // #3 Fix: 圖層控制 - 檢查類別是否啟用
+      if (!_layerSettings.showPoi) continue;
+      if (!_layerSettings.poiIsEnabled(catId)) continue;
+
       final color = _poiCategoryColor(cls, sub);
       final icon = _poiCategoryIcon(cls, sub);
 
-      return Marker(
+      markers.add(Marker(
         point: LatLng(lat, lng),
         width: 24,
         height: 24,
@@ -905,8 +916,9 @@ class _MapScreenState extends State<MapScreen>
             child: Icon(icon, size: 12, color: Colors.white),
           ),
         ),
-      );
-    }).toList();
+      ));
+    }
+    return markers;
   }
 
   void _refreshPoiMarkers() {
@@ -918,6 +930,13 @@ class _MapScreenState extends State<MapScreen>
 
   Future<void> _doRefreshPoiMarkers() async {
     if (_poiQuery == null) return;
+    // 圖層關閉時清空
+    if (!_layerSettings.showPoi) {
+      if (_poiMarkers.isNotEmpty && mounted) {
+        setState(() => _poiMarkers = []);
+      }
+      return;
+    }
     final zoom = _mapController.camera.zoom;
     if (zoom < 12) {
       if (_poiMarkers.isNotEmpty) {
@@ -1632,7 +1651,7 @@ class _MapScreenState extends State<MapScreen>
             onTap: _onMapTap,
             onLongPress: _onMapLongPress,
             onPositionChanged: (pos, hasGesture) {
-              if (hasGesture) _refreshPoiMarkers();
+              _refreshPoiMarkers(); // 任何地圖移動都刷新 POI（包含程式觸發）
             },
           ),
           children: [
@@ -1924,7 +1943,7 @@ class _MapScreenState extends State<MapScreen>
             ),
             const SizedBox(height: 16),
             const Text(
-              '請確認 assets/maps/taiwan_resqmesh.mbtiles 已正確打包',
+              '請確認 assets/maps/taiwan_ignirelay.mbtiles 已正確打包',
               style: TextStyle(color: Colors.black26, fontSize: 12),
               textAlign: TextAlign.center,
             ),

@@ -36,7 +36,7 @@ const _spriteNames = [
 ];
 
 /// 建立 [SpriteStyle]，包含預先生成的彩色圓形圖標 atlas 與索引。
-SpriteStyle? buildResQMeshSprites() {
+SpriteStyle? buildIgniRelaySprites() {
   try {
     final sprites = <String, Sprite>{};
     int x = 0;

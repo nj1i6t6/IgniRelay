@@ -152,6 +152,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
 
   @override
   void dispose() {
+    // 離開聊天室時標記已讀，避免自己發的訊息產生紅點
+    _chatService.markAsRead(widget.roomId);
     _cooldownTimer?.cancel();
     _meshSub?.cancel();
     _inputController.dispose();

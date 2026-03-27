@@ -1,4 +1,4 @@
-package network.resqmesh.resqmesh_app
+package network.ignirelay.ignirelay_app
 
 import android.bluetooth.*
 import android.bluetooth.le.*
@@ -36,8 +36,8 @@ class NordicMeshManager(private val context: Context) {
     private var isScanning = false
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // 活躍連線池：deviceAddress -> ResQMeshBleClient
-    private val connections = ConcurrentHashMap<String, ResQMeshBleClient>()
+    // 活躍連線池：deviceAddress -> IgniRelayBleClient
+    private val connections = ConcurrentHashMap<String, IgniRelayBleClient>()
 
     // ── Scanning ──────────────────────────────────────────────────────────
 
@@ -73,7 +73,7 @@ class NordicMeshManager(private val context: Context) {
                 // 軟體過濾：檢查廣播封包是否包含我們的 Service UUID
                 val serviceUuids = result.scanRecord?.serviceUuids
                 val hasOurService = serviceUuids?.any {
-                    it.uuid == ResQMeshConstants.SERVICE_UUID
+                    it.uuid == IgniRelayConstants.SERVICE_UUID
                 } == true
 
                 if (hasOurService) {
@@ -149,7 +149,7 @@ class NordicMeshManager(private val context: Context) {
         }
 
         val device = adapter.getRemoteDevice(deviceAddress)
-        val client = ResQMeshBleClient(context)
+        val client = IgniRelayBleClient(context)
 
         // 設定通知回調：Nordic 自動啟用 notify 後，收到的資料轉發到 Flutter
         client.onNotificationReceived = { data ->
@@ -255,7 +255,7 @@ class NordicMeshManager(private val context: Context) {
 // ── Nordic BLE Client（單一裝置連線管理）─────────────────────────────────
 
 /**
- * ResQMesh 專用的 Nordic BleManager 子類
+ * IgniRelay 專用的 Nordic BleManager 子類
  *
  * 每個實例管理一條 BLE 連線。
  * Nordic BLE Library 自動處理：
@@ -264,7 +264,7 @@ class NordicMeshManager(private val context: Context) {
  * - MTU 協商
  * - 服務發現
  */
-class ResQMeshBleClient(context: Context) : BleManager(context) {
+class IgniRelayBleClient(context: Context) : BleManager(context) {
 
     companion object {
         private const val TAG = "NordicClient"
@@ -277,15 +277,15 @@ class ResQMeshBleClient(context: Context) : BleManager(context) {
     /** 通知資料回調（由 NordicMeshManager 設定） */
     var onNotificationReceived: ((ByteArray) -> Unit)? = null
 
-    override fun getGattCallback(): BleManagerGattCallback = ResQMeshGattCallback()
+    override fun getGattCallback(): BleManagerGattCallback = IgniRelayGattCallback()
 
-    private inner class ResQMeshGattCallback : BleManagerGattCallback() {
+    private inner class IgniRelayGattCallback : BleManagerGattCallback() {
 
         override fun isRequiredServiceSupported(gatt: BluetoothGatt): Boolean {
-            val service = gatt.getService(ResQMeshConstants.SERVICE_UUID) ?: return false
-            eventChar = service.getCharacteristic(ResQMeshConstants.EVENT_CHAR_UUID)
-            bloomChar = service.getCharacteristic(ResQMeshConstants.BLOOM_CHAR_UUID)
-            handshakeChar = service.getCharacteristic(ResQMeshConstants.HANDSHAKE_CHAR_UUID)
+            val service = gatt.getService(IgniRelayConstants.SERVICE_UUID) ?: return false
+            eventChar = service.getCharacteristic(IgniRelayConstants.EVENT_CHAR_UUID)
+            bloomChar = service.getCharacteristic(IgniRelayConstants.BLOOM_CHAR_UUID)
+            handshakeChar = service.getCharacteristic(IgniRelayConstants.HANDSHAKE_CHAR_UUID)
             // Bloom + Event 是必要的，Handshake 是可選的
             return eventChar != null && bloomChar != null
         }
@@ -298,7 +298,7 @@ class ResQMeshBleClient(context: Context) : BleManager(context) {
 
         override fun initialize() {
             // MTU 協商（517，BLE 5.0+）
-            requestMtu(ResQMeshConstants.REQUEST_MTU)
+            requestMtu(IgniRelayConstants.REQUEST_MTU)
                 .enqueue()
 
             // 自動啟用 Event Characteristic 通知

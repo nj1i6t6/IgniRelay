@@ -7,7 +7,7 @@ library;
 // ── BLE GATT UUID ──────────────────────────────────────────────────────────
 
 /// 烽傳主服務 UUID — UUIDv5(DNS, "ignirelay.com")
-const String kResQMeshServiceUUID =
+const String kIgniRelayServiceUUID =
     'a4d11949-49d0-5230-96bb-43dd95d2cb2e';
 
 /// 事件傳輸通道 — UUIDv5(DNS, "ignirelay.com/event")

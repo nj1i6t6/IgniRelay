@@ -8,12 +8,12 @@ import 'package:mbtiles/mbtiles.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_mbtiles/vector_map_tiles_mbtiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
-import '../mesh/mesh_constants.dart' show kResQMeshServiceUUID;
+import '../mesh/mesh_constants.dart' show kIgniRelayServiceUUID;
 import '../mesh/mbtiles_loader.dart';
 import '../services/location_service.dart';
 import '../services/match_service.dart';
 import 'physical_handoff.dart';
-import 'resqmesh_theme.dart';
+import 'ignirelay_theme.dart';
 import 'supply_category_data.dart';
 
 /// 導航引導畫面
@@ -72,7 +72,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
       final mbTiles = MbTiles(mbtilesPath: path, gzip: true);
       final provider = MbTilesVectorTileProvider(mbtiles: mbTiles);
       // 不帶 POI → 傳入全部 disabled（空 set = 全部啟用，我們直接用無 POI 的 theme）
-      final theme = buildResQMeshTheme(disabledPoi: _allPoiIds);
+      final theme = buildIgniRelayTheme(disabledPoi: _allPoiIds);
       if (mounted) {
         setState(() {
           _mbTiles = mbTiles;
@@ -152,7 +152,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   Future<void> _performScan() async {
     try {
       await FlutterBluePlus.startScan(
-        withServices: [Guid(kResQMeshServiceUUID)],
+        withServices: [Guid(kIgniRelayServiceUUID)],
         timeout: const Duration(seconds: 8),
       );
 

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cryptography/cryptography.dart';
-import 'package:resqmesh_app/crypto/signer.dart';
+import 'package:ignirelay_app/crypto/signer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:typed_data';

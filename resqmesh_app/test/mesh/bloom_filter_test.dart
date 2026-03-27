@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resqmesh_app/mesh/mesh_event_handler.dart';
+import 'package:ignirelay_app/mesh/mesh_event_handler.dart';
 
 void main() {
   group('Bloom Filter — parseBloomFilter', () {

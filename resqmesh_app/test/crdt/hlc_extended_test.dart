@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resqmesh_app/crdt/hlc.dart';
+import 'package:ignirelay_app/crdt/hlc.dart';
 
 void main() {
   group('HLC — now() monotonicity', () {

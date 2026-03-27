@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resqmesh_app/mesh/mesh_router.dart';
-import 'package:resqmesh_app/mesh/triage_queue.dart';
+import 'package:ignirelay_app/mesh/mesh_router.dart';
+import 'package:ignirelay_app/mesh/triage_queue.dart';
 
 void main() {
   group('Mesh Routing: Exemption Paths (no VillageGeofence needed)', () {

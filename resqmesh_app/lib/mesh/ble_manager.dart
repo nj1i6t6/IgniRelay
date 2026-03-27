@@ -291,13 +291,13 @@ class BleManager {
           'SELECT MAX(hlc_timestamp) as wm FROM Chat_Messages');
       final chatWatermark = (wmResult.first['wm'] as int?) ?? 0;
 
-      // ── 3. 打包封包：control(1) + watermark(8) + iblt(504) + padding(4) = 517 ──
-      final packet = Uint8List(517);
+      // ── 3. 打包封包：control(1) + watermark(8) + iblt(504) = 513 ──
+      final ibltBytes = localIblt.toBytes();
+      final packet = Uint8List(1 + 8 + ibltBytes.length);
       packet[0] = kControlIBLT;
       final wmData = ByteData(8)..setInt64(0, chatWatermark, Endian.little);
       packet.setRange(1, 9, wmData.buffer.asUint8List());
-      packet.setRange(9, 513, localIblt.toBytes());
-      // padding bytes 513-516 保留為 0
+      packet.setRange(9, 9 + ibltBytes.length, ibltBytes);
 
       // ── 4. 寫入 IBLT 封包到對端 ──
       final writeOk = await NativeBridge.nordicWriteBloom(deviceId, packet);
@@ -321,11 +321,11 @@ class BleManager {
           final dataList = event['data'];
           if (dataList is List && dataList.isNotEmpty) {
             final data = Uint8List.fromList(List<int>.from(dataList));
-            // 檢查是否為 IBLT 回應封包（control byte = 0x01, 長度 = 517）
-            if (data.length == 517 && data[0] == kControlIBLT) {
+            // 檢查是否為 IBLT 回應封包（control byte = 0x01, 長度 >= 513）
+            if (data.length >= 513 && data[0] == kControlIBLT) {
               final wmView = ByteData.sublistView(data, 1, 9);
               peerChatWatermark = wmView.getInt64(0, Endian.little);
-              peerIbltBytes = Uint8List.sublistView(data, 9, 513);
+              peerIbltBytes = Uint8List.sublistView(data, 9, 9 + 504);
               if (!ibltCompleter.isCompleted) ibltCompleter.complete(true);
               return;
             }
@@ -352,7 +352,13 @@ class BleManager {
       }
 
       // ── 6. IBLT 相減並嘗試 peel ──
-      final peerIblt = IBLT.fromBytes(peerIbltBytes!);
+      IBLT peerIblt;
+      try {
+        peerIblt = IBLT.fromBytes(peerIbltBytes!);
+      } catch (e) {
+        _dlog('IBLT_DECODE_ERR for $deviceId: $e → fallback to Bloom');
+        return false;
+      }
       final diff = localIblt.subtract(peerIblt);
       final peelResult = diff.peel();
 
@@ -647,7 +653,7 @@ class BleManager {
     _dlog('IOS SCAN #$scanCycleCount started (known=${_knownPeers.length}, cooldown=${_peerCooldown.length}, seen=${_eventHandler.seenEventsCount})');
 
     await FlutterBluePlus.startScan(
-      withServices: [Guid(kResQMeshServiceUUID)],
+      withServices: [Guid(kIgniRelayServiceUUID)],
       timeout: Duration(seconds: kScanDurationSec),
     );
 
@@ -707,14 +713,14 @@ class BleManager {
       BluetoothService? resqService;
       for (final s in services) {
         if (s.serviceUuid.str.toLowerCase() ==
-            kResQMeshServiceUUID.toLowerCase()) {
+            kIgniRelayServiceUUID.toLowerCase()) {
           resqService = s;
           break;
         }
       }
 
       if (resqService == null) {
-        _dlog('NO ResQMesh service on $deviceId (services=${services.length})');
+        _dlog('NO IgniRelay service on $deviceId (services=${services.length})');
         await device.disconnect();
         return;
       }

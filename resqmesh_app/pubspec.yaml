@@ -1,8 +1,8 @@
-name: resqmesh_app
+name: ignirelay_app
 description: 烽傳 IgniRelay - Offline Mesh Emergency Rescue System
 publish_to: 'none'
 
-version: 0.1.19+20
+version: 0.1.20+21
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -46,6 +46,9 @@ dependencies:
   # ── Protobuf ──────────────────────────────────────────────
   protobuf: ^3.1.0
   fixnum: ^1.1.0
+
+  # ── Health Connect (醫療卡匯入) ──────────────────────────────
+  health: ^11.0.0
 
   # ── GPS Location ──────────────────────────────────────────
   geolocator: ^11.1.0

@@ -133,7 +133,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
               // 標題
               const Text(
-                'ResQMesh\n災難應急 Mesh 物資系統',
+                '烽傳 IgniRelay\n離線 Mesh 災難應急系統',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     color: Colors.white,
@@ -199,7 +199,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         borderRadius: BorderRadius.circular(12)),
                   ),
                   child: const Text(
-                    '開始使用 ResQMesh',
+                    '開始使用烽傳',
                     style: TextStyle(
                         color: Colors.white,
                         fontSize: 16,

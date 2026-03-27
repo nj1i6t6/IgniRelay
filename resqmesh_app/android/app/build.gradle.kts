@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "network.resqmesh.resqmesh_app"
+    namespace = "network.ignirelay.ignirelay_app"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
     ndkVersion = "27.0.12077973"
@@ -22,9 +22,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "network.resqmesh"
-        // minSdk 23: Bridgefy SDK 最低需求
-        minSdk = flutter.minSdkVersion
+        applicationId = "network.ignirelay"
+        // minSdk 26: Health Connect (health package) 最低需求
+        minSdk = 26
         // 鎖定 35 (Android 15 stable)，避免 Flutter 預設 36 (Android 16 beta) 導致安裝相容性問題
         targetSdk = 35
         versionCode = flutter.versionCode

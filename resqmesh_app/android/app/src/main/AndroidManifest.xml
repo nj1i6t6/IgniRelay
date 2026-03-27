@@ -31,6 +31,11 @@
 
     <!-- ── Notifications (Android 13+) ────────────────────────────── -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- ── Health Connect (醫療卡匯入) ──────────────────────────── -->
+    <uses-permission android:name="android.permission.health.READ_HEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_BLOOD_GLUCOSE" />
+
     <!-- ── Hardware feature declarations ──────────────────────────────────── -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
@@ -59,9 +64,9 @@
             </intent-filter>
         </activity>
 
-        <!-- ResQMesh Data Mule Foreground Service (BLE Mesh) -->
+        <!-- IgniRelay Data Mule Foreground Service (BLE Mesh) -->
         <service
-            android:name=".ResQMeshForegroundService"
+            android:name=".IgniRelayForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
@@ -90,6 +95,10 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
+        </intent>
+        <!-- Health Connect -->
+        <intent>
+            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
         </intent>
     </queries>
 </manifest>

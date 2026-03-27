@@ -1,4 +1,4 @@
-package network.resqmesh.resqmesh_app
+package network.ignirelay.ignirelay_app
 
 import android.app.*
 import android.bluetooth.*
@@ -11,10 +11,13 @@ import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * ResQMesh 後台 Foreground Service
+ * IgniRelay 後台 Foreground Service
  *
  * Bug 2 Fix: 這是唯一的 GATT Server 來源。
  * MainActivity 不再開 GATT Server，避免 Android 只允許一個 GATT Server 的衝突。
@@ -22,11 +25,11 @@ import java.util.concurrent.ConcurrentHashMap
  * Bug 3 Fix: onCharacteristicWriteRequest 收到資料後，
  * 透過 MainActivity.sharedEventSink 轉發到 Flutter EventChannel。
  */
-class ResQMeshForegroundService : Service() {
+class IgniRelayForegroundService : Service() {
 
     companion object {
-        private const val TAG = "ResQMeshService"
-        private const val CHANNEL_ID = "resqmesh_data_mule"
+        private const val TAG = "IgniRelayService"
+        private const val CHANNEL_ID = "ignirelay_data_mule"
         private const val NOTIFICATION_ID = 1001
 
         // 共享 Bloom Filter 快取（由 MainActivity 透過 MethodChannel 更新）
@@ -68,6 +71,8 @@ class ResQMeshForegroundService : Service() {
     private var eventCharRef: BluetoothGattCharacteristic? = null
     // Bug 10: 追蹤已收到 Bloom Write 的裝置（區分新舊版 Central）
     private val bloomReceivedDevices = ConcurrentHashMap.newKeySet<String>()
+    // Prepared Write buffers (Long Write support for data > MTU)
+    private val preparedWriteBuffers = ConcurrentHashMap<String, ByteArrayOutputStream>()
 
     override fun onCreate() {
         super.onCreate()
@@ -92,7 +97,7 @@ class ResQMeshForegroundService : Service() {
         } else {
             Log.d(TAG, "GATT Server already running, skip re-init")
         }
-        Log.i(TAG, "ResQMesh Data Mule service started")
+        Log.i(TAG, "IgniRelay Data Mule service started")
         return START_STICKY
     }
 
@@ -100,7 +105,7 @@ class ResQMeshForegroundService : Service() {
 
     override fun onDestroy() {
         stopBlePeripheral()
-        Log.i(TAG, "ResQMesh Data Mule service stopped")
+        Log.i(TAG, "IgniRelay Data Mule service stopped")
         super.onDestroy()
     }
 
@@ -110,7 +115,7 @@ class ResQMeshForegroundService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "ResQMesh 資料騾模式",
+                "IgniRelay 資料騾模式",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "持續在背景廣播 Mesh 節點以轉送救援資訊"
@@ -133,7 +138,7 @@ class ResQMeshForegroundService : Service() {
         val pendingIntent = PendingIntent.getActivity(this, 0, openIntent, pendingFlags)
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("ResQMesh 資料騾運作中")
+            .setContentTitle("IgniRelay 資料騾運作中")
             .setContentText("正在廣播 Mesh 節點，協助轉送救援資訊")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
@@ -144,16 +149,16 @@ class ResQMeshForegroundService : Service() {
 
     // ── BLE Peripheral (GATT Server + Advertising) ───────────────────────
 
-    /** 建構 ResQMesh GATT Service（提取為獨立函式供重試使用） */
-    private fun buildResQMeshService(): BluetoothGattService {
+    /** 建構 IgniRelay GATT Service（提取為獨立函式供重試使用） */
+    private fun buildIgniRelayService(): BluetoothGattService {
         val service = BluetoothGattService(
-            ResQMeshConstants.SERVICE_UUID,
+            IgniRelayConstants.SERVICE_UUID,
             BluetoothGattService.SERVICE_TYPE_PRIMARY
         )
 
         // Event characteristic (read/write/notify)
         val eventChar = BluetoothGattCharacteristic(
-            ResQMeshConstants.EVENT_CHAR_UUID,
+            IgniRelayConstants.EVENT_CHAR_UUID,
             BluetoothGattCharacteristic.PROPERTY_READ or
                 BluetoothGattCharacteristic.PROPERTY_WRITE or
                 BluetoothGattCharacteristic.PROPERTY_NOTIFY,
@@ -161,7 +166,7 @@ class ResQMeshForegroundService : Service() {
                 BluetoothGattCharacteristic.PERMISSION_WRITE
         )
         eventChar.addDescriptor(BluetoothGattDescriptor(
-            ResQMeshConstants.CCCD_UUID,
+            IgniRelayConstants.CCCD_UUID,
             BluetoothGattDescriptor.PERMISSION_READ or
                 BluetoothGattDescriptor.PERMISSION_WRITE
         ))
@@ -171,7 +176,7 @@ class ResQMeshForegroundService : Service() {
         // Bug 10 Fix: 加 PROPERTY_WRITE，讓 Central 可以寫入自己的 Bloom Filter，
         // Server 比對後只 Notify 推 Central 缺少的事件（差量推送），取代盲推全部。
         service.addCharacteristic(BluetoothGattCharacteristic(
-            ResQMeshConstants.BLOOM_CHAR_UUID,
+            IgniRelayConstants.BLOOM_CHAR_UUID,
             BluetoothGattCharacteristic.PROPERTY_READ or
                 BluetoothGattCharacteristic.PROPERTY_WRITE,
             BluetoothGattCharacteristic.PERMISSION_READ or
@@ -180,7 +185,7 @@ class ResQMeshForegroundService : Service() {
 
         // Handshake characteristic (read/write)
         service.addCharacteristic(BluetoothGattCharacteristic(
-            ResQMeshConstants.HANDSHAKE_CHAR_UUID,
+            IgniRelayConstants.HANDSHAKE_CHAR_UUID,
             BluetoothGattCharacteristic.PROPERTY_READ or
                 BluetoothGattCharacteristic.PROPERTY_WRITE,
             BluetoothGattCharacteristic.PERMISSION_READ or
@@ -209,10 +214,13 @@ class ResQMeshForegroundService : Service() {
             override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
                 val stateStr = if (newState == BluetoothProfile.STATE_CONNECTED) "connected" else "disconnected"
                 Log.d(TAG, "GATT: ${device.address} -> $stateStr (status=$status)")
-                // Bug 7: 清除已斷線的 subscriber
+                // 清除已斷線裝置的狀態
                 if (newState != BluetoothProfile.STATE_CONNECTED) {
                     notifySubscribers.remove(device.address)
                     bloomReceivedDevices.remove(device.address)
+                    preparedWriteBuffers.keys.filter { it.startsWith(device.address) }.forEach {
+                        preparedWriteBuffers.remove(it)
+                    }
                 }
                 mainHandler.post {
                     MainActivity.sharedEventSink?.success(mapOf(
@@ -231,39 +239,19 @@ class ResQMeshForegroundService : Service() {
             ) {
                 Log.d(TAG, "onWriteReq: dev=${device.address} char=${characteristic.uuid} prep=$preparedWrite resp=$responseNeeded off=$offset len=${value.size}")
 
-                // Fix: 回應要回傳 offset 和 value，確保 Prepared Write 驗證通過
                 if (responseNeeded) {
                     gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
                 }
 
-                // 只處理非 Prepared Write 的完整寫入（Prepared Write 的資料在 onExecuteWrite 後才完整）
-                if (!preparedWrite) {
-                    when (characteristic.uuid) {
-                        // Bug 10 Fix: Central 寫入自己的 Bloom Filter → 比對差量 → Notify 推送 Central 缺少的事件
-                        ResQMeshConstants.BLOOM_CHAR_UUID -> {
-                            Log.i(TAG, "BLOOM_WRITE from ${device.address}: ${value.size} bytes → diff push")
-                            mainHandler.post {
-                                MainActivity.sharedEventSink?.success(mapOf(
-                                    "type" to "bloom_received",
-                                    "device" to device.address,
-                                    "size" to value.size
-                                ))
-                            }
-                            // 解析 Central 的 Bloom → 比對 → 只推 Central 缺少的事件 + 本機 Bloom
-                            mainHandler.post { pushDiffToDevice(device, value) }
-                        }
-                        // Event 寫入（Central 推事件給 Peripheral）
-                        else -> {
-                            Log.d(TAG, "EVENT_WRITE from ${device.address}: ${value.size} bytes")
-                            mainHandler.post {
-                                MainActivity.sharedEventSink?.success(mapOf(
-                                    "type" to "ble_data",
-                                    "device" to device.address,
-                                    "data" to value.toList()
-                                ))
-                            }
-                        }
-                    }
+                if (preparedWrite) {
+                    // Buffer chunks for Execute Write (Long Write support)
+                    val key = "${device.address}:${characteristic.uuid}"
+                    val buffer = preparedWriteBuffers.getOrPut(key) { ByteArrayOutputStream() }
+                    if (offset == 0) buffer.reset()
+                    buffer.write(value)
+                } else {
+                    // Direct write (fits in single ATT PDU)
+                    processCharacteristicWrite(device, characteristic.uuid, value)
                 }
             }
 
@@ -273,7 +261,7 @@ class ResQMeshForegroundService : Service() {
             ) {
                 Log.d(TAG, "onReadReq: dev=${device.address} char=${characteristic.uuid} off=$offset")
                 val responseBytes = when (characteristic.uuid) {
-                    ResQMeshConstants.BLOOM_CHAR_UUID -> {
+                    IgniRelayConstants.BLOOM_CHAR_UUID -> {
                         val bloom = sharedBloomBytes
                         Log.d(TAG, "Bloom read: bloomLen=${bloom.size} offset=$offset")
                         if (offset < bloom.size) bloom.copyOfRange(offset, bloom.size) else ByteArray(0)
@@ -301,8 +289,8 @@ class ResQMeshForegroundService : Service() {
                 // Bug 10 Fix: subscribe 時只記錄訂閱者，不再盲推全部事件。
                 // 推送改由 Bloom Write 觸發（pushDiffToDevice），做差量比對後才推。
                 // 如果 Central 10 秒內沒寫 Bloom（舊版 client），才降級盲推。
-                if (descriptor.uuid == ResQMeshConstants.CCCD_UUID &&
-                    descriptor.characteristic?.uuid == ResQMeshConstants.EVENT_CHAR_UUID
+                if (descriptor.uuid == IgniRelayConstants.CCCD_UUID &&
+                    descriptor.characteristic?.uuid == IgniRelayConstants.EVENT_CHAR_UUID
                 ) {
                     val isEnableNotify = value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
                     if (isEnableNotify) {
@@ -324,10 +312,31 @@ class ResQMeshForegroundService : Service() {
                 }
             }
 
-            // Fix: 處理 Long Write (Prepared Write) 的 Execute 階段
+            // Prepared Write Execute: assemble buffered chunks and process
             override fun onExecuteWrite(device: BluetoothDevice, requestId: Int, execute: Boolean) {
                 Log.d(TAG, "onExecuteWrite: dev=${device.address} execute=$execute")
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
+
+                val keysForDevice = preparedWriteBuffers.keys.filter { it.startsWith(device.address) }
+                if (execute) {
+                    for (key in keysForDevice) {
+                        val buffer = preparedWriteBuffers.remove(key) ?: continue
+                        val data = buffer.toByteArray()
+                        val charUuidStr = key.substringAfter(":")
+                        try {
+                            val charUuid = java.util.UUID.fromString(charUuidStr)
+                            Log.i(TAG, "ExecuteWrite: assembled ${data.size} bytes for char=$charUuidStr")
+                            mainHandler.post { processCharacteristicWrite(device, charUuid, data) }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "ExecuteWrite parse error: ${e.message}")
+                        }
+                    }
+                } else {
+                    // Cancel: discard buffers
+                    for (key in keysForDevice) {
+                        preparedWriteBuffers.remove(key)
+                    }
+                }
             }
 
             // Bug 4 Fix: addService 是非同步的，必須等 onServiceAdded 成功後才能開始廣播
@@ -339,7 +348,7 @@ class ResQMeshForegroundService : Service() {
                 Log.i(TAG, "onServiceAdded: status=$status ok=$ok uuid=${service?.uuid}")
                 // Bug 7: 儲存 Event Characteristic 參考（供 Notify 推送使用）
                 if (ok && service != null) {
-                    eventCharRef = service.getCharacteristic(ResQMeshConstants.EVENT_CHAR_UUID)
+                    eventCharRef = service.getCharacteristic(IgniRelayConstants.EVENT_CHAR_UUID)
                     Log.d(TAG, "eventCharRef saved: ${eventCharRef != null}")
                 }
                 mainHandler.post {
@@ -359,7 +368,7 @@ class ResQMeshForegroundService : Service() {
                     mainHandler.postDelayed({
                         try {
                             gattServer?.clearServices()
-                            gattServer?.addService(buildResQMeshService())
+                            gattServer?.addService(buildIgniRelayService())
                         } catch (e: Exception) {
                             Log.e(TAG, "Retry addService error: ${e.message}")
                         }
@@ -418,7 +427,7 @@ class ResQMeshForegroundService : Service() {
             return
         }
 
-        // ── Build & Register ResQMesh GATT Service ──
+        // ── Build & Register IgniRelay GATT Service ──
         // Bug 4 Fix: addService 是非同步的！不能在這裡立即開始廣播。
         // 必須等 onServiceAdded callback 確認成功後才能廣播。
         // 否則 Central 連進來時 service/characteristics 尚未註冊完成。
@@ -429,7 +438,7 @@ class ResQMeshForegroundService : Service() {
         // 先快取 adapter，供 startAdvertisingInternal 使用
         bleAdvertiser = adapter.bluetoothLeAdvertiser
 
-        val service = buildResQMeshService()
+        val service = buildIgniRelayService()
         val addResult = gattServer?.addService(service)
         Log.d(TAG, "addService initiated: result=$addResult (waiting for onServiceAdded callback...)")
         if (addResult != true) {
@@ -473,7 +482,7 @@ class ResQMeshForegroundService : Service() {
 
         val data = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
-            .addServiceUuid(android.os.ParcelUuid(ResQMeshConstants.SERVICE_UUID))
+            .addServiceUuid(android.os.ParcelUuid(IgniRelayConstants.SERVICE_UUID))
             .build()
 
         advertiseCallback = object : AdvertiseCallback() {
@@ -580,6 +589,99 @@ class ResQMeshForegroundService : Service() {
                 "fail" to failCount
             ))
         }, (events.size * 100L) + 200)
+    }
+
+    // ── 統一的 Characteristic Write 處理 ─────────────────────────────────
+    /** 處理完整的 characteristic write（包含直接寫入和 Prepared Write 組裝後的資料） */
+    private fun processCharacteristicWrite(device: BluetoothDevice, charUuid: java.util.UUID, value: ByteArray) {
+        when (charUuid) {
+            IgniRelayConstants.BLOOM_CHAR_UUID -> {
+                // 偵測 IBLT 控制碼（首字節 0x01）
+                if (value.isNotEmpty() && value[0] == 0x01.toByte()) {
+                    Log.i(TAG, "IBLT_REQUEST from ${device.address}: ${value.size} bytes")
+                    mainHandler.post {
+                        MainActivity.sharedEventSink?.success(mapOf(
+                            "type" to "bloom_received",
+                            "device" to device.address,
+                            "size" to value.size,
+                            "is_iblt" to true
+                        ))
+                    }
+                    handleIBLTRequest(device, value)
+                } else {
+                    Log.i(TAG, "BLOOM_WRITE from ${device.address}: ${value.size} bytes → diff push")
+                    mainHandler.post {
+                        MainActivity.sharedEventSink?.success(mapOf(
+                            "type" to "bloom_received",
+                            "device" to device.address,
+                            "size" to value.size
+                        ))
+                    }
+                    pushDiffToDevice(device, value)
+                }
+            }
+            else -> {
+                Log.d(TAG, "EVENT_WRITE from ${device.address}: ${value.size} bytes")
+                mainHandler.post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "ble_data",
+                        "device" to device.address,
+                        "data" to value.toList()
+                    ))
+                }
+            }
+        }
+    }
+
+    /** 處理 IBLT Fast Path 請求：建構本機 IBLT 並回應 */
+    private fun handleIBLTRequest(device: BluetoothDevice, value: ByteArray) {
+        try {
+            if (value.size < 9) {
+                Log.w(TAG, "IBLT packet too short: ${value.size}")
+                return
+            }
+
+            val char = eventCharRef
+            if (char == null) {
+                Log.w(TAG, "IBLT: eventCharRef is null, cannot respond")
+                return
+            }
+
+            // Build local IBLT from outbox events
+            val localIblt = IBLT()
+            val eventIds = mutableSetOf<String>()
+            for (event in sharedOutboxEvents) {
+                val eventId = tryExtractEventId(event)
+                if (eventId != null) {
+                    localIblt.insert(eventId)
+                    eventIds.add(eventId)
+                }
+            }
+
+            // Pack response: control(1) + watermark(8) + iblt(504) + padding(4) = 517
+            val response = ByteArray(517)
+            response[0] = 0x01 // kControlIBLT
+            // Watermark: use 0 (Kotlin side doesn't track chat watermark separately)
+            val localIbltBytes = localIblt.toBytes()
+            System.arraycopy(localIbltBytes, 0, response, 9,
+                minOf(localIbltBytes.size, 504))
+
+            // Send IBLT response via Notify
+            val result: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gattServer?.notifyCharacteristicChanged(device, char, false, response) ?: -1
+            } else {
+                @Suppress("DEPRECATION")
+                char.value = response
+                @Suppress("DEPRECATION")
+                gattServer?.notifyCharacteristicChanged(device, char, false) ?: false
+            }
+            Log.i(TAG, "IBLT response sent to ${device.address}: ${response.size}B, events=${eventIds.size}, result=$result")
+
+            // Mark as bloom received to prevent fallback blind push
+            bloomReceivedDevices.add(device.address)
+        } catch (e: Exception) {
+            Log.e(TAG, "IBLT handling error: ${e.message}", e)
+        }
     }
 
     // ── Bloom Filter Bit-Vector 工具 ─────────────────────────────────────

@@ -207,7 +207,7 @@ class ChatService {
         .delete('Chat_Messages', where: 'room_id = ?', whereArgs: [roomId]);
   }
 
-  /// Auto-join village room based on GPS
+  /// Auto-join all level rooms (nation/county/township/village) based on GPS
   Future<String?> autoJoinVillageRoom() async {
     try {
       final loc = LocationService().currentLocation;
@@ -221,6 +221,43 @@ class ChatService {
       final villageCode = village.villcode;
       final villageName = village.fullName;
 
+      // 自動加入全國公告頻道
+      await joinRoom(
+        roomId: 'TW_NATION',
+        roomName: '全國公告',
+        roomType: 'nation',
+        rateLimitSeconds: 0,
+        adminOnly: true,
+      );
+
+      // 自動加入縣市公告頻道（villcode 前 5 碼 = 縣市碼）
+      if (villageCode.length >= 5) {
+        final countyCode = villageCode.substring(0, 5);
+        final countyName = villageName.split(' ').firstOrNull ?? countyCode;
+        await joinRoom(
+          roomId: 'TW_$countyCode',
+          roomName: '$countyName 公告',
+          roomType: 'county',
+          rateLimitSeconds: 0,
+          adminOnly: true,
+        );
+      }
+
+      // 自動加入鄉鎮區公告頻道（villcode 前 8 碼 = 鄉鎮碼）
+      if (villageCode.length >= 8) {
+        final townCode = villageCode.substring(0, 8);
+        final parts = villageName.split(' ');
+        final townName = parts.length >= 2 ? '${parts[0]} ${parts[1]}' : townCode;
+        await joinRoom(
+          roomId: 'TW_$townCode',
+          roomName: '$townName 公告',
+          roomType: 'township',
+          rateLimitSeconds: 0,
+          adminOnly: true,
+        );
+      }
+
+      // 加入里聊天室（一般用戶可發言）
       await joinRoom(
         roomId: villageCode,
         roomName: '$villageName 聊天室',
@@ -229,7 +266,54 @@ class ChatService {
       );
       return villageCode;
     } catch (e) {
-      debugPrint('[ChatService] Auto-join village failed: $e');
+      debugPrint('[ChatService] Auto-join rooms failed: $e');
+      return null;
+    }
+  }
+
+  /// 手動變更所在里（離開舊里相關頻道，加入新里相關頻道）
+  Future<String?> changeVillageRoom(String newVillageCode, String newVillageName) async {
+    try {
+      // 離開目前的 village 類型聊天室
+      final rooms = await getJoinedRooms();
+      for (final room in rooms) {
+        final type = room['room_type'] as String? ?? '';
+        if (type == 'village' || type == 'township' || type == 'county') {
+          await leaveRoom(room['room_id'] as String);
+        }
+      }
+
+      // 加入新的縣市 / 鄉鎮 / 里
+      if (newVillageCode.length >= 5) {
+        final countyCode = newVillageCode.substring(0, 5);
+        await joinRoom(
+          roomId: 'TW_$countyCode',
+          roomName: '${newVillageName.split(' ').firstOrNull ?? countyCode} 公告',
+          roomType: 'county',
+          rateLimitSeconds: 0,
+          adminOnly: true,
+        );
+      }
+      if (newVillageCode.length >= 8) {
+        final townCode = newVillageCode.substring(0, 8);
+        final parts = newVillageName.split(' ');
+        await joinRoom(
+          roomId: 'TW_$townCode',
+          roomName: '${parts.length >= 2 ? '${parts[0]} ${parts[1]}' : townCode} 公告',
+          roomType: 'township',
+          rateLimitSeconds: 0,
+          adminOnly: true,
+        );
+      }
+      await joinRoom(
+        roomId: newVillageCode,
+        roomName: '$newVillageName 聊天室',
+        roomType: 'village',
+        rateLimitSeconds: 180,
+      );
+      return newVillageCode;
+    } catch (e) {
+      debugPrint('[ChatService] Change village failed: $e');
       return null;
     }
   }

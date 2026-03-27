@@ -394,6 +394,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                       label: _isDataMule ? '停用 Data Mule' : '啟用 Data Mule',
                       color: _isDataMule ? Colors.cyan : Colors.white24,
                       onTap: _toggleDataMule,
+                      onInfoTap: () => _showDataMuleExplanation(),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -608,6 +609,40 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
     );
   }
 
+  void _showDataMuleExplanation() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a2e),
+        title: const Row(
+          children: [
+            Icon(Icons.router, color: Colors.cyanAccent, size: 22),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text('什麼是 Data Mule？',
+                  style: TextStyle(color: Colors.white, fontSize: 16)),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Data Mule（資料騾）是一種離線中繼模式：\n\n'
+          '• 你的手機會持續接收周圍裝置的求救與物資訊號\n'
+          '• 即使你移動到不同區域，攜帶的資料會自動轉發給新遇到的裝置\n'
+          '• 適合在災區移動的志工或救難人員，幫助訊息跨越斷網區域\n\n'
+          '啟用後會以 Android 前景服務保持運作，即使螢幕關閉也不會被系統終止。\n\n'
+          '耗電量：中等（持續 BLE 掃描+廣播）',
+          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('了解', style: TextStyle(color: Colors.cyanAccent)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _bleSub?.cancel();
@@ -622,12 +657,14 @@ class _ControlButton extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
+  final VoidCallback? onInfoTap;
 
   const _ControlButton({
     required this.icon,
     required this.label,
     required this.color,
     required this.onTap,
+    this.onInfoTap,
   });
 
   @override
@@ -648,6 +685,13 @@ class _ControlButton extends StatelessWidget {
             Flexible(
               child: Text(label, style: TextStyle(color: color, fontSize: 12)),
             ),
+            if (onInfoTap != null) ...[
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: onInfoTap,
+                child: Icon(Icons.info_outline, color: color, size: 14),
+              ),
+            ],
           ],
         ),
       ),

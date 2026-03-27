@@ -1,4 +1,4 @@
-package network.resqmesh.resqmesh_app
+package network.ignirelay.ignirelay_app
 
 import android.Manifest
 import android.content.Context
@@ -17,9 +17,9 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
 
     companion object {
-        private const val METHOD_CHANNEL = "network.resqmesh/native"
-        private const val EVENT_CHANNEL = "network.resqmesh/events"
-        private const val TAG = "ResQMesh"
+        private const val METHOD_CHANNEL = "network.ignirelay/native"
+        private const val EVENT_CHANNEL = "network.ignirelay/events"
+        private const val TAG = "IgniRelay"
 
         /**
          * 共享 EventSink — 供 ForegroundService 轉發 GATT Server 收到的資料到 Flutter
@@ -250,7 +250,7 @@ class MainActivity : FlutterActivity() {
                         val bytes = call.argument<ByteArray>("bloom")
                         if (bytes != null) {
                             localBloomBytes = bytes
-                            ResQMeshForegroundService.sharedBloomBytes = bytes
+                            IgniRelayForegroundService.sharedBloomBytes = bytes
                             Log.d(TAG, "Bloom filter updated: ${bytes.size} bytes")
                         }
                         result.success(true)
@@ -275,17 +275,17 @@ class MainActivity : FlutterActivity() {
                                     pos += len
                                 } else break
                             }
-                            ResQMeshForegroundService.sharedOutboxEvents = events
+                            IgniRelayForegroundService.sharedOutboxEvents = events
                             Log.d(TAG, "Event outbox updated: ${events.size} events")
                         } else {
-                            ResQMeshForegroundService.sharedOutboxEvents = emptyList()
+                            IgniRelayForegroundService.sharedOutboxEvents = emptyList()
                         }
                         result.success(true)
                     }
                     "getGattServerStatus" -> {
                         result.success(mapOf(
-                            "ready" to ResQMeshForegroundService.gattServiceReady,
-                            "status" to ResQMeshForegroundService.gattServiceStatus
+                            "ready" to IgniRelayForegroundService.gattServiceReady,
+                            "status" to IgniRelayForegroundService.gattServiceStatus
                         ))
                     }
                     else -> result.notImplemented()
@@ -297,7 +297,7 @@ class MainActivity : FlutterActivity() {
 
     private fun startDataMuleService(): Boolean {
         return try {
-            val intent = Intent(this, ResQMeshForegroundService::class.java)
+            val intent = Intent(this, IgniRelayForegroundService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(intent)
             } else {
@@ -313,7 +313,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun stopDataMuleService() {
-        stopService(Intent(this, ResQMeshForegroundService::class.java))
+        stopService(Intent(this, IgniRelayForegroundService::class.java))
         dataMuleServiceRunning = false
         Log.i(TAG, "Data Mule service stopped")
     }

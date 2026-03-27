@@ -4,9 +4,9 @@ import 'package:flutter/services.dart';
 
 class NativeBridge {
   static const MethodChannel _channel =
-      MethodChannel('network.resqmesh/native');
+      MethodChannel('network.ignirelay/native');
   static const EventChannel _eventChannel =
-      EventChannel('network.resqmesh/events');
+      EventChannel('network.ignirelay/events');
 
   /// 共享的 Native EventChannel broadcast stream
   /// （EventChannel 只能 receiveBroadcastStream 一次，這裡用 asBroadcastStream 共享）

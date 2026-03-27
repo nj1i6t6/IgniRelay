@@ -1,4 +1,4 @@
-package network.resqmesh.resqmesh_app
+package network.ignirelay.ignirelay_app
 
 import java.util.UUID
 
@@ -8,7 +8,7 @@ import java.util.UUID
  * UUID 透過 UUIDv5 (NAMESPACE_DNS + "ignirelay.com") 算出，
  * 由 Dart uuid ^4.4.2 驗證，永久鎖定供手機端 & nRF54H20 韌體使用。
  */
-object ResQMeshConstants {
+object IgniRelayConstants {
     // ── BLE GATT UUID ──────────────────────────────────────────────────────
     val SERVICE_UUID: UUID     = UUID.fromString("a4d11949-49d0-5230-96bb-43dd95d2cb2e")
     val EVENT_CHAR_UUID: UUID  = UUID.fromString("a932d89d-c24c-5d11-8320-55374c7feb74")
