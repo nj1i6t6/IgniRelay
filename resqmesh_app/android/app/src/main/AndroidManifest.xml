@@ -70,6 +70,19 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
+        <!-- Bug 13 Fix: Health Connect 權限設定頁 Activity Alias -->
+        <!-- 沒有這個 activity-alias，Health Connect 不會在「應用程式權限」中顯示烽傳 -->
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".MainActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+
         <!-- Bridgefy SDK Background Service（暫時停用，啟用後取消註解）
         <service
             android:name="me.bridgefy.main.BridgefyService"

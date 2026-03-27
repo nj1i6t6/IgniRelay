@@ -552,17 +552,17 @@ class IgniRelayForegroundService : Service() {
                     return@postDelayed
                 }
                 try {
+                    // Bug 13 Fix: 限制 Notify 封包 ≤ MTU-3 = 514 bytes，超過的截斷
+                    val safeEvent = if (event.size > 514) event.copyOf(514) else event
                     val result: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        gattServer?.notifyCharacteristicChanged(device, char, false, event) ?: -1
+                        gattServer?.notifyCharacteristicChanged(device, char, false, safeEvent) ?: -1
                     } else {
                         @Suppress("DEPRECATION")
-                        char.value = event
+                        char.value = safeEvent
                         @Suppress("DEPRECATION")
                         gattServer?.notifyCharacteristicChanged(device, char, false) ?: false
                     }
-                    // 診斷: API 33+ 永遠回傳 0 (SUCCESS)，但不代表真的送出
-                    // 真正的送達確認靠 onNotificationSent callback
-                    Log.d(TAG, "pushOutbox: event ${index + 1}/${events.size} → ${device.address} (result=$result, ${event.size}B)")
+                    Log.d(TAG, "pushOutbox: event ${index + 1}/${events.size} → ${device.address} (result=$result, ${safeEvent.size}B)")
                     if (result == 0 || result == true) successCount++ else failCount++
                 } catch (e: Exception) {
                     failCount++
@@ -576,7 +576,7 @@ class IgniRelayForegroundService : Service() {
                         ))
                     }
                 }
-            }, (index * 100L)) // 100ms 間隔（從 50ms 加大，給 BLE stack 更多處理時間）
+            }, (index * 150L)) // Bug 13 Fix: 150ms 間隔（加大，給 BLE stack 更多處理時間）
         }
 
         // 推送完成通知 Dart（含成功/失敗計數）
@@ -589,7 +589,7 @@ class IgniRelayForegroundService : Service() {
                 "success" to successCount,
                 "fail" to failCount
             ))
-        }, (events.size * 100L) + 200)
+        }, (events.size * 150L) + 300)
     }
 
     // ── 統一的 Characteristic Write 處理 ─────────────────────────────────
@@ -662,11 +662,13 @@ class IgniRelayForegroundService : Service() {
                 }
             }
 
-            // Pack response: control(1) + watermark(8) + iblt(504) + padding(4) = 517
-            val response = ByteArray(517)
+            // Bug 13 Fix: 封包大小必須 ≤ MTU-3 = 514 bytes
+            // 舊版 517 bytes 超過 Notify 上限導致 BLE stack 原生崩潰！
+            // Pack response: control(1) + watermark(8) + iblt(504) = 513 bytes (≤ 514)
+            val localIbltBytes = localIblt.toBytes()
+            val response = ByteArray(1 + 8 + minOf(localIbltBytes.size, 504))
             response[0] = 0x01 // kControlIBLT
             // Watermark: use 0 (Kotlin side doesn't track chat watermark separately)
-            val localIbltBytes = localIblt.toBytes()
             System.arraycopy(localIbltBytes, 0, response, 9,
                 minOf(localIbltBytes.size, 504))
 
@@ -832,21 +834,23 @@ class IgniRelayForegroundService : Service() {
                     return@postDelayed
                 }
                 try {
+                    // Bug 13 Fix: 限制 Notify 封包 ≤ MTU-3 = 514 bytes
+                    val safePacket = if (packet.size > 514) packet.copyOf(514) else packet
                     val result: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        gattServer?.notifyCharacteristicChanged(device, char, false, packet) ?: -1
+                        gattServer?.notifyCharacteristicChanged(device, char, false, safePacket) ?: -1
                     } else {
                         @Suppress("DEPRECATION")
-                        char.value = packet
+                        char.value = safePacket
                         @Suppress("DEPRECATION")
                         gattServer?.notifyCharacteristicChanged(device, char, false) ?: false
                     }
-                    Log.d(TAG, "pushDiff: packet ${index + 1}/${allPackets.size} → ${device.address} (result=$result, ${packet.size}B)")
+                    Log.d(TAG, "pushDiff: packet ${index + 1}/${allPackets.size} → ${device.address} (result=$result, ${safePacket.size}B)")
                     if (result == 0 || result == true) successCount++ else failCount++
                 } catch (e: Exception) {
                     failCount++
                     Log.e(TAG, "pushDiff: notify failed at packet $index: ${e.message}")
                 }
-            }, (index * 100L))
+            }, (index * 150L)) // Bug 13 Fix: 150ms 間隔
         }
 
         mainHandler.postDelayed({
@@ -860,7 +864,7 @@ class IgniRelayForegroundService : Service() {
                 "fail" to failCount,
                 "mode" to "diff"
             ))
-        }, (allPackets.size * 100L) + 200)
+        }, (allPackets.size * 150L) + 300)
     }
 
     /** 嘗試從 Protobuf MeshEvent bytes 中提取 event_id */

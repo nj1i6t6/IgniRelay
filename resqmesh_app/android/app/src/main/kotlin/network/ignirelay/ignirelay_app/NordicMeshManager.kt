@@ -381,6 +381,8 @@ class IgniRelayBleClient(context: Context) : BleManager(context) {
     }
 
     /** Bug 10 Fix: 寫入本機 Bloom Filter 到對端 Bloom Characteristic */
+    /** Bug 13 Fix: 加上 .split() 啟用 Long Write (Prepared Write)，
+     *  否則 data > MTU-3 的寫入會直接 fail 或造成 BLE stack 崩潰 */
     fun writeBloom(data: ByteArray, callback: (Boolean) -> Unit) {
         val char = bloomChar
         if (char == null) {
@@ -395,17 +397,29 @@ class IgniRelayBleClient(context: Context) : BleManager(context) {
         val timeoutRunnable = Runnable {
             if (!callbackFired) {
                 callbackFired = true
-                Log.w(TAG, "writeBloom TIMEOUT (5s)")
+                Log.w(TAG, "writeBloom TIMEOUT (8s) data=${data.size}B")
+                handler.post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "gatt_op_fail",
+                        "op" to "write_bloom",
+                        "status" to -2,
+                        "reason" to "timeout_8s",
+                        "size" to data.size
+                    ))
+                }
                 callback(false)
             }
         }
-        handler.postDelayed(timeoutRunnable, 5000)
+        handler.postDelayed(timeoutRunnable, 8000) // 加長到 8s，Long Write 需要更多時間
 
+        Log.d(TAG, "writeBloom: ${data.size}B → Long Write (split enabled)")
         writeCharacteristic(char, data, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+            .split() // Bug 13 Fix: 啟用自動分包（Long Write / Prepared Write）
             .done {
                 if (!callbackFired) {
                     callbackFired = true
                     handler.removeCallbacks(timeoutRunnable)
+                    Log.d(TAG, "writeBloom OK: ${data.size}B")
                     callback(true)
                 }
             }
@@ -413,7 +427,15 @@ class IgniRelayBleClient(context: Context) : BleManager(context) {
                 if (!callbackFired) {
                     callbackFired = true
                     handler.removeCallbacks(timeoutRunnable)
-                    Log.e(TAG, "writeBloom failed: status=$status")
+                    Log.e(TAG, "writeBloom failed: status=$status size=${data.size}B")
+                    handler.post {
+                        MainActivity.sharedEventSink?.success(mapOf(
+                            "type" to "gatt_op_fail",
+                            "op" to "write_bloom",
+                            "status" to status,
+                            "size" to data.size
+                        ))
+                    }
                     callback(false)
                 }
             }
@@ -436,26 +458,28 @@ class IgniRelayBleClient(context: Context) : BleManager(context) {
             return
         }
 
-        // Bug 6 Fix: Handler-based 5s timeout — 避免 OPPO GATT Server 無回應時阻塞
         val handler = Handler(Looper.getMainLooper())
         var callbackFired = false
 
         val timeoutRunnable = Runnable {
             if (!callbackFired) {
                 callbackFired = true
-                Log.w(TAG, "writeEvent TIMEOUT (5s) — remote GATT Server not responding to write")
+                Log.w(TAG, "writeEvent TIMEOUT (8s) data=${data.size}B")
                 MainActivity.sharedEventSink?.success(mapOf(
                     "type" to "gatt_op_fail",
                     "op" to "write",
                     "status" to -2,
-                    "reason" to "timeout_5s"
+                    "reason" to "timeout_8s",
+                    "size" to data.size
                 ))
                 callback(false)
             }
         }
-        handler.postDelayed(timeoutRunnable, 5000)
+        handler.postDelayed(timeoutRunnable, 8000) // Bug 13 Fix: 加長 timeout
 
+        // Bug 13 Fix: 加 .split() 啟用 Long Write，避免大事件寫入失敗
         writeCharacteristic(char, data, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+            .split()
             .done {
                 if (!callbackFired) {
                     callbackFired = true
@@ -467,12 +491,13 @@ class IgniRelayBleClient(context: Context) : BleManager(context) {
                 if (!callbackFired) {
                     callbackFired = true
                     handler.removeCallbacks(timeoutRunnable)
-                    Log.e(TAG, "writeEvent failed: status=$status")
+                    Log.e(TAG, "writeEvent failed: status=$status size=${data.size}B")
                     handler.post {
                         MainActivity.sharedEventSink?.success(mapOf(
                             "type" to "gatt_op_fail",
                             "op" to "write",
-                            "status" to status
+                            "status" to status,
+                            "size" to data.size
                         ))
                     }
                     callback(false)

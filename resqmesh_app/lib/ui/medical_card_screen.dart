@@ -339,6 +339,9 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
   Future<void> _importFromHealthConnect() async {
     final health = Health();
 
+    // Bug 13 Fix: 必須先呼叫 configure()，否則 Health Connect API 不會初始化
+    await health.configure();
+
     // 要讀取的資料類型
     final types = <HealthDataType>[
       HealthDataType.HEIGHT,
