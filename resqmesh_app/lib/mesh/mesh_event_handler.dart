@@ -247,6 +247,11 @@ class MeshEventHandler {
         await _handleHazardEvent(decoded, payload, sourceNodeId, db);
       }
 
+      // 如果是聊天訊息事件，寫入 Chat_Messages
+      if (decoded.eventType == EventType.chatMessage && payload.isNotEmpty) {
+        await _handleChatEvent(decoded, payload, sourceNodeId, db);
+      }
+
       receivedEventCount++;
       _eventStreamController.add(
         MeshDataReceived(sourceNodeId, Uint8List.fromList(payload)),
@@ -294,6 +299,54 @@ class MeshEventHandler {
       }
     } catch (e) {
       debugPrint('[MeshEvt] Hazard sync skipped: $e');
+    }
+  }
+
+  /// 處理聊天訊息事件：解碼 JSON payload 並寫入 Chat_Messages
+  Future<void> _handleChatEvent(
+    WirePayload decoded,
+    List<int> payload,
+    String sourceNodeId,
+    dynamic db,
+  ) async {
+    try {
+      final jsonStr = utf8.decode(payload);
+      final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+      final roomId = map['room_id'] as String?;
+      final content = map['content'] as String?;
+      if (roomId == null || roomId.isEmpty || content == null || content.isEmpty) {
+        debugPrint('[MeshEvt] Chat event missing room_id or content');
+        return;
+      }
+
+      // 檢查用戶是否已加入此聊天室（避免跨聊天室顯示）
+      final room = await db.query('Chat_Rooms',
+          columns: ['room_id'],
+          where: 'room_id = ?',
+          whereArgs: [roomId],
+          limit: 1) as List<Map<String, dynamic>>;
+      if (room.isEmpty) {
+        _dlog('CHAT_SKIP(not-joined) room=$roomId');
+        return;
+      }
+
+      final senderPubKey = decoded.senderPubKey != null
+          ? Uint8List.fromList(decoded.senderPubKey!)
+          : Uint8List.fromList(utf8.encode(sourceNodeId));
+
+      await db.insert('Chat_Messages', {
+        'event_id': decoded.eventId,
+        'room_id': roomId,
+        'sender_pub_key': senderPubKey,
+        'content': content,
+        'reply_to': map['reply_to'] as String?,
+        'hlc_timestamp': decoded.hlcTimestamp > 0
+            ? decoded.hlcTimestamp
+            : DateTime.now().millisecondsSinceEpoch,
+      });
+      _dlog('CHAT_INSERT ${decoded.eventId.substring(0, 8)}.. room=$roomId');
+    } catch (e) {
+      debugPrint('[MeshEvt] Chat event insert skipped: $e');
     }
   }
 

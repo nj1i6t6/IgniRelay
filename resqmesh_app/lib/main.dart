@@ -21,6 +21,7 @@ import 'mesh/mesh_event_handler.dart';
 import 'mesh/transport_factory.dart';
 import 'mesh/native_bridge.dart';
 import 'services/location_service.dart';
+import 'proto/mesh_protocol.pb.dart' as pb;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -307,11 +308,12 @@ class _MainTabControllerState extends State<MainTabController> {
     super.dispose();
   }
 
-  /// 監聯 Mesh 收到的 SOS 事件，彈出警報
+  /// 監聯 Mesh 收到的事件，彈出警報或媒合通知
   void _listenForSosAlerts() {
     _bleSub = MeshEventHandler().events.listen((event) {
       if (!mounted) return;
       _checkAndAlertSos(event.data, event.sourceNodeId);
+      _checkAndAlertMatch();
     });
   }
 
@@ -361,6 +363,61 @@ class _MainTabControllerState extends State<MainTabController> {
             ),
           ),
         );
+      }
+    }
+  }
+
+  /// 檢查是否收到媒合意向通知（有人願意提供物資給我）
+  Future<void> _checkAndAlertMatch() async {
+    final db = await DatabaseHelper().database;
+    final cutoff = DateTime.now().millisecondsSinceEpoch - 60000;
+    final recentMatch = await db.query(
+      'Event_Logs',
+      where: 'event_type = 2 AND hlc_timestamp > ?',
+      whereArgs: [cutoff],
+      orderBy: 'hlc_timestamp DESC',
+      limit: 5,
+    );
+
+    final myPubKey = await IdentityManager().getPublicKeyBytes();
+
+    for (final evt in recentMatch) {
+      final eventId = evt['event_id'] as String? ?? '';
+      if (_alertedEventIds.contains(eventId)) continue;
+
+      final payload = evt['payload'] as Uint8List?;
+      if (payload == null || payload.isEmpty) continue;
+
+      try {
+        final intent = pb.MatchIntentData.fromBuffer(payload);
+        // 只通知需求者（requesterPubKey 匹配本機）
+        final reqPubKey = intent.requesterPubKey;
+        if (reqPubKey.isEmpty) continue;
+        bool isMe = reqPubKey.length == myPubKey.length;
+        if (isMe) {
+          for (int i = 0; i < myPubKey.length; i++) {
+            if (reqPubKey[i] != myPubKey[i]) { isMe = false; break; }
+          }
+        }
+        if (!isMe) continue;
+
+        _alertedEventIds.add(eventId);
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('有人願意提供你需要的物資！點擊查看媒合結果。'),
+            backgroundColor: Colors.green[700],
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: '查看媒合',
+              textColor: Colors.white,
+              onPressed: () => setState(() => _currentIndex = 3),
+            ),
+          ),
+        );
+      } catch (_) {
+        // payload 解碼失敗，忽略
       }
     }
   }
@@ -509,6 +566,62 @@ class _ProfilePageState extends State<_ProfilePage>
     _load();
   }
 
+  Future<void> _editNickname() async {
+    final controller = TextEditingController(text: _nickname);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a2e),
+        title: const Text('修改暱稱', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 20,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: '輸入新暱稱',
+            hintStyle: const TextStyle(color: Colors.white38),
+            enabledBorder: OutlineInputBorder(
+              borderSide: const BorderSide(color: Colors.white24),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderSide: const BorderSide(color: Colors.redAccent),
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消', style: TextStyle(color: Colors.white38)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('儲存'),
+          ),
+        ],
+      ),
+    );
+    if (result != null && mounted) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('nickname', result);
+      setState(() => _nickname = result);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.isNotEmpty ? '暱稱已更新為「$result」' : '已清除暱稱'),
+            backgroundColor: Colors.green[700],
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _load() async {
     final pubKey = await _identity.getPublicKeyBytes();
     final hex = pubKey.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
@@ -558,12 +671,22 @@ class _ProfilePageState extends State<_ProfilePage>
               child: Icon(Icons.shield, color: color, size: 50),
             ),
             const SizedBox(height: 12),
-            Text(
-              _nickname.isNotEmpty ? _nickname : '匿名用戶',
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold),
+            GestureDetector(
+              onTap: _editNickname,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _nickname.isNotEmpty ? _nickname : '匿名用戶',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(Icons.edit, color: Colors.white38, size: 16),
+                ],
+              ),
             ),
             const SizedBox(height: 4),
             Text(badgeName, style: TextStyle(color: color, fontSize: 14)),
