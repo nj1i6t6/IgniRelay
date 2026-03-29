@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:ignirelay_app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/crypto/signer.dart';
 import 'package:ignirelay_app/db/database_helper.dart';
 import 'package:ignirelay_app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/mesh/mesh_transport.dart';
@@ -20,6 +21,35 @@ import 'package:ignirelay_app/proto/mesh_protocol.pb.dart' as pb;
 // 每次呼叫回傳帶毫秒時間戳的唯一 event ID
 String _uid(String prefix) =>
     '$prefix-${DateTime.now().microsecondsSinceEpoch}';
+
+/// 取得本機公鑰 bytes（用於測試簽章）
+Future<List<int>> _getLocalPubKey() async {
+  final keyPair = await IdentityManager().getOrCreateKeyPair();
+  final pubKey = await keyPair.extractPublicKey();
+  return pubKey.bytes;
+}
+
+/// 建構已簽章的 wire payload（通過 Ed25519 驗證）
+Future<Uint8List> _makeSignedWire(
+  String id,
+  List<int> payload, {
+  int urgency = 0,
+  int eventType = 0,
+  int ttl = 10,
+}) async {
+  final signature = await Signer.signPayload(payload);
+  final pubKey = await _getLocalPubKey();
+  return Uint8List.fromList(MeshEventHandler.encodeWirePayload(
+    id,
+    payload,
+    urgency: urgency,
+    eventType: eventType,
+    ttl: ttl,
+    signature: signature.toList(),
+    senderPubKey: pubKey,
+    // originLat/Lng 不設定 → 預設 0 → decoded.originLat = null → 跳過 zone check
+  ));
+}
 
 void main() {
   setUpAll(() async {
@@ -32,20 +62,19 @@ void main() {
 
   final handler = MeshEventHandler();
 
-  // 建構一個不含 originLat/Lng 的 wire payload（zone routing 自動跳過）
+  // 未簽章版本，僅用於 error resilience / dedup 測試
   Uint8List makeWire(String id, List<int> payload, {int urgency = 0, int eventType = 0}) =>
       Uint8List.fromList(MeshEventHandler.encodeWirePayload(
         id, payload,
         urgency: urgency,
         eventType: eventType,
-        // originLat/Lng 不設定 → 預設 0 → decoded.originLat = null → 跳過 zone check
       ));
 
   group('Up Pipeline — Normal receive', () {
     test('valid event: stream emits MeshDataReceived', () async {
       final id = _uid('up-stream');
       final payload = [1, 2, 3];
-      final wire = makeWire(id, payload, urgency: 1);
+      final wire = await _makeSignedWire(id, payload, urgency: 1);
 
       MeshDataReceived? received;
       final sub = handler.events.listen((e) => received = e);
@@ -61,7 +90,7 @@ void main() {
 
     test('valid event: receivedEventCount increments', () async {
       final id = _uid('up-count');
-      final wire = makeWire(id, [9]);
+      final wire = await _makeSignedWire(id, [9]);
       final before = handler.receivedEventCount;
 
       await handler.handleIncomingData(wire, 'device-b');
@@ -71,7 +100,7 @@ void main() {
 
     test('valid event: event_id marked as seen after processing', () async {
       final id = _uid('up-seen');
-      final wire = makeWire(id, []);
+      final wire = await _makeSignedWire(id, []);
 
       expect(handler.hasSeen(id), isFalse);
       await handler.handleIncomingData(wire, 'device-c');
@@ -80,7 +109,7 @@ void main() {
 
     test('valid event: persisted in Event_Logs DB', () async {
       final id = _uid('up-db');
-      final wire = makeWire(id, [42], urgency: 2, eventType: 1);
+      final wire = await _makeSignedWire(id, [42], urgency: 2, eventType: 1);
 
       await handler.handleIncomingData(wire, 'device-db');
 
@@ -97,9 +126,7 @@ void main() {
 
     test('TTL stored as TTL-1 (decremented on receive)', () async {
       final id = _uid('up-ttl');
-      final wire = Uint8List.fromList(MeshEventHandler.encodeWirePayload(
-        id, [], ttl: 8,
-      ));
+      final wire = await _makeSignedWire(id, [], ttl: 8);
 
       await handler.handleIncomingData(wire, 'device-ttl');
 
@@ -117,7 +144,7 @@ void main() {
   group('Up Pipeline — Deduplication', () {
     test('duplicate event: stream does NOT emit second time', () async {
       final id = _uid('up-dup');
-      final wire = makeWire(id, [5, 6, 7], urgency: 1);
+      final wire = await _makeSignedWire(id, [5, 6, 7], urgency: 1);
 
       // First call
       await handler.handleIncomingData(wire, 'device-x');
@@ -136,7 +163,7 @@ void main() {
 
     test('same event from different device: still deduplicated', () async {
       final id = _uid('up-dup2');
-      final wire = makeWire(id, []);
+      final wire = await _makeSignedWire(id, []);
 
       await handler.handleIncomingData(wire, 'device-1');
       final countAfterFirst = handler.receivedEventCount;
@@ -159,11 +186,17 @@ void main() {
         ..centerLng = 121.564
         ..radiusMeters = 300.0;
 
+      final payload = hazardProto.writeToBuffer();
+      final signature = await Signer.signPayload(payload);
+      final pubKey = await _getLocalPubKey();
+
       final wire = Uint8List.fromList(MeshEventHandler.encodeWirePayload(
         eventId,
-        hazardProto.writeToBuffer(),
+        payload,
         urgency: 2,
         eventType: 4, // hazardMarker
+        signature: signature.toList(),
+        senderPubKey: pubKey,
       ));
 
       await handler.handleIncomingData(wire, 'device-hzd');
@@ -177,6 +210,38 @@ void main() {
       expect(rows.length, equals(1));
       expect(rows[0]['type'], equals('FIRE'));
       expect(rows[0]['severity'], equals(3));
+    });
+  });
+
+  group('Up Pipeline — Signature Verification', () {
+    test('unsigned event: rejected (REJECT no-sig)', () async {
+      final id = _uid('up-nosig');
+      final wire = makeWire(id, [1, 2, 3]);
+      final before = handler.receivedEventCount;
+
+      await handler.handleIncomingData(wire, 'device-nosig');
+
+      // 未簽章的事件不應增加 receivedEventCount
+      expect(handler.receivedEventCount, equals(before));
+    });
+
+    test('tampered payload: rejected (sig-fail)', () async {
+      final id = _uid('up-tamper');
+      final originalPayload = [10, 20, 30];
+      final signature = await Signer.signPayload(originalPayload);
+      final pubKey = await _getLocalPubKey();
+
+      // 用不同的 payload 但原本的簽章 → 驗證應失敗
+      final tamperedWire = Uint8List.fromList(MeshEventHandler.encodeWirePayload(
+        id,
+        [99, 99, 99], // 篡改的 payload
+        signature: signature.toList(),
+        senderPubKey: pubKey,
+      ));
+
+      final before = handler.receivedEventCount;
+      await handler.handleIncomingData(tamperedWire, 'device-tamper');
+      expect(handler.receivedEventCount, equals(before));
     });
   });
 
@@ -205,20 +270,17 @@ void main() {
   });
 
   group('Up Pipeline — Legacy pipe format', () {
-    test('legacy format event: stream emits correctly', () async {
+    test('legacy format event: rejected without signature', () async {
+      // Legacy pipe format 不帶簽章，應被 no-sig 檢查攔截
       final id = _uid('legacy-up');
       final payload = [0x42, 0x43];
       final bytes = Uint8List.fromList([...utf8.encode(id), 0x7C, ...payload]);
 
-      MeshDataReceived? received;
-      final sub = handler.events.listen((e) => received = e);
-
+      final before = handler.receivedEventCount;
       await handler.handleIncomingData(bytes, 'device-legacy');
-      await Future.delayed(Duration.zero);
 
-      expect(received, isNotNull);
-      expect(received!.data, equals(payload));
-      await sub.cancel();
+      // Legacy 格式無簽章 → 被拒絕
+      expect(handler.receivedEventCount, equals(before));
     });
   });
 }
