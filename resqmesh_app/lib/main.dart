@@ -21,6 +21,7 @@ import 'mesh/mesh_event_handler.dart';
 import 'mesh/transport_factory.dart';
 import 'mesh/native_bridge.dart';
 import 'services/location_service.dart';
+import 'services/chat_service.dart';
 import 'proto/mesh_protocol.pb.dart' as pb;
 
 void main() {
@@ -86,7 +87,23 @@ class _StartupRouterState extends State<_StartupRouter> {
       await DatabaseHelper().database;
       await IdentityManager().initialize();
       await VillageGeofence.init();
-      LocationService().init(); // 不 await，GPS 冷啟動耗時
+      // GPS 就緒後自動加入所在里聊天室
+      final locService = LocationService();
+      locService.onFirstFix = () {
+        ChatService().autoJoinVillageRoom().then((code) {
+          if (code != null) {
+            debugPrint('[Init] GPS 就緒，自動加入聊天室: $code');
+          }
+        }).catchError((e) {
+          debugPrint('[Init] 自動加入聊天室失敗: $e');
+        });
+      };
+      await locService.init(); // await 確保權限對話框完成
+      // 如果 init 期間已取得定位但 onFirstFix 未觸發（lastKnownPosition 路徑），手動觸發
+      if (locService.hasLocation && locService.onFirstFix != null) {
+        locService.onFirstFix!();
+        locService.onFirstFix = null;
+      }
 
       // 過期配對自動釋放
       EventManager().expireStaleMatches().catchError((_) {});

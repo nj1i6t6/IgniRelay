@@ -20,6 +20,7 @@ import 'ignirelay_sprites.dart';
 import 'ignirelay_theme.dart';
 import 'triage_input.dart';
 import 'map_layer_settings.dart';
+import '../mesh/mesh_event_handler.dart' hide EventType;
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -66,6 +67,8 @@ class _MapScreenState extends State<MapScreen>
   List<Marker> _eventMarkers = [];
   List<Marker> _poiMarkers = [];
   Timer? _refreshTimer;
+  StreamSubscription? _meshEventSub;
+  Timer? _meshDebounce;
   bool _showLegend = false;
   String _myReporterHex = '';
 
@@ -111,6 +114,13 @@ class _MapScreenState extends State<MapScreen>
     // 每 15 秒自動刷新 overlay (危險區域 + Mesh 事件)
     _refreshTimer =
         Timer.periodic(const Duration(seconds: 15), (_) => _loadOverlays());
+    // 監聽 Mesh 事件，即時刷新 overlay
+    _meshEventSub = MeshEventHandler().events.listen((_) {
+      _meshDebounce?.cancel();
+      _meshDebounce = Timer(const Duration(seconds: 2), () {
+        if (mounted) _loadOverlays();
+      });
+    });
     // 監聽圖層設定變化
     _layerSettings.addListener(_onLayerSettingsChanged);
   }
@@ -122,6 +132,8 @@ class _MapScreenState extends State<MapScreen>
     _mbTiles?.dispose();
     _positionStream?.cancel();
     _refreshTimer?.cancel();
+    _meshEventSub?.cancel();
+    _meshDebounce?.cancel();
     _poiRefreshTimer?.cancel();
     _markDescCtrl.dispose();
     _layerSettings.removeListener(_onLayerSettingsChanged);

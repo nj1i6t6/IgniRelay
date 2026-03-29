@@ -29,6 +29,9 @@ class LocationService {
   bool _permDeniedForever = false;
   bool get permDeniedForever => _permDeniedForever;
 
+  /// GPS 首次就緒時的回呼（用於自動加入聊天室等）
+  void Function()? onFirstFix;
+
   /// 初始化 GPS（若已初始化則 no-op）
   /// 帶 timeout 避免在 GPS 不可用時永久阻塞
   Future<void> init() async {
@@ -74,10 +77,16 @@ class LocationService {
 
       // 取得精確位置（20 秒 timeout，低階機 GPS 冷啟動需要較長時間）
       try {
+        final wasNull = _currentLocation == null;
         final pos = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.high,
         ).timeout(const Duration(seconds: 20));
         _currentLocation = LatLng(pos.latitude, pos.longitude);
+        if (wasNull && onFirstFix != null) {
+          debugPrint('[LocationService] 首次精確定位就緒，觸發 onFirstFix');
+          onFirstFix!();
+          onFirstFix = null;
+        }
       } on TimeoutException {
         debugPrint('[LocationService] getCurrentPosition 逾時 (20s)');
         if (_currentLocation == null) {
@@ -97,11 +106,18 @@ class LocationService {
           distanceFilter: 10,
         ),
       ).listen((pos) {
+        final wasNull = _currentLocation == null;
         _currentLocation = LatLng(pos.latitude, pos.longitude);
         // GPS 恢復後清除不可用原因
         if (_unavailableReason != null) {
           _unavailableReason = null;
           debugPrint('[LocationService] GPS 已恢復定位');
+        }
+        // 首次取得定位時觸發回呼（自動加入聊天室等）
+        if (wasNull && onFirstFix != null) {
+          debugPrint('[LocationService] 首次定位就緒，觸發 onFirstFix');
+          onFirstFix!();
+          onFirstFix = null; // 只觸發一次
         }
       });
     } catch (e) {

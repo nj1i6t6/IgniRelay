@@ -98,6 +98,7 @@ class MeshEventHandler {
     debugLogs.add(entry);
     if (debugLogs.length > _maxDebugLogs) debugLogs.removeAt(0);
     debugPrint('[MeshEvt] $msg');
+    DatabaseHelper().writeDebugLog('MESH', entry);
   }
 
   /// 檢查事件是否已見過（去重查詢）

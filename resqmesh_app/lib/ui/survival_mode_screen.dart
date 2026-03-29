@@ -8,6 +8,7 @@ import '../mesh/mesh_event_handler.dart';
 import '../mesh/native_bridge.dart';
 import '../mesh/event_manager.dart';
 import '../mesh/tier_manager.dart';
+import '../db/database_helper.dart';
 
 class SurvivalModeScreen extends StatefulWidget {
   const SurvivalModeScreen({super.key});
@@ -48,6 +49,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
     _transport = Provider.of<MeshTransport>(context, listen: false);
     _checkCapabilities();
     _loadStats();
+    DatabaseHelper().purgeDebugLogs(); // 清理 24h 前的日誌
     _startMeshListening();
     _startGattListener();
     _statsTimer =
@@ -133,6 +135,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
           _gattServerLogs.add(log);
           if (_gattServerLogs.length > 30) _gattServerLogs.removeAt(0);
         });
+        DatabaseHelper().writeDebugLog('GATT', log);
       }
     }, onError: (e) {
       debugPrint('[GATT EventChannel] error: $e');
@@ -261,13 +264,27 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       }
       buf.writeln('');
 
-      buf.writeln('--- Transport Logs (${s.debugLogs.length}) ---');
+      // 從 DB 匯出全量持久化日誌（不受記憶體 buffer 80 筆限制）
+      final dbLogs = await DatabaseHelper().exportDebugLogs();
+      buf.writeln('--- Persistent DB Logs (${dbLogs.length}) ---');
+      for (final row in dbLogs) {
+        final ts = row['timestamp'] as int? ?? 0;
+        final src = row['source'] as String? ?? '?';
+        final msg = row['message'] as String? ?? '';
+        final dt = DateTime.fromMillisecondsSinceEpoch(ts);
+        final timeStr =
+            '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
+        buf.writeln('[$timeStr][$src] $msg');
+      }
+      buf.writeln('');
+
+      buf.writeln('--- In-Memory Transport Logs (${s.debugLogs.length}) ---');
       for (final l in s.debugLogs) {
         buf.writeln(l);
       }
       buf.writeln('');
 
-      buf.writeln('--- MeshEventHandler Logs (${MeshEventHandler().debugLogs.length}) ---');
+      buf.writeln('--- In-Memory MeshEventHandler Logs (${MeshEventHandler().debugLogs.length}) ---');
       for (final l in MeshEventHandler().debugLogs) {
         buf.writeln(l);
       }

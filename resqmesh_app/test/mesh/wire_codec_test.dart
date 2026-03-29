@@ -40,6 +40,33 @@ void main() {
       }
     });
 
+    test('event types 8–13 roundtrip (Bug 1 fix: MATCH_CONFIRM→CHAT_MESSAGE)', () {
+      for (final t in [8, 9, 10, 11, 12, 13]) {
+        final wire = MeshEventHandler.encodeWirePayload(
+          'type-ext-test-$t',
+          [0xAB, 0xCD],
+          eventType: t,
+        );
+        final wp = MeshEventHandler.decodeWirePayload(wire);
+        expect(wp, isNotNull, reason: 'eventType=$t should decode');
+        expect(wp!.eventType, equals(t), reason: 'eventType=$t');
+      }
+    });
+
+    test('CHAT_MESSAGE (type=13) preserves payload content', () {
+      final chatPayload = [123, 34, 114, 111, 111, 109, 34, 125]; // {"room"}
+      final wire = MeshEventHandler.encodeWirePayload(
+        'chat-msg-test-001',
+        chatPayload,
+        eventType: 13,
+        urgency: 0,
+      );
+      final wp = MeshEventHandler.decodeWirePayload(wire);
+      expect(wp, isNotNull);
+      expect(wp!.eventType, equals(13));
+      expect(wp.payload, equals(chatPayload));
+    });
+
     test('HLC timestamp + counter roundtrip', () {
       const ts = 1700000000000;
       const ctr = 99;

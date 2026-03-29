@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -86,6 +86,17 @@ class DatabaseHelper {
       ''');
       await db.execute(
           'CREATE INDEX IF NOT EXISTS idx_chat_messages_room ON Chat_Messages(room_id, hlc_timestamp)');
+    }
+    if (oldVersion < 6) {
+      // v6: Debug_Logs 持久化（24h TTL，正式版移除）
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS Debug_Logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          timestamp INTEGER NOT NULL,
+          source TEXT NOT NULL,
+          message TEXT NOT NULL
+        )
+      ''');
     }
   }
 
@@ -219,6 +230,16 @@ class DatabaseHelper {
     await db.execute(
         'CREATE INDEX idx_chat_messages_room ON Chat_Messages(room_id, hlc_timestamp)');
 
+    // Debug_Logs (除錯日誌持久化，24h TTL，正式版移除)
+    await db.execute('''
+      CREATE TABLE Debug_Logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        message TEXT NOT NULL
+      )
+    ''');
+
     // 初始化 GeoContext
     await db.execute('''
       INSERT INTO GeoContext_Cache (id, environment_type, suggested_range_meters)
@@ -314,6 +335,32 @@ class DatabaseHelper {
       where: 'pub_key = ?',
       whereArgs: [pubKeyBytes],
     );
+  }
+
+  /// 寫入除錯日誌（fire-and-forget，不影響效能）
+  void writeDebugLog(String source, String message) {
+    database.then((db) {
+      db.insert('Debug_Logs', {
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'source': source,
+        'message': message,
+      }).catchError((_) {});
+    }).catchError((_) {});
+  }
+
+  /// 匯出全部除錯日誌
+  Future<List<Map<String, dynamic>>> exportDebugLogs() async {
+    final db = await database;
+    return db.query('Debug_Logs', orderBy: 'id ASC');
+  }
+
+  /// 清理超過 24 小時的除錯日誌
+  Future<int> purgeDebugLogs() async {
+    final db = await database;
+    final cutoff =
+        DateTime.now().millisecondsSinceEpoch - (24 * 60 * 60 * 1000);
+    return db.delete('Debug_Logs',
+        where: 'timestamp < ?', whereArgs: [cutoff]);
   }
 
   /// 讀取醫療卡 (JSON 字串)

@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import '../mesh/native_bridge.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:mbtiles/mbtiles.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_mbtiles/vector_map_tiles_mbtiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
-import '../mesh/mesh_constants.dart' show kIgniRelayServiceUUID;
 import '../mesh/mbtiles_loader.dart';
 import '../services/location_service.dart';
 import '../services/match_service.dart';
@@ -131,8 +130,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   Future<void> _startBleScan() async {
     try {
-      final state = await FlutterBluePlus.adapterState.first;
-      if (state != BluetoothAdapterState.on) {
+      final btOn = await NativeBridge.isBluetoothEnabled();
+      if (!btOn) {
         debugPrint('[Navigation] BLE 未開啟');
         return;
       }
@@ -151,24 +150,22 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   Future<void> _performScan() async {
     try {
-      await FlutterBluePlus.startScan(
-        withServices: [Guid(kIgniRelayServiceUUID)],
-        timeout: const Duration(seconds: 8),
-      );
+      await NativeBridge.startNordicScan();
 
       _bleScanSub?.cancel();
-      _bleScanSub = FlutterBluePlus.scanResults.listen((results) {
-        if (results.isNotEmpty && mounted) {
-          // 取最強 RSSI 的結果
-          int bestRssi = -100;
-          for (final r in results) {
-            if (r.rssi > bestRssi) bestRssi = r.rssi;
-          }
+      _bleScanSub = NativeBridge.nativeEventStream.listen((event) {
+        if (event is Map && event['type'] == 'nordic_found' && mounted) {
+          final rssi = event['rssi'] as int? ?? -100;
           setState(() {
             _peerDetected = true;
-            _peerRssi = bestRssi;
+            if (rssi > _peerRssi) _peerRssi = rssi;
           });
         }
+      });
+
+      // 8 秒後停止本輪掃描
+      Future.delayed(const Duration(seconds: 8), () {
+        if (_scanning) NativeBridge.stopNordicScan();
       });
     } catch (e) {
       debugPrint('[Navigation] BLE scan error: $e');
@@ -180,7 +177,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _scanTimer?.cancel();
     _bleScanSub?.cancel();
     try {
-      FlutterBluePlus.stopScan();
+      NativeBridge.stopNordicScan();
     } catch (_) {}
   }
 

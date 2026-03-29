@@ -11,7 +11,7 @@ import '../crypto/identity_manager.dart';
 /// NativeBleTransport — 完整的自研 BLE Mesh Transport
 ///
 /// 整合雙角色：
-/// - Central（flutter_blue_plus 掃描）：由 BleManager 處理
+/// - Central（NativeBridge 掃描）：由 BleManager 處理
 /// - Peripheral（Native GATT Server）：由 NativeBridge EventChannel 接收
 ///
 /// 兩條路徑收到的資料都統一交給 MeshEventHandler 處理。
