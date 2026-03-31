@@ -24,7 +24,7 @@ class DatabaseHelper {
       path,
       version: 6,
       onConfigure: (db) async {
-        await db.execute('PRAGMA journal_mode=WAL');
+        await db.rawQuery('PRAGMA journal_mode=WAL');
       },
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
