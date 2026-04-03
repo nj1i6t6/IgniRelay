@@ -69,6 +69,7 @@ class MatchRepository {
 
         results.add(DecodedRequest(
           eventId: (row['event_id'] as String?) ?? '',
+          requestId: rd.requestId,
           resourceType: rd.resourceType,
           quantityNeeded: rd.quantityNeeded,
           mobilityMode: mode,
@@ -79,6 +80,7 @@ class MatchRepository {
           lat: rd.lat != 0 ? rd.lat : null,
           lng: rd.lng != 0 ? rd.lng : null,
           maxRangeMeters: rd.maxRangeMeters,
+          senderPubKey: (row['sender_pub_key'] as Uint8List?)?.toList(),
         ));
       } catch (_) {
         // 無法解碼或不是 RequestData，跳過
@@ -167,18 +169,21 @@ class MatchRepository {
 
     // 查詢 Materials_State AVAILABLE 且 sender 不是自己的
     final rows = await db.rawQuery('''
-      SELECT m.resource_id, m.payload
+      SELECT m.resource_id, m.payload, e.sender_pub_key
       FROM Materials_State m
       JOIN Event_Logs e ON m.payload = e.payload AND e.event_type = 0
       WHERE m.status = 'AVAILABLE' AND e.sender_pub_key != ?
     ''', [myPubKey]);
 
     final results = <DecodedSupply>[];
+    final seenIds = <String>{};
     for (final row in rows) {
       final payload = row['payload'] as Uint8List?;
       if (payload == null) continue;
       try {
         final rd = pb.ResourceData.fromBuffer(payload);
+        if (seenIds.contains(rd.resourceId)) continue;
+        seenIds.add(rd.resourceId);
         results.add(DecodedSupply(
           resourceId: rd.resourceId,
           resourceType: rd.resourceType,
@@ -190,6 +195,7 @@ class MatchRepository {
           lat: rd.lat != 0 ? rd.lat : null,
           lng: rd.lng != 0 ? rd.lng : null,
           maxRangeMeters: rd.maxRangeMeters,
+          senderPubKey: (row['sender_pub_key'] as Uint8List?)?.toList(),
         ));
       } catch (_) {
         continue;
@@ -372,6 +378,7 @@ class DecodedSupply {
   final double? lat;
   final double? lng;
   final double maxRangeMeters;
+  final List<int>? senderPubKey; // 供給者公鑰
 
   const DecodedSupply({
     required this.resourceId,
@@ -381,11 +388,13 @@ class DecodedSupply {
     this.lat,
     this.lng,
     this.maxRangeMeters = 20000,
+    this.senderPubKey,
   });
 }
 
 class DecodedRequest {
   final String eventId;
+  final String requestId; // RequestData.requestId
   final String resourceType;
   final double quantityNeeded;
   final String mobilityMode;
@@ -396,9 +405,11 @@ class DecodedRequest {
   final double? lat;
   final double? lng;
   final double maxRangeMeters;
+  final List<int>? senderPubKey; // 需求者公鑰
 
   const DecodedRequest({
     required this.eventId,
+    this.requestId = '',
     required this.resourceType,
     required this.quantityNeeded,
     required this.mobilityMode,
@@ -409,6 +420,7 @@ class DecodedRequest {
     this.lat,
     this.lng,
     this.maxRangeMeters = 20000,
+    this.senderPubKey,
   });
 }
 

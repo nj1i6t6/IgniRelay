@@ -46,8 +46,10 @@ class _MatchScreenState extends State<MatchScreen>
   void initState() {
     super.initState();
     _initAndLoad();
-    // 監聽 Mesh 事件，收到新資料時自動刷新社區動態
+    // 監聽 Mesh 事件，收到新資料時自動刷新 + 處理 pending match actions
     _meshEventSub = MeshEventHandler().events.listen((_) {
+      // 處理 pending match actions（自動回覆 CONFIRM/REJECT）
+      _eventManager.processPendingMatchActions();
       _meshDebounce?.cancel();
       _meshDebounce = Timer(const Duration(seconds: 3), () {
         if (mounted && !_isRefreshing) _loadAll();
@@ -746,7 +748,10 @@ class _MatchScreenState extends State<MatchScreen>
                       style:
                           TextStyle(color: Colors.grey[400], fontSize: 12)),
                   const SizedBox(width: 8),
-                  const Icon(Icons.navigation, color: Colors.white38, size: 16),
+                  const Icon(Icons.handshake, color: Colors.greenAccent, size: 16),
+                  const SizedBox(width: 4),
+                  const Text('發起媒合',
+                      style: TextStyle(color: Colors.greenAccent, fontSize: 11)),
                 ],
               ),
             ],
@@ -756,12 +761,74 @@ class _MatchScreenState extends State<MatchScreen>
     );
   }
 
+  Future<void> _initiateMatch(MatchEntry entry) async {
+    // 確認對話框
+    final readableName = getReadableName(entry.resourceType);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a2e),
+        title: const Text('發起媒合', style: TextStyle(color: Colors.white)),
+        content: Text(
+          '確定要對「$readableName」發起媒合嗎？\n'
+          '對方會收到通知，確認後雙方進入導航模式。',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.greenAccent,
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('確認發起'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      // 發送 MATCH_INTENT
+      await _eventManager.publishMatchIntent(
+        resourceId: entry.resourceId,
+        requestId: entry.requestId.isNotEmpty ? entry.requestId : entry.requestEventId,
+        requesterPubKey: entry.requesterPubKey ?? [],
+        matchScore: entry.score,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('已發起媒合，等待對方確認...'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // 進入導航畫面等待
+        Navigator.of(context)
+            .push(MaterialPageRoute(
+              builder: (_) => NavigationScreen(match: entry),
+            ))
+            .then((_) => _loadAll());
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('媒合失敗: $e'),
+            backgroundColor: Colors.red[700],
+          ),
+        );
+      }
+    }
+  }
+
   void _openNavigation(MatchEntry entry) {
-    Navigator.of(context)
-        .push(MaterialPageRoute(
-          builder: (_) => NavigationScreen(match: entry),
-        ))
-        .then((_) => _loadAll());
+    _initiateMatch(entry);
   }
 
   // ── 社區動態卡片 ────────────────────────────────────────────────

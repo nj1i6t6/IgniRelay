@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onConfigure: (db) async {
         await db.rawQuery('PRAGMA journal_mode=WAL');
       },
@@ -100,6 +100,41 @@ class DatabaseHelper {
           message TEXT NOT NULL
         )
       ''');
+    }
+    if (oldVersion < 7) {
+      // v7: 需求狀態表 + 媒合 Session 表
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS Requests_State (
+          request_id TEXT PRIMARY KEY,
+          event_id TEXT NOT NULL,
+          sender_pub_key BLOB NOT NULL,
+          status TEXT NOT NULL DEFAULT 'AVAILABLE',
+          hlc_timestamp INTEGER NOT NULL,
+          hlc_counter INTEGER NOT NULL,
+          matched_resource_id TEXT,
+          match_expires_at INTEGER,
+          payload BLOB
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS Match_Sessions (
+          session_id TEXT PRIMARY KEY,
+          resource_id TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          provider_pub_key BLOB NOT NULL,
+          requester_pub_key BLOB NOT NULL,
+          status TEXT NOT NULL DEFAULT 'ACTIVE',
+          provider_lat REAL,
+          provider_lng REAL,
+          requester_lat REAL,
+          requester_lng REAL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          completed_at INTEGER
+        )
+      ''');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_match_sessions_status ON Match_Sessions(status)');
     }
   }
 
@@ -242,6 +277,42 @@ class DatabaseHelper {
         message TEXT NOT NULL
       )
     ''');
+
+    // Requests_State (需求狀態投影表)
+    await db.execute('''
+      CREATE TABLE Requests_State (
+        request_id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        sender_pub_key BLOB NOT NULL,
+        status TEXT NOT NULL DEFAULT 'AVAILABLE',
+        hlc_timestamp INTEGER NOT NULL,
+        hlc_counter INTEGER NOT NULL,
+        matched_resource_id TEXT,
+        match_expires_at INTEGER,
+        payload BLOB
+      )
+    ''');
+
+    // Match_Sessions (媒合 Session 追蹤表)
+    await db.execute('''
+      CREATE TABLE Match_Sessions (
+        session_id TEXT PRIMARY KEY,
+        resource_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        provider_pub_key BLOB NOT NULL,
+        requester_pub_key BLOB NOT NULL,
+        status TEXT NOT NULL DEFAULT 'ACTIVE',
+        provider_lat REAL,
+        provider_lng REAL,
+        requester_lat REAL,
+        requester_lng REAL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        completed_at INTEGER
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX idx_match_sessions_status ON Match_Sessions(status)');
 
     // 初始化 GeoContext
     await db.execute('''

@@ -9,6 +9,9 @@ import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_mbtiles/vector_map_tiles_mbtiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 import '../mesh/mbtiles_loader.dart';
+import '../db/database_helper.dart';
+import '../mesh/event_manager.dart';
+import '../mesh/mesh_event_handler.dart' hide EventType;
 import '../services/location_service.dart';
 import '../services/match_service.dart';
 import 'physical_handoff.dart';
@@ -29,6 +32,7 @@ class NavigationScreen extends StatefulWidget {
 class _NavigationScreenState extends State<NavigationScreen> {
   final _location = LocationService();
   final _mapController = MapController();
+  final _eventManager = EventManager();
 
   // MBTiles 離線地圖
   MbTiles? _mbTiles;
@@ -47,19 +51,78 @@ class _NavigationScreenState extends State<NavigationScreen> {
   Timer? _locationRefresh;
   LatLng? _myLocation;
 
+  // 對方位置（從 Match_Sessions 讀取）
+  LatLng? _peerLocation;
+  StreamSubscription? _meshEventSub;
+
+  // Session ID 用於位置同步
+  String get _sessionId =>
+      '${widget.match.resourceId}_${widget.match.requestId.isNotEmpty ? widget.match.requestId : widget.match.requestEventId}';
+
   @override
   void initState() {
     super.initState();
     _myLocation = _location.currentLocation;
     _initMBTiles();
     _startBleScan();
-    // 每 3 秒刷新位置
+    _loadPeerLocation();
+    // 每 3 秒刷新位置 + 發送位置同步
     _locationRefresh = Timer.periodic(const Duration(seconds: 3), (_) {
       final loc = _location.currentLocation;
       if (loc != null && mounted) {
         setState(() => _myLocation = loc);
+        // 背景發送位置更新（內部有 30s 節流）
+        _eventManager.publishLocationUpdate(
+          sessionId: _sessionId,
+          lat: loc.latitude,
+          lng: loc.longitude,
+        );
       }
+      // 讀取對方最新位置
+      _loadPeerLocation();
     });
+    // 監聽 Mesh 事件，即時更新對方位置
+    _meshEventSub = MeshEventHandler().events.listen((_) {
+      _loadPeerLocation();
+    });
+  }
+
+  Future<void> _loadPeerLocation() async {
+    try {
+      final db = await DatabaseHelper().database;
+      final rows = await db.query('Match_Sessions',
+          where: "session_id = ? AND status = 'ACTIVE'",
+          whereArgs: [_sessionId],
+          limit: 1);
+      if (rows.isEmpty || !mounted) return;
+
+      final session = rows.first;
+      // 判斷自己是 provider 還是 requester，讀對方的位置
+      final myLoc = _location.currentLocation;
+      final providerLat = (session['provider_lat'] as num?)?.toDouble();
+      final providerLng = (session['provider_lng'] as num?)?.toDouble();
+      final requesterLat = (session['requester_lat'] as num?)?.toDouble();
+      final requesterLng = (session['requester_lng'] as num?)?.toDouble();
+
+      // 如果 deliveryMode == DELIVER, 我是供給者 → 對方是 requester
+      // 如果 deliveryMode == PICKUP, 我是需求者 → 對方是 provider
+      LatLng? peerLoc;
+      if (widget.match.deliveryMode == 'DELIVER') {
+        if (requesterLat != null && requesterLng != null &&
+            requesterLat != 0 && requesterLng != 0) {
+          peerLoc = LatLng(requesterLat, requesterLng);
+        }
+      } else {
+        if (providerLat != null && providerLng != null &&
+            providerLat != 0 && providerLng != 0) {
+          peerLoc = LatLng(providerLat, providerLng);
+        }
+      }
+
+      if (peerLoc != null && mounted) {
+        setState(() => _peerLocation = peerLoc);
+      }
+    } catch (_) {}
   }
 
   Future<void> _initMBTiles() async {
@@ -111,6 +174,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
   }
 
   LatLng get _targetPos {
+    // 優先使用即時對方位置
+    if (_peerLocation != null) return _peerLocation!;
     // 根據配送方向決定目標
     // DELIVER → 供給者要前往需求者位置
     // PICKUP → 需求者要前往供給者位置
@@ -572,6 +637,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   void dispose() {
     _stopBleScan();
     _locationRefresh?.cancel();
+    _meshEventSub?.cancel();
     _mbTiles?.dispose();
     super.dispose();
   }

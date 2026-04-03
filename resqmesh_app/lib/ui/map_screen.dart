@@ -21,6 +21,9 @@ import 'ignirelay_theme.dart';
 import 'triage_input.dart';
 import 'map_layer_settings.dart';
 import '../mesh/mesh_event_handler.dart' hide EventType;
+import '../proto/mesh_protocol.pb.dart' as pb;
+import '../services/location_service.dart';
+import 'supply_category_data.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -544,6 +547,9 @@ class _MapScreenState extends State<MapScreen>
       final eventType = (evt['event_type'] as int?) ?? 0;
       if (lat == null || lng == null || lat == 0 || lng == 0) continue;
 
+      // Bug 9: 過濾 urgency=0 INFO 事件
+      if (urgency == 0) continue;
+
       Color markerColor;
       IconData markerIcon;
       double markerSize;
@@ -586,16 +592,22 @@ class _MapScreenState extends State<MapScreen>
         } catch (_) {}
       }
 
+      // Bug 8: 加入事件資訊的引用資料
+      final evtData = Map<String, dynamic>.from(evt);
+
       markers.add(Marker(
         point: LatLng(lat, lng),
         width: markerSize + 4,
         height: markerSize + 4,
-        child: _EventMarkerIcon(
-          icon: markerIcon,
-          color: markerColor,
-          size: markerSize,
-          tooltip: '$tooltip${desc.isNotEmpty ? '\n$desc' : ''}',
-          isSOS: urgency >= 2,
+        child: GestureDetector(
+          onTap: () => _showEventInfo(evtData),
+          child: _EventMarkerIcon(
+            icon: markerIcon,
+            color: markerColor,
+            size: markerSize,
+            tooltip: '$tooltip${desc.isNotEmpty ? '\n$desc' : ''}',
+            isSOS: urgency >= 2,
+          ),
         ),
       ));
     }
@@ -1302,6 +1314,159 @@ class _MapScreenState extends State<MapScreen>
                 ),
               ],
             ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── 事件標記詳情面板 ────────────────────────────────────────────
+
+  void _showEventInfo(Map<String, dynamic> evt) {
+    final eventType = (evt['event_type'] as int?) ?? 0;
+    final urgency = (evt['urgency'] as int?) ?? 0;
+    final hlcTs = (evt['hlc_timestamp'] as int?) ?? 0;
+    final lat = (evt['received_lat'] as num?)?.toDouble() ?? 0;
+    final lng = (evt['received_lng'] as num?)?.toDouble() ?? 0;
+    final eventId = (evt['event_id'] as String?) ?? '';
+
+    // 事件類型名稱
+    String typeName;
+    IconData typeIcon;
+    Color typeColor;
+    switch (eventType) {
+      case 0:
+        typeName = '物資供給';
+        typeIcon = Icons.inventory_2;
+        typeColor = Colors.greenAccent;
+        break;
+      case 1:
+        typeName = '物資需求';
+        typeIcon = Icons.volunteer_activism;
+        typeColor = Colors.amber;
+        break;
+      default:
+        typeName = '事件 (type=$eventType)';
+        typeIcon = Icons.info_outline;
+        typeColor = Colors.cyanAccent;
+    }
+
+    // 緊急度
+    String urgencyLabel;
+    Color urgencyColor;
+    switch (urgency) {
+      case 3:
+        urgencyLabel = 'SOS 緊急求救';
+        urgencyColor = Colors.red;
+        break;
+      case 2:
+        urgencyLabel = '求助';
+        urgencyColor = Colors.amber;
+        break;
+      case 1:
+        urgencyLabel = '物資';
+        urgencyColor = Colors.green;
+        break;
+      default:
+        urgencyLabel = '資訊';
+        urgencyColor = Colors.cyan;
+    }
+
+    // 時間
+    String timeAgo = '';
+    if (hlcTs > 0) {
+      final diff = DateTime.now().millisecondsSinceEpoch - hlcTs;
+      final mins = diff ~/ 60000;
+      if (mins < 60) {
+        timeAgo = '$mins 分鐘前';
+      } else if (mins < 1440) {
+        timeAgo = '${mins ~/ 60} 小時前';
+      } else {
+        timeAgo = '${mins ~/ 1440} 天前';
+      }
+    }
+
+    // 解析 payload
+    String payloadDesc = '';
+    final payload = evt['payload'] as Uint8List?;
+    if (payload != null) {
+      try {
+        if (eventType == 0) {
+          final rd = pb.ResourceData.fromBuffer(payload);
+          payloadDesc = '${getReadableName(rd.resourceType)} ${rd.quantity.toInt()} ${rd.unit}';
+        } else if (eventType == 1) {
+          final rd = pb.RequestData.fromBuffer(payload);
+          payloadDesc = '${getReadableName(rd.resourceType)} ${rd.quantityNeeded.toInt()} 份';
+        } else {
+          payloadDesc = String.fromCharCodes(payload);
+          if (payloadDesc.length > 100) payloadDesc = '${payloadDesc.substring(0, 100)}...';
+        }
+      } catch (_) {
+        payloadDesc = '${payload.length} bytes';
+      }
+    }
+
+    // 距離
+    String distStr = '';
+    final myLoc = _userLocation;
+    if (myLoc != null && lat != 0 && lng != 0) {
+      final dist = LocationService.haversineMeters(myLoc, LatLng(lat, lng));
+      distStr = LocationService.formatDistance(dist);
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a2e),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Row(children: [
+              Icon(typeIcon, color: typeColor, size: 24),
+              const SizedBox(width: 8),
+              Expanded(child: Text(typeName,
+                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: urgencyColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(urgencyLabel, style: TextStyle(color: urgencyColor, fontSize: 11)),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            if (payloadDesc.isNotEmpty)
+              Text(payloadDesc, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+            const SizedBox(height: 8),
+            if (distStr.isNotEmpty)
+              Row(children: [
+                const Icon(Icons.place, size: 14, color: Colors.white38),
+                const SizedBox(width: 4),
+                Text('距離: $distStr', style: const TextStyle(color: Colors.white54, fontSize: 13)),
+              ]),
+            if (timeAgo.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('時間: $timeAgo', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            ],
+            const SizedBox(height: 4),
+            Text('ID: ${eventId.length > 8 ? eventId.substring(0, 8) : eventId}...',
+                style: const TextStyle(color: Colors.white24, fontSize: 10)),
           ],
         ),
       ),

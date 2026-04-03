@@ -2,7 +2,7 @@ name: ignirelay_app
 description: 烽傳 IgniRelay - Offline Mesh Emergency Rescue System
 publish_to: 'none'
 
-version: 0.1.23+24
+version: 0.1.24+25
 
 environment:
   sdk: '>=3.2.0 <4.0.0'

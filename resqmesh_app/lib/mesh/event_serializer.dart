@@ -85,6 +85,8 @@ class EventSerializer {
     required double lat,
     required double lng,
     double radiusMeters = 200.0,
+    String description = '',
+    bool isConfirmation = false,
   }) async {
     final hazardData = HazardData(
       hazardId: hazardId,
@@ -94,6 +96,8 @@ class EventSerializer {
       centerLng: lng,
       radiusMeters: radiusMeters,
       observedAt: Int64(DateTime.now().millisecondsSinceEpoch),
+      description: description,
+      isConfirmation: isConfirmation,
     );
 
     return _buildMeshEvent(

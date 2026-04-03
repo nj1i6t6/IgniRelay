@@ -23,6 +23,7 @@ class MatchEntry {
   final String requestResourceType;
   final String requestDesc;
   final String requestEventId;
+  final String requestId; // RequestData.requestId（用於媒合協議）
   final int urgency;
   final int identityLevel;
   final double score;
@@ -37,6 +38,8 @@ class MatchEntry {
   final double? supplyLng;
   final double? requestLat;
   final double? requestLng;
+  final List<int>? requesterPubKey; // 需求者公鑰（供給者發起媒合用）
+  final List<int>? providerPubKey; // 供給者公鑰（需求者確認媒合用）
 
   const MatchEntry({
     required this.resourceId,
@@ -44,6 +47,7 @@ class MatchEntry {
     required this.requestResourceType,
     required this.requestDesc,
     required this.requestEventId,
+    this.requestId = '',
     required this.urgency,
     required this.identityLevel,
     required this.score,
@@ -58,6 +62,8 @@ class MatchEntry {
     this.supplyLng,
     this.requestLat,
     this.requestLng,
+    this.requesterPubKey,
+    this.providerPubKey,
   });
 }
 
@@ -161,6 +167,7 @@ class MatchService {
           requestResourceType: req.resourceType,
           requestDesc: reqDesc,
           requestEventId: req.eventId,
+          requestId: req.requestId,
           urgency: req.urgency,
           identityLevel: req.identityLevel,
           score: score,
@@ -175,6 +182,8 @@ class MatchService {
           supplyLng: supply.lng,
           requestLat: req.lat,
           requestLng: req.lng,
+          requesterPubKey: req.senderPubKey,
+          providerPubKey: supply.senderPubKey,
         ));
       }
     }

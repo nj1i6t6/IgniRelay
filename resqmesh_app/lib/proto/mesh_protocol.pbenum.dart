@@ -21,6 +21,7 @@ class EventType extends $pb.ProtobufEnum {
   static const EventType MATCH_AVAILABLE = EventType._(11, 'MATCH_AVAILABLE');
   static const EventType MATCH_GONE = EventType._(12, 'MATCH_GONE');
   static const EventType CHAT_MESSAGE = EventType._(13, 'CHAT_MESSAGE');
+  static const EventType LOCATION_UPDATE = EventType._(14, 'LOCATION_UPDATE');
 
   static const $core.List<EventType> values = <EventType>[
     RESOURCE_REGISTER,
@@ -37,6 +38,7 @@ class EventType extends $pb.ProtobufEnum {
     MATCH_AVAILABLE,
     MATCH_GONE,
     CHAT_MESSAGE,
+    LOCATION_UPDATE,
   ];
 
   static final $core.Map<$core.int, EventType> _byValue =

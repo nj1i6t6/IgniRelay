@@ -732,6 +732,8 @@ class HazardData extends $pb.GeneratedMessage {
     $core.double? centerLng,
     $core.double? radiusMeters,
     $fixnum.Int64? observedAt,
+    $core.String? description,
+    $core.bool? isConfirmation,
   }) {
     final $result = create();
     if (hazardId != null) $result.hazardId = hazardId;
@@ -741,6 +743,8 @@ class HazardData extends $pb.GeneratedMessage {
     if (centerLng != null) $result.centerLng = centerLng;
     if (radiusMeters != null) $result.radiusMeters = radiusMeters;
     if (observedAt != null) $result.observedAt = observedAt;
+    if (description != null) $result.description = description;
+    if (isConfirmation != null) $result.isConfirmation = isConfirmation;
     return $result;
   }
 
@@ -762,6 +766,8 @@ class HazardData extends $pb.GeneratedMessage {
     ..a<$core.double>(6, 'radiusMeters', $pb.PbFieldType.OF,
         protoName: 'radius_meters')
     ..aInt64(7, 'observedAt', protoName: 'observed_at')
+    ..aOS(8, 'description')
+    ..aOB(9, 'isConfirmation', protoName: 'is_confirmation')
     ..hasRequiredFields = false;
 
   @$core.override
@@ -819,6 +825,20 @@ class HazardData extends $pb.GeneratedMessage {
   @$pb.TagNumber(7)
   set observedAt($fixnum.Int64 v) {
     $_setInt64(6, v);
+  }
+
+  @$pb.TagNumber(8)
+  $core.String get description => $_getSZ(7);
+  @$pb.TagNumber(8)
+  set description($core.String v) {
+    $_setString(7, v);
+  }
+
+  @$pb.TagNumber(9)
+  $core.bool get isConfirmation => $_getBF(8);
+  @$pb.TagNumber(9)
+  set isConfirmation($core.bool v) {
+    $_setBool(8, v);
   }
 }
 
@@ -1320,5 +1340,205 @@ class FireAlarmRfData extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   set stationLng($core.double v) {
     $_setDouble(3, v);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MatchConfirmData (媒合確認)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MatchConfirmData extends $pb.GeneratedMessage {
+  factory MatchConfirmData({
+    $core.String? requestId,
+    $core.String? resourceId,
+    $core.List<$core.int>? requesterPubKey,
+    $core.List<$core.int>? providerPubKey,
+  }) {
+    final $result = create();
+    if (requestId != null) $result.requestId = requestId;
+    if (resourceId != null) $result.resourceId = resourceId;
+    if (requesterPubKey != null) $result.requesterPubKey = requesterPubKey;
+    if (providerPubKey != null) $result.providerPubKey = providerPubKey;
+    return $result;
+  }
+
+  MatchConfirmData._() : super();
+
+  factory MatchConfirmData.fromBuffer($core.List<$core.int> i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('MatchConfirmData',
+      package: const $pb.PackageName('resqmesh'), createEmptyInstance: create)
+    ..aOS(1, 'requestId', protoName: 'request_id')
+    ..aOS(2, 'resourceId', protoName: 'resource_id')
+    ..a<$core.List<$core.int>>(3, 'requesterPubKey', $pb.PbFieldType.OY, protoName: 'requester_pub_key')
+    ..a<$core.List<$core.int>>(4, 'providerPubKey', $pb.PbFieldType.OY, protoName: 'provider_pub_key')
+    ..hasRequiredFields = false;
+
+  @$core.override
+  MatchConfirmData createEmptyInstance() => create();
+  static MatchConfirmData create() => MatchConfirmData._();
+  @$core.override
+  MatchConfirmData clone() => MatchConfirmData()..mergeFromMessage(this);
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$pb.TagNumber(1)
+  $core.String get requestId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set requestId($core.String v) {
+    $_setString(0, v);
+  }
+
+  @$pb.TagNumber(2)
+  $core.String get resourceId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set resourceId($core.String v) {
+    $_setString(1, v);
+  }
+
+  @$pb.TagNumber(3)
+  $core.List<$core.int> get requesterPubKey => $_getN(2);
+  @$pb.TagNumber(3)
+  set requesterPubKey($core.List<$core.int> v) {
+    $_setBytes(2, v);
+  }
+
+  @$pb.TagNumber(4)
+  $core.List<$core.int> get providerPubKey => $_getN(3);
+  @$pb.TagNumber(4)
+  set providerPubKey($core.List<$core.int> v) {
+    $_setBytes(3, v);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MatchRejectData (媒合拒絕)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MatchRejectData extends $pb.GeneratedMessage {
+  factory MatchRejectData({
+    $core.String? requestId,
+    $core.String? resourceId,
+    $core.String? reason,
+  }) {
+    final $result = create();
+    if (requestId != null) $result.requestId = requestId;
+    if (resourceId != null) $result.resourceId = resourceId;
+    if (reason != null) $result.reason = reason;
+    return $result;
+  }
+
+  MatchRejectData._() : super();
+
+  factory MatchRejectData.fromBuffer($core.List<$core.int> i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('MatchRejectData',
+      package: const $pb.PackageName('resqmesh'), createEmptyInstance: create)
+    ..aOS(1, 'requestId', protoName: 'request_id')
+    ..aOS(2, 'resourceId', protoName: 'resource_id')
+    ..aOS(3, 'reason')
+    ..hasRequiredFields = false;
+
+  @$core.override
+  MatchRejectData createEmptyInstance() => create();
+  static MatchRejectData create() => MatchRejectData._();
+  @$core.override
+  MatchRejectData clone() => MatchRejectData()..mergeFromMessage(this);
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$pb.TagNumber(1)
+  $core.String get requestId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set requestId($core.String v) {
+    $_setString(0, v);
+  }
+
+  @$pb.TagNumber(2)
+  $core.String get resourceId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set resourceId($core.String v) {
+    $_setString(1, v);
+  }
+
+  @$pb.TagNumber(3)
+  $core.String get reason => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set reason($core.String v) {
+    $_setString(2, v);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LocationUpdateData (媒合中位置同步)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class LocationUpdateData extends $pb.GeneratedMessage {
+  factory LocationUpdateData({
+    $core.String? sessionId,
+    $core.double? lat,
+    $core.double? lng,
+    $fixnum.Int64? timestamp,
+  }) {
+    final $result = create();
+    if (sessionId != null) $result.sessionId = sessionId;
+    if (lat != null) $result.lat = lat;
+    if (lng != null) $result.lng = lng;
+    if (timestamp != null) $result.timestamp = timestamp;
+    return $result;
+  }
+
+  LocationUpdateData._() : super();
+
+  factory LocationUpdateData.fromBuffer($core.List<$core.int> i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('LocationUpdateData',
+      package: const $pb.PackageName('resqmesh'), createEmptyInstance: create)
+    ..aOS(1, 'sessionId', protoName: 'session_id')
+    ..a<$core.double>(2, 'lat', $pb.PbFieldType.OD)
+    ..a<$core.double>(3, 'lng', $pb.PbFieldType.OD)
+    ..aInt64(4, 'timestamp')
+    ..hasRequiredFields = false;
+
+  @$core.override
+  LocationUpdateData createEmptyInstance() => create();
+  static LocationUpdateData create() => LocationUpdateData._();
+  @$core.override
+  LocationUpdateData clone() => LocationUpdateData()..mergeFromMessage(this);
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$pb.TagNumber(1)
+  $core.String get sessionId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set sessionId($core.String v) {
+    $_setString(0, v);
+  }
+
+  @$pb.TagNumber(2)
+  $core.double get lat => $_getN(1);
+  @$pb.TagNumber(2)
+  set lat($core.double v) {
+    $_setDouble(1, v);
+  }
+
+  @$pb.TagNumber(3)
+  $core.double get lng => $_getN(2);
+  @$pb.TagNumber(3)
+  set lng($core.double v) {
+    $_setDouble(2, v);
+  }
+
+  @$pb.TagNumber(4)
+  $fixnum.Int64 get timestamp => $_getI64(3);
+  @$pb.TagNumber(4)
+  set timestamp($fixnum.Int64 v) {
+    $_setInt64(3, v);
   }
 }

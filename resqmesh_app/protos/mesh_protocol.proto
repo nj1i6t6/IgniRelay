@@ -17,6 +17,7 @@ enum EventType {
   MATCH_AVAILABLE   = 11;  // 回覆：還在
   MATCH_GONE        = 12;  // 回覆：沒了
   CHAT_MESSAGE      = 13;  // 聊天訊息
+  LOCATION_UPDATE   = 14;  // 媒合中位置同步
 }
 
 // 檢傷及優先級定義 (QoS & Triage)
@@ -127,6 +128,8 @@ message HazardData {
   double center_lng = 5;         // 中心點經度
   float radius_meters = 6;       // 影響半徑 (公尺)
   int64 observed_at = 7;         // 觀察時間 (Unix ms)
+  string description = 8;        // 使用者描述
+  bool is_confirmation = 9;      // true = 附議確認事件（不建立新標記）
 }
 
 // 惡意節點檢舉投票 (EventType.QUARANTINE_VOTE)
@@ -217,6 +220,14 @@ message ChatMessageData {
   string room_type = 2;        // "nation" / "county" / "township" / "village" / "custom"
   string content = 3;          // 文字內容
   string reply_to = 4;         // 回覆的 message event_id（可選）
+}
+
+// 媒合中位置同步 (EventType.LOCATION_UPDATE)
+message LocationUpdateData {
+  string session_id = 1;           // Match_Sessions.session_id
+  double lat = 2;                  // 目前緯度
+  double lng = 3;                  // 目前經度
+  int64 timestamp = 4;             // 更新時間 (Unix ms)
 }
 
 // 聊天室設定
