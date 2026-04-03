@@ -384,45 +384,43 @@ class _MainTabControllerState extends State<MainTabController> {
     }
   }
 
-  /// 檢查是否收到媒合意向通知（有人願意提供物資給我）
+  /// 檢查是否收到媒合意向 / 成功 / 拒絕通知
   Future<void> _checkAndAlertMatch() async {
     final db = await DatabaseHelper().database;
     final cutoff = DateTime.now().millisecondsSinceEpoch - 60000;
     final recentMatch = await db.query(
       'Event_Logs',
-      where: 'event_type = 2 AND hlc_timestamp > ?',
+      where:
+          '(event_type = 2 OR event_type = 8 OR event_type = 9) AND hlc_timestamp > ?',
       whereArgs: [cutoff],
       orderBy: 'hlc_timestamp DESC',
-      limit: 5,
+      limit: 10,
     );
 
     final myPubKey = await IdentityManager().getPublicKeyBytes();
+
+    bool samePubKey(List<int> other) {
+      if (other.length != myPubKey.length) return false;
+      for (int i = 0; i < myPubKey.length; i++) {
+        if (other[i] != myPubKey[i]) return false;
+      }
+      return true;
+    }
 
     for (final evt in recentMatch) {
       final eventId = evt['event_id'] as String? ?? '';
       if (_alertedEventIds.contains(eventId)) continue;
 
       final payload = evt['payload'] as Uint8List?;
+      final eventType = (evt['event_type'] as int?) ?? 0;
       if (payload == null || payload.isEmpty) continue;
 
       try {
-        final intent = pb.MatchIntentData.fromBuffer(payload);
-        // 只通知需求者（requesterPubKey 匹配本機）
-        final reqPubKey = intent.requesterPubKey;
-        if (reqPubKey.isEmpty) continue;
-        bool isMe = reqPubKey.length == myPubKey.length;
-        if (isMe) {
-          for (int i = 0; i < myPubKey.length; i++) {
-            if (reqPubKey[i] != myPubKey[i]) { isMe = false; break; }
-          }
-        }
-        if (!isMe) continue;
-
-        _alertedEventIds.add(eventId);
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+        SnackBar? snack;
+        if (eventType == 2) {
+          final intent = pb.MatchIntentData.fromBuffer(payload);
+          if (!samePubKey(intent.requesterPubKey)) continue;
+          snack = SnackBar(
             content: const Text('有人願意提供你需要的物資！點擊查看媒合結果。'),
             backgroundColor: Colors.green[700],
             duration: const Duration(seconds: 8),
@@ -431,8 +429,46 @@ class _MainTabControllerState extends State<MainTabController> {
               textColor: Colors.white,
               onPressed: () => setState(() => _currentIndex = 3),
             ),
-          ),
-        );
+          );
+        } else if (eventType == 8) {
+          final confirm = pb.MatchConfirmData.fromBuffer(payload);
+          if (!samePubKey(confirm.requesterPubKey) &&
+              !samePubKey(confirm.providerPubKey)) {
+            continue;
+          }
+          snack = SnackBar(
+            content: const Text('媒合已確認，雙方位置同步已啟動。'),
+            backgroundColor: Colors.lightBlue[700],
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: '查看媒合',
+              textColor: Colors.white,
+              onPressed: () => setState(() => _currentIndex = 3),
+            ),
+          );
+        } else if (eventType == 9) {
+          final reject = pb.MatchRejectData.fromBuffer(payload);
+          if (!samePubKey(reject.requesterPubKey) &&
+              !samePubKey(reject.providerPubKey)) {
+            continue;
+          }
+          snack = SnackBar(
+            content: Text(
+                '媒合被拒絕${reject.reason.isNotEmpty ? '：${reject.reason}' : ''}'),
+            backgroundColor: Colors.red[700],
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: '查看媒合',
+              textColor: Colors.white,
+              onPressed: () => setState(() => _currentIndex = 3),
+            ),
+          );
+        }
+
+        if (snack == null) continue;
+        _alertedEventIds.add(eventId);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(snack);
       } catch (_) {
         // payload 解碼失敗，忽略
       }
@@ -672,202 +708,204 @@ class _ProfilePageState extends State<_ProfilePage>
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
-            const SizedBox(height: 24),
-            // 徽章
-            Container(
-              width: 90,
-              height: 90,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: color.withValues(alpha: 0.15),
-                border: Border.all(color: color, width: 3),
-                boxShadow: [
-                  BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 20)
-                ],
+              const SizedBox(height: 24),
+              // 徽章
+              Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color.withValues(alpha: 0.15),
+                  border: Border.all(color: color, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                        color: color.withValues(alpha: 0.4), blurRadius: 20)
+                  ],
+                ),
+                child: Icon(Icons.shield, color: color, size: 50),
               ),
-              child: Icon(Icons.shield, color: color, size: 50),
-            ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: _editNickname,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _nickname.isNotEmpty ? _nickname : '匿名用戶',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.edit, color: Colors.white38, size: 16),
-                ],
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(badgeName, style: TextStyle(color: color, fontSize: 14)),
-            const SizedBox(height: 8),
-            Text(badgeDesc,
-                style: const TextStyle(color: Colors.white54, fontSize: 13)),
-
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.black26,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('公鑰 (Ed25519)',
-                      style: TextStyle(color: Colors.white38, fontSize: 11)),
-                  const SizedBox(height: 4),
-                  Text(
-                    _pubKeyHex.isNotEmpty
-                        ? '${_pubKeyHex.substring(0, 16)}...${_pubKeyHex.substring(_pubKeyHex.length - 8)}'
-                        : '載入中...',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      fontFamily: 'monospace',
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: _editNickname,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _nickname.isNotEmpty ? _nickname : '匿名用戶',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 6),
+                    const Icon(Icons.edit, color: Colors.white38, size: 16),
+                  ],
+                ),
               ),
-            ),
+              const SizedBox(height: 4),
+              Text(badgeName, style: TextStyle(color: color, fontSize: 14)),
+              const SizedBox(height: 8),
+              Text(badgeDesc,
+                  style: const TextStyle(color: Colors.white54, fontSize: 13)),
 
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('公鑰 (Ed25519)',
+                        style: TextStyle(color: Colors.white38, fontSize: 11)),
+                    const SizedBox(height: 4),
+                    Text(
+                      _pubKeyHex.isNotEmpty
+                          ? '${_pubKeyHex.substring(0, 16)}...${_pubKeyHex.substring(_pubKeyHex.length - 8)}'
+                          : '載入中...',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
-            // 背景執行設定按鈕
-            if (Platform.isAndroid)
+              const SizedBox(height: 24),
+
+              // 背景執行設定按鈕
+              if (Platform.isAndroid)
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.orangeAccent,
+                    side: const BorderSide(color: Colors.orangeAccent),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                  ),
+                  onPressed: () =>
+                      BatteryOptimizationGuide.showGuideManually(context),
+                  icon: const Icon(Icons.battery_saver, size: 18),
+                  label: const Text('背景執行 / 電池優化設定',
+                      style: TextStyle(fontSize: 13)),
+                ),
+
+              const SizedBox(height: 12),
+
+              // 醫療卡按鈕
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.orangeAccent,
-                  side: const BorderSide(color: Colors.orangeAccent),
+                  foregroundColor: Colors.redAccent,
+                  side: const BorderSide(color: Colors.redAccent),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 ),
-                onPressed: () =>
-                    BatteryOptimizationGuide.showGuideManually(context),
-                icon: const Icon(Icons.battery_saver, size: 18),
-                label:
-                    const Text('背景執行 / 電池優化設定', style: TextStyle(fontSize: 13)),
+                onPressed: () {
+                  Navigator.of(context)
+                      .push(MaterialPageRoute(
+                          builder: (_) => const MedicalCardScreen()))
+                      .then((saved) {
+                    if (saved == true) _load();
+                  });
+                },
+                icon: Icon(
+                  _hasMedicalCard
+                      ? Icons.medical_information
+                      : Icons.medical_information_outlined,
+                  size: 18,
+                ),
+                label: Text(
+                  _hasMedicalCard ? '編輯醫療卡' : '建立醫療卡',
+                  style: const TextStyle(fontSize: 13),
+                ),
               ),
 
-            const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
-            // 醫療卡按鈕
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.redAccent,
-                side: const BorderSide(color: Colors.redAccent),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              ),
-              onPressed: () {
-                Navigator.of(context)
-                    .push(MaterialPageRoute(
-                        builder: (_) => const MedicalCardScreen()))
-                    .then((saved) {
-                  if (saved == true) _load();
-                });
-              },
-              icon: Icon(
-                _hasMedicalCard
-                    ? Icons.medical_information
-                    : Icons.medical_information_outlined,
-                size: 18,
-              ),
-              label: Text(
-                _hasMedicalCard ? '編輯醫療卡' : '建立醫療卡',
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // 信任升級路徑
-            ...[0, 1, 2, 3].map((lvl) {
-              final lvlColor = _badgeColors[lvl];
-              final isReached = _level >= lvl;
-              final isCurrent = _level == lvl;
-              final canUpgrade = _level == lvl - 1;
-              return Container(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isReached
-                      ? lvlColor.withValues(alpha: 0.1)
-                      : Colors.transparent,
-                  border: Border.all(
-                    color: isReached ? lvlColor : Colors.white12,
-                    width: isCurrent ? 2 : 1,
+              // 信任升級路徑
+              ...[0, 1, 2, 3].map((lvl) {
+                final lvlColor = _badgeColors[lvl];
+                final isReached = _level >= lvl;
+                final isCurrent = _level == lvl;
+                final canUpgrade = _level == lvl - 1;
+                return Container(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isReached
+                        ? lvlColor.withValues(alpha: 0.1)
+                        : Colors.transparent,
+                    border: Border.all(
+                      color: isReached ? lvlColor : Colors.white12,
+                      width: isCurrent ? 2 : 1,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      isReached
-                          ? Icons.check_circle
-                          : Icons.radio_button_unchecked,
-                      color: isReached ? lvlColor : Colors.white24,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      _badgeNames[lvl],
-                      style: TextStyle(
-                        color: isReached ? lvlColor : Colors.white38,
-                        fontWeight:
-                            isCurrent ? FontWeight.bold : FontWeight.normal,
+                  child: Row(
+                    children: [
+                      Icon(
+                        isReached
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                        color: isReached ? lvlColor : Colors.white24,
+                        size: 16,
                       ),
-                    ),
-                    // L0→L1: 允許升級（暫時手動，等後端 SMS OTP）
-                    if (canUpgrade && lvl == 1) ...[
-                      const Spacer(),
-                      TextButton(
-                        onPressed: () async {
-                          await _identity.upgradeIdentityLevel(1);
-                          setState(() => _level = 1);
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content:
-                                      Text('已升級至 手機驗證 (L1)（待後端 SMS OTP 串接）')),
-                            );
-                          }
-                        },
-                        child: Text(
-                          '手機驗證',
-                          style: TextStyle(color: lvlColor, fontSize: 12),
+                      const SizedBox(width: 10),
+                      Text(
+                        _badgeNames[lvl],
+                        style: TextStyle(
+                          color: isReached ? lvlColor : Colors.white38,
+                          fontWeight:
+                              isCurrent ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
+                      // L0→L1: 允許升級（暫時手動，等後端 SMS OTP）
+                      if (canUpgrade && lvl == 1) ...[
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () async {
+                            await _identity.upgradeIdentityLevel(1);
+                            setState(() => _level = 1);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content:
+                                        Text('已升級至 手機驗證 (L1)（待後端 SMS OTP 串接）')),
+                              );
+                            }
+                          },
+                          child: Text(
+                            '手機驗證',
+                            style: TextStyle(color: lvlColor, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                      // L2, L3: 尚未開放
+                      if (canUpgrade && lvl >= 2) ...[
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            '尚未開放',
+                            style:
+                                TextStyle(color: Colors.white24, fontSize: 11),
+                          ),
+                        ),
+                      ],
                     ],
-                    // L2, L3: 尚未開放
-                    if (canUpgrade && lvl >= 2) ...[
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          '尚未開放',
-                          style: TextStyle(color: Colors.white24, fontSize: 11),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            }),
+                  ),
+                );
+              }),
             ],
           ),
         ),

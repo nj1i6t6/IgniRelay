@@ -65,6 +65,7 @@ class _MapScreenState extends State<MapScreen>
   List<Marker> _hazardCenterMarkers = [];
   List<Map<String, dynamic>> _hazardData = [];
   List<Marker> _eventMarkers = [];
+  List<Map<String, dynamic>> _eventMarkerData = [];
   List<Marker> _poiMarkers = [];
   Timer? _refreshTimer;
   StreamSubscription? _meshEventSub;
@@ -88,7 +89,6 @@ class _MapScreenState extends State<MapScreen>
   final _markDescCtrl = TextEditingController();
   bool _markPublishing = false;
   String? _editingHazardId; // 非 null = 編輯模式
-
 
   // ── SOS 狀態追蹤 ──
   String? _activeSosEventId;
@@ -237,8 +237,7 @@ class _MapScreenState extends State<MapScreen>
       final fileSize = File(path).lengthSync();
       final fileSizeMB = (fileSize / 1024 / 1024).toStringAsFixed(1);
 
-      debugPrint(
-          '[Map] MBTiles ready: path=$path, size=${fileSizeMB}MB, '
+      debugPrint('[Map] MBTiles ready: path=$path, size=${fileSizeMB}MB, '
           'zoom=${provider.minimumZoom}-${provider.maximumZoom}, '
           'theme=${theme.layers.length} layers, sprites=${sprites != null ? "OK" : "NULL"}, '
           'tileTest=$tileTestResult');
@@ -252,7 +251,6 @@ class _MapScreenState extends State<MapScreen>
           _mapTheme = theme;
           _spriteStyle = sprites;
           _mbtilesAvailable = true;
-
         });
         _refreshPoiMarkers();
       }
@@ -537,11 +535,13 @@ class _MapScreenState extends State<MapScreen>
     );
 
     final markers = <Marker>[];
+    final markerData = <Map<String, dynamic>>[];
     for (final evt in events) {
       final lat = (evt['received_lat'] as num?)?.toDouble();
       final lng = (evt['received_lng'] as num?)?.toDouble();
       final urgency = (evt['urgency'] as int?) ?? 0;
       final eventType = (evt['event_type'] as int?) ?? 0;
+      if (urgency == 0) continue;
       if (lat == null || lng == null || lat == 0 || lng == 0) continue;
 
       Color markerColor;
@@ -586,21 +586,39 @@ class _MapScreenState extends State<MapScreen>
         } catch (_) {}
       }
 
+      final markerInfo = {
+        'lat': lat,
+        'lng': lng,
+        'urgency': urgency,
+        'event_type': eventType,
+        'event_id': evt['event_id'],
+        'description': desc,
+        'hlc_timestamp': evt['hlc_timestamp'],
+      };
+      markerData.add(markerInfo);
       markers.add(Marker(
         point: LatLng(lat, lng),
-        width: markerSize + 4,
-        height: markerSize + 4,
-        child: _EventMarkerIcon(
-          icon: markerIcon,
-          color: markerColor,
-          size: markerSize,
-          tooltip: '$tooltip${desc.isNotEmpty ? '\n$desc' : ''}',
-          isSOS: urgency >= 2,
+        width: markerSize + 12,
+        height: markerSize + 12,
+        child: GestureDetector(
+          onTap: () => _showEventInfo(markerInfo),
+          child: _EventMarkerIcon(
+            icon: markerIcon,
+            color: markerColor,
+            size: markerSize,
+            tooltip: '$tooltip${desc.isNotEmpty ? '\n$desc' : ''}',
+            isSOS: urgency >= 2,
+          ),
         ),
       ));
     }
 
-    if (mounted) setState(() => _eventMarkers = markers);
+    if (mounted) {
+      setState(() {
+        _eventMarkers = markers;
+        _eventMarkerData = markerData;
+      });
+    }
   }
 
   // ── POI / 危險區域 點擊 ──────────────────────────────────────────
@@ -853,25 +871,36 @@ class _MapScreenState extends State<MapScreen>
 
   /// 判斷 POI 是否屬於五大救災類別，不屬於則回傳 null
   String? _poiCategoryId(String cls, String sub) {
-    if (cls == 'hospital' || sub == 'hospital' || sub == 'clinic' ||
-        sub == 'doctors' || sub == 'nursing_home') return 'resq_hospital';
+    if (cls == 'hospital' ||
+        sub == 'hospital' ||
+        sub == 'clinic' ||
+        sub == 'doctors' ||
+        sub == 'nursing_home') return 'resq_hospital';
     if (cls == 'pharmacy' || sub == 'pharmacy') return 'resq_pharmacy';
     if (sub == 'police' || sub == 'fire_station') return 'resq_police';
-    if (sub == 'school' || sub == 'kindergarten' ||
-        sub == 'college' || sub == 'university') return 'resq_school';
-    if (sub == 'supermarket' || sub == 'convenience' ||
-        cls == 'grocery') return 'resq_grocery';
+    if (sub == 'school' ||
+        sub == 'kindergarten' ||
+        sub == 'college' ||
+        sub == 'university') return 'resq_school';
+    if (sub == 'supermarket' || sub == 'convenience' || cls == 'grocery')
+      return 'resq_grocery';
     return null;
   }
 
   Color _poiCategoryColor(String cls, String sub) {
     switch (_poiCategoryId(cls, sub)) {
-      case 'resq_hospital': return Colors.red;
-      case 'resq_pharmacy': return Colors.purple;
-      case 'resq_police': return const Color(0xFF3366ff);
-      case 'resq_school': return Colors.orange;
-      case 'resq_grocery': return Colors.green;
-      default: return Colors.cyan;
+      case 'resq_hospital':
+        return Colors.red;
+      case 'resq_pharmacy':
+        return Colors.purple;
+      case 'resq_police':
+        return const Color(0xFF3366ff);
+      case 'resq_school':
+        return Colors.orange;
+      case 'resq_grocery':
+        return Colors.green;
+      default:
+        return Colors.cyan;
     }
   }
 
@@ -884,7 +913,8 @@ class _MapScreenState extends State<MapScreen>
     if (sub == 'fire_station') return Icons.fire_truck;
     if (sub == 'school' || sub == 'kindergarten') return Icons.school;
     if (sub == 'college' || sub == 'university') return Icons.account_balance;
-    if (sub == 'supermarket' || sub == 'convenience') return Icons.shopping_cart;
+    if (sub == 'supermarket' || sub == 'convenience')
+      return Icons.shopping_cart;
     if (cls == 'grocery') return Icons.store;
     return Icons.place;
   }
@@ -922,7 +952,8 @@ class _MapScreenState extends State<MapScreen>
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 2),
               boxShadow: const [
-                BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
+                BoxShadow(
+                    color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
               ],
             ),
             child: Icon(icon, size: 12, color: Colors.white),
@@ -1308,6 +1339,85 @@ class _MapScreenState extends State<MapScreen>
     );
   }
 
+  void _showEventInfo(Map<String, dynamic> event) {
+    final urgency = (event['urgency'] as int?) ?? 0;
+    final eventType = (event['event_type'] as int?) ?? 0;
+    final desc = (event['description'] as String?) ?? '';
+    final ts = (event['hlc_timestamp'] as int?) ?? 0;
+    final time = ts > 0 ? DateTime.fromMillisecondsSinceEpoch(ts) : null;
+
+    String title;
+    Color color;
+    IconData icon;
+    if (urgency >= 3) {
+      title = 'SOS 緊急求救';
+      color = Colors.red;
+      icon = Icons.sos;
+    } else if (urgency >= 2) {
+      title = '求助事件';
+      color = Colors.amber;
+      icon = Icons.warning_amber;
+    } else {
+      title = eventType == EventType.resourceRegister ? '物資事件' : '需求事件';
+      color = Colors.green;
+      icon = eventType == EventType.resourceRegister
+          ? Icons.inventory_2
+          : Icons.volunteer_activism;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a2e),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Row(
+              children: [
+                Icon(icon, color: color, size: 24),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(title,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (desc.isNotEmpty)
+              Text(desc,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+            if (time != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                '時間: ${time.month}/${time.day} ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+                style: const TextStyle(color: Colors.white38, fontSize: 12),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   void _enterEditMode(Map<String, dynamic> h) {
     setState(() {
       _isMarkingMode = true;
@@ -1680,8 +1790,7 @@ class _MapScreenState extends State<MapScreen>
                 layerMode: VectorTileLayerMode.vector,
               ),
             // 2. POI 圓點標記
-            if (_poiMarkers.isNotEmpty)
-              MarkerLayer(markers: _poiMarkers),
+            if (_poiMarkers.isNotEmpty) MarkerLayer(markers: _poiMarkers),
             // 3. GPS 精度圈
             if (accuracyCircles.isNotEmpty)
               CircleLayer(circles: accuracyCircles),

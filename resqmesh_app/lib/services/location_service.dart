@@ -13,10 +13,15 @@ class LocationService {
 
   LatLng? _currentLocation;
   StreamSubscription<Position>? _positionSub;
+  final StreamController<LatLng> _positionController =
+      StreamController<LatLng>.broadcast();
   bool _initialized = false;
 
   /// 目前已知位置 (可能為 null)
   LatLng? get currentLocation => _currentLocation;
+
+  /// 位置更新事件（僅在實際定位變動時送出）
+  Stream<LatLng> get positionUpdates => _positionController.stream;
 
   /// 位置是否可用
   bool get hasLocation => _currentLocation != null;
@@ -69,6 +74,7 @@ class LocationService {
         final lastPos = await Geolocator.getLastKnownPosition();
         if (lastPos != null) {
           _currentLocation = LatLng(lastPos.latitude, lastPos.longitude);
+          _positionController.add(_currentLocation!);
           debugPrint('[LocationService] 使用上次已知位置');
         }
       } catch (e) {
@@ -82,6 +88,7 @@ class LocationService {
           desiredAccuracy: LocationAccuracy.high,
         ).timeout(const Duration(seconds: 20));
         _currentLocation = LatLng(pos.latitude, pos.longitude);
+        _positionController.add(_currentLocation!);
         if (wasNull && onFirstFix != null) {
           debugPrint('[LocationService] 首次精確定位就緒，觸發 onFirstFix');
           onFirstFix!();
@@ -108,6 +115,7 @@ class LocationService {
       ).listen((pos) {
         final wasNull = _currentLocation == null;
         _currentLocation = LatLng(pos.latitude, pos.longitude);
+        _positionController.add(_currentLocation!);
         // GPS 恢復後清除不可用原因
         if (_unavailableReason != null) {
           _unavailableReason = null;

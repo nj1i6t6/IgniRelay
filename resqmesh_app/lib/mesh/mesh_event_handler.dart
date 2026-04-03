@@ -1,12 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
+
 import 'package:fixnum/fixnum.dart' as fixnum;
+import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
+
 import '../crdt/hlc.dart';
+import '../crypto/identity_manager.dart';
 import '../crypto/signer.dart';
 import '../db/database_helper.dart';
 import '../proto/mesh_protocol.pb.dart' as pb;
 import '../services/location_service.dart';
+import 'event_manager.dart' as event_mgr;
 import 'mesh_router.dart';
 import 'mesh_transport.dart';
 
@@ -26,6 +32,8 @@ class EventType {
   static const int matchAvailable = 11;
   static const int matchGone = 12;
   static const int chatMessage = 13;
+  static const int hazardConfirm = 14;
+  static const int matchLocationUpdate = 15;
 }
 
 /// Wire payload 解碼結果
@@ -64,29 +72,19 @@ class WirePayload {
 }
 
 /// MeshEventHandler — 統一的接收端邏輯
-///
-/// 從 BleManager._handleIncomingPayload 抽取而來。
-/// 負責：Protobuf 解碼、去重、HLC merge、DB 寫入、Hazard 特殊處理。
-/// 兩種 Transport（Bridgefy / NativeBLE）共用同一套處理邏輯。
 class MeshEventHandler {
   static final MeshEventHandler _instance = MeshEventHandler._internal();
   factory MeshEventHandler() => _instance;
   MeshEventHandler._internal();
 
-  // 已看過的 event_id（去重）
   final Set<String> _seenEvents = {};
 
-  // 全網聊天限流：pubKeyHex → last chat HLC timestamp
-  final Map<String, int> _chatRateMap = {};
-
-  // 接收事件 stream（供上層 UI 監聽）
   final StreamController<MeshDataReceived> _eventStreamController =
       StreamController<MeshDataReceived>.broadcast();
   Stream<MeshDataReceived> get events => _eventStreamController.stream;
 
   int receivedEventCount = 0;
 
-  // ── Debug Log ──────────────────────────────────────────────────
   static const int _maxDebugLogs = 80;
   final List<String> debugLogs = [];
 
@@ -101,18 +99,51 @@ class MeshEventHandler {
     DatabaseHelper().writeDebugLog('MESH', entry);
   }
 
-  /// 檢查事件是否已見過（去重查詢）
   bool hasSeen(String eventId) => _seenEvents.contains(eventId);
 
-  /// 手動標記事件為已見過
   void markSeen(String eventId) => _seenEvents.add(eventId);
 
-  /// 已見過事件數量
   int get seenEventsCount => _seenEvents.length;
 
-  /// 處理從任何 transport 接收到的 raw bytes
-  Future<void> handleIncomingData(
-      Uint8List data, String sourceNodeId) async {
+  bool _bytesEqual(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  String _pubKeyHex(List<int>? bytes, String fallback) {
+    if (bytes == null || bytes.isEmpty) return fallback;
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  Future<bool> _isIncomingStateNewer(
+    Database db,
+    String table,
+    String idColumn,
+    String idValue,
+    int incomingTs,
+    int incomingCounter,
+  ) async {
+    final rows = await db.query(
+      table,
+      columns: ['hlc_timestamp', 'hlc_counter'],
+      where: '$idColumn = ?',
+      whereArgs: [idValue],
+      limit: 1,
+    );
+    if (rows.isEmpty) return true;
+    final currentTs = (rows.first['hlc_timestamp'] as int?) ?? 0;
+    final currentCounter = (rows.first['hlc_counter'] as int?) ?? 0;
+    if (incomingTs > currentTs) return true;
+    if (incomingTs == currentTs && incomingCounter >= currentCounter) {
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> handleIncomingData(Uint8List data, String sourceNodeId) async {
     try {
       final decoded = decodeWirePayload(data);
       if (decoded == null) {
@@ -130,21 +161,7 @@ class MeshEventHandler {
         _dlog('RECV SKIP(seen) ${evtId.substring(0, 8)}..');
         return;
       }
-      // ── DB 層級去重（防重啟後重播攻擊）─────────────────────────
-      final db = await DatabaseHelper().database;
-      final existingEvt = await db.query('Event_Logs',
-          columns: ['event_id'],
-          where: 'event_id = ?',
-          whereArgs: [evtId],
-          limit: 1);
-      if (existingEvt.isNotEmpty) {
-        _seenEvents.add(evtId); // 補進記憶體快取
-        _dlog('RECV SKIP(db-dup) ${evtId.substring(0, 8)}..');
-        return;
-      }
-      _seenEvents.add(evtId);
 
-      // ── Ed25519 簽章驗證 ──────────────────────────────────────
       if (decoded.signature == null ||
           decoded.signature!.isEmpty ||
           decoded.senderPubKey == null ||
@@ -152,6 +169,7 @@ class MeshEventHandler {
         _dlog('RECV REJECT(no-sig) ${evtId.substring(0, 8)}..');
         return;
       }
+
       final verified = await Signer.verifySignature(
         payloadBytes: decoded.payload,
         signatureBytes: decoded.signature!,
@@ -162,8 +180,6 @@ class MeshEventHandler {
         return;
       }
 
-      // ── Zone-Based 地理圍欄路由判斷 ─────────────────────────────
-      // 僅當封包帶有原始座標時判斷；無座標（舊版或本機事件）直接通過。
       if (decoded.originLat != null && decoded.originLng != null) {
         final myLoc = LocationService().currentLocation;
         if (myLoc != null) {
@@ -186,38 +202,19 @@ class MeshEventHandler {
         }
       }
 
-      // 合併 HLC（確保時間同步）
       if (decoded.hlcTimestamp > 0) {
         HLC.merge(HLC(decoded.hlcTimestamp, decoded.hlcCounter));
       } else {
         HLC.merge(HLC(DateTime.now().millisecondsSinceEpoch, 0));
       }
 
-      // ── 全網 PubKey 聊天限流 ─────────────────────────────────────
-      if (decoded.eventType == EventType.chatMessage) {
-        final pubKeyHex = decoded.senderPubKey != null
-            ? decoded.senderPubKey!
-                .map((b) => b.toRadixString(16).padLeft(2, '0'))
-                .join()
-            : '';
-        final lastHlc = _chatRateMap[pubKeyHex];
-        if (lastHlc != null &&
-            (decoded.hlcTimestamp - lastHlc) < 180000) {
-          _dlog(
-              'RECV RATE_DROP(chat) ${evtId.substring(0, 8)}.. from $pubKeyHex');
-          return; // 丟棄，不存 DB，不中繼
-        }
-        _chatRateMap[pubKeyHex] = decoded.hlcTimestamp;
-      }
-
-      // 存入本地資料庫
+      final db = await DatabaseHelper().database;
+      var inserted = false;
       try {
         await db.insert('Event_Logs', {
           'event_id': evtId,
-          'sender_pub_key': decoded.senderPubKey != null
-              ? Uint8List.fromList(decoded.senderPubKey!)
-              : Uint8List.fromList(utf8.encode(sourceNodeId)),
-          'identity_level': 0,
+          'sender_pub_key': Uint8List.fromList(decoded.senderPubKey!),
+          'identity_level': decoded.identityLevel,
           'event_type': decoded.eventType,
           'urgency': decoded.urgency,
           'hlc_timestamp': decoded.hlcTimestamp > 0
@@ -233,25 +230,20 @@ class MeshEventHandler {
           'chunk_index': 0,
           'total_chunks': 1,
           'payload': Uint8List.fromList(payload),
-          'signature': decoded.signature != null
-              ? Uint8List.fromList(decoded.signature!)
-              : Uint8List(0),
+          'signature': Uint8List.fromList(decoded.signature!),
           'is_synced': 0,
         });
+        inserted = true;
       } catch (e) {
-        // UNIQUE constraint 失敗代表已有此事件，忽略
-        debugPrint('[MeshEvt] DB insert skipped (duplicate): $evtId');
+        _seenEvents.add(evtId);
+        _dlog('RECV SKIP(db-dup) ${evtId.substring(0, 8)}.. $e');
+        return;
       }
 
-      // 如果是危險區域事件，寫入 Hazards_State
-      if (decoded.eventType == EventType.hazardMarker && payload.isNotEmpty) {
-        await _handleHazardEvent(decoded, payload, sourceNodeId, db);
-      }
+      if (!inserted) return;
+      _seenEvents.add(evtId);
 
-      // 如果是聊天訊息事件，寫入 Chat_Messages
-      if (decoded.eventType == EventType.chatMessage && payload.isNotEmpty) {
-        await _handleChatEvent(decoded, payload, sourceNodeId, db);
-      }
+      await _projectEvent(decoded, payload, sourceNodeId, db);
 
       receivedEventCount++;
       _eventStreamController.add(
@@ -264,24 +256,234 @@ class MeshEventHandler {
     }
   }
 
-  /// 處理危險區域事件的特殊邏輯
+  Future<void> _projectEvent(
+    WirePayload decoded,
+    List<int> payload,
+    String sourceNodeId,
+    Database db,
+  ) async {
+    switch (decoded.eventType) {
+      case EventType.resourceRegister:
+        await _handleResourceEvent(decoded, payload, sourceNodeId, db);
+        return;
+      case EventType.requestBroadcast:
+        await _handleRequestEvent(decoded, payload, sourceNodeId, db);
+        return;
+      case EventType.matchIntent:
+        await _handleMatchIntentEvent(decoded, payload, db);
+        return;
+      case EventType.matchConfirm:
+        await _handleMatchConfirmEvent(payload);
+        return;
+      case EventType.matchReject:
+        await _handleMatchRejectEvent(payload);
+        return;
+      case EventType.matchCancel:
+        await _handleMatchCancelEvent(payload);
+        return;
+      case EventType.physicalHandshake:
+        await _handlePhysicalHandshakeEvent(payload);
+        return;
+      case EventType.hazardMarker:
+        await _handleHazardEvent(decoded, payload, sourceNodeId, db);
+        return;
+      case EventType.hazardConfirm:
+        await _handleHazardConfirmEvent(decoded, payload, sourceNodeId, db);
+        return;
+      case EventType.chatMessage:
+        await _handleChatEvent(decoded, payload, sourceNodeId, db);
+        return;
+      case EventType.matchLocationUpdate:
+        await _handleMatchLocationUpdateEvent(payload);
+        return;
+      default:
+        return;
+    }
+  }
+
+  Future<void> _handleResourceEvent(
+    WirePayload decoded,
+    List<int> payload,
+    String sourceNodeId,
+    Database db,
+  ) async {
+    try {
+      final data = pb.ResourceData.fromBuffer(payload);
+      if (data.resourceId.isEmpty) return;
+      final incomingTs = decoded.hlcTimestamp > 0
+          ? decoded.hlcTimestamp
+          : DateTime.now().millisecondsSinceEpoch;
+      final shouldApply = await _isIncomingStateNewer(
+        db,
+        'Materials_State',
+        'resource_id',
+        data.resourceId,
+        incomingTs,
+        decoded.hlcCounter,
+      );
+      if (!shouldApply) return;
+      await db.insert(
+        'Materials_State',
+        {
+          'resource_id': data.resourceId,
+          'status': event_mgr.MaterialStatus.available,
+          'hlc_timestamp': incomingTs,
+          'hlc_counter': decoded.hlcCounter,
+          'matched_request_id': null,
+          'match_expires_at': null,
+          'payload': Uint8List.fromList(payload),
+          'provider_pub_key': Uint8List.fromList(decoded.senderPubKey!),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      _dlog('RESOURCE_SYNC ${data.resourceId.substring(0, 8)}..');
+    } catch (e) {
+      debugPrint('[MeshEvt] Resource sync skipped: $e');
+    }
+  }
+
+  Future<void> _handleRequestEvent(
+    WirePayload decoded,
+    List<int> payload,
+    String sourceNodeId,
+    Database db,
+  ) async {
+    try {
+      final data = pb.RequestData.fromBuffer(payload);
+      if (data.requestId.isEmpty) return;
+      final incomingTs = decoded.hlcTimestamp > 0
+          ? decoded.hlcTimestamp
+          : DateTime.now().millisecondsSinceEpoch;
+      final shouldApply = await _isIncomingStateNewer(
+        db,
+        'Requests_State',
+        'request_id',
+        data.requestId,
+        incomingTs,
+        decoded.hlcCounter,
+      );
+      if (!shouldApply) return;
+      await db.insert(
+        'Requests_State',
+        {
+          'request_id': data.requestId,
+          'status': event_mgr.RequestStatus.available,
+          'hlc_timestamp': incomingTs,
+          'hlc_counter': decoded.hlcCounter,
+          'matched_resource_id': null,
+          'match_expires_at': null,
+          'payload': Uint8List.fromList(payload),
+          'requester_pub_key': Uint8List.fromList(decoded.senderPubKey!),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      _dlog('REQUEST_SYNC ${data.requestId.substring(0, 8)}..');
+    } catch (e) {
+      debugPrint('[MeshEvt] Request sync skipped: $e');
+    }
+  }
+
+  Future<void> _handleMatchIntentEvent(
+    WirePayload decoded,
+    List<int> payload,
+    Database db,
+  ) async {
+    try {
+      final data = pb.MatchIntentData.fromBuffer(payload);
+      final myPubKey = await IdentityManager().getPublicKeyBytes();
+      if (!_bytesEqual(myPubKey, data.requesterPubKey)) return;
+      await event_mgr.EventManager().respondToMatchIntent(data);
+      _dlog('MATCH_INTENT ${data.requestId.substring(0, 8)}..');
+    } catch (e) {
+      debugPrint('[MeshEvt] Match intent handling skipped: $e');
+    }
+  }
+
+  Future<void> _handleMatchConfirmEvent(List<int> payload) async {
+    try {
+      final data = pb.MatchConfirmData.fromBuffer(payload);
+      await event_mgr.EventManager().handleMatchConfirm(data);
+      _dlog('MATCH_CONFIRM ${data.requestId.substring(0, 8)}..');
+    } catch (e) {
+      debugPrint('[MeshEvt] Match confirm skipped: $e');
+    }
+  }
+
+  Future<void> _handleMatchRejectEvent(List<int> payload) async {
+    try {
+      final data = pb.MatchRejectData.fromBuffer(payload);
+      await event_mgr.EventManager().handleMatchReject(data);
+      _dlog('MATCH_REJECT ${data.requestId.substring(0, 8)}..');
+    } catch (e) {
+      debugPrint('[MeshEvt] Match reject skipped: $e');
+    }
+  }
+
+  Future<void> _handleMatchCancelEvent(List<int> payload) async {
+    try {
+      final data = pb.MatchCancelData.fromBuffer(payload);
+      await event_mgr.EventManager().handleMatchCancelEvent(data);
+      _dlog('MATCH_CANCEL ${data.requestId.substring(0, 8)}..');
+    } catch (e) {
+      debugPrint('[MeshEvt] Match cancel skipped: $e');
+    }
+  }
+
+  Future<void> _handlePhysicalHandshakeEvent(List<int> payload) async {
+    try {
+      final data = pb.PhysicalHandshakeData.fromBuffer(payload);
+      await event_mgr.EventManager().handlePhysicalHandshakeEvent(data);
+      _dlog('HANDSHAKE ${data.requestId.substring(0, 8)}..');
+    } catch (e) {
+      debugPrint('[MeshEvt] Physical handshake skipped: $e');
+    }
+  }
+
+  Future<void> _handleMatchLocationUpdateEvent(List<int> payload) async {
+    try {
+      final data = pb.MatchLocationUpdateData.fromBuffer(payload);
+      await event_mgr.EventManager().handleRemoteLocationUpdate(data);
+      _dlog('MATCH_LOC ${data.requestId.substring(0, 8)}..');
+    } catch (e) {
+      debugPrint('[MeshEvt] Match location update skipped: $e');
+    }
+  }
+
   Future<void> _handleHazardEvent(
     WirePayload decoded,
     List<int> payload,
     String sourceNodeId,
-    dynamic db,
+    Database db,
   ) async {
     try {
       final hazard = pb.HazardData.fromBuffer(payload);
-      if (hazard.hazardId.isNotEmpty &&
-          hazard.centerLat != 0 &&
-          hazard.centerLng != 0) {
-        final reporterHex = decoded.senderPubKey != null
-            ? decoded.senderPubKey!
-                .map((b) => b.toRadixString(16).padLeft(2, '0'))
-                .join()
-            : sourceNodeId;
-        await db.insert('Hazards_State', {
+      if (hazard.hazardId.isEmpty) return;
+
+      if (hazard.severity == 0 || hazard.radiusMeters <= 0) {
+        await db.delete(
+          'Hazards_State',
+          where: 'hazard_id = ?',
+          whereArgs: [hazard.hazardId],
+        );
+        _dlog('HAZARD_DELETE ${hazard.hazardId.substring(0, 8)}..');
+        return;
+      }
+
+      final reporterHex = _pubKeyHex(decoded.senderPubKey, sourceNodeId);
+      final existing = await db.query(
+        'Hazards_State',
+        where: 'hazard_id = ?',
+        whereArgs: [hazard.hazardId],
+        limit: 1,
+      );
+      final confirmCount = existing.isNotEmpty
+          ? (((existing.first['confirm_count'] as int?) ?? 1) < 1
+              ? 1
+              : (existing.first['confirm_count'] as int?) ?? 1)
+          : 1;
+      await db.insert(
+        'Hazards_State',
+        {
           'hazard_id': hazard.hazardId,
           'type': hazard.hazardType,
           'severity': hazard.severity,
@@ -292,40 +494,104 @@ class MeshEventHandler {
           'created_at': hazard.observedAt.toInt() > 0
               ? hazard.observedAt.toInt()
               : DateTime.now().millisecondsSinceEpoch,
-          'confirm_count': 1,
+          'confirm_count': confirmCount,
+          'description':
+              hazard.description.isNotEmpty ? hazard.description : null,
           'updated_at': DateTime.now().millisecondsSinceEpoch,
-        });
-        debugPrint(
-            '[MeshEvt] Hazard synced to Hazards_State: ${hazard.hazardId}');
-      }
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      _dlog('HAZARD_SYNC ${hazard.hazardId.substring(0, 8)}..');
     } catch (e) {
       debugPrint('[MeshEvt] Hazard sync skipped: $e');
     }
   }
 
-  /// 處理聊天訊息事件：解碼 JSON payload 並寫入 Chat_Messages
+  Future<void> _handleHazardConfirmEvent(
+    WirePayload decoded,
+    List<int> payload,
+    String sourceNodeId,
+    Database db,
+  ) async {
+    try {
+      final hazard = pb.HazardConfirmData.fromBuffer(payload);
+      if (hazard.hazardId.isEmpty) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final existing = await db.query(
+        'Hazards_State',
+        where: 'hazard_id = ?',
+        whereArgs: [hazard.hazardId],
+        limit: 1,
+      );
+      if (existing.isEmpty) {
+        await db.insert('Hazards_State', {
+          'hazard_id': hazard.hazardId,
+          'type': hazard.hazardType,
+          'severity': hazard.severity,
+          'lat': hazard.centerLat,
+          'lng': hazard.centerLng,
+          'radius': hazard.radiusMeters > 0 ? hazard.radiusMeters : 200.0,
+          'reported_by': _pubKeyHex(decoded.senderPubKey, sourceNodeId),
+          'created_at':
+              hazard.observedAt.toInt() > 0 ? hazard.observedAt.toInt() : now,
+          'confirm_count': 1,
+          'description':
+              hazard.description.isNotEmpty ? hazard.description : null,
+          'updated_at': now,
+        });
+      } else {
+        final confirmCount =
+            ((existing.first['confirm_count'] as int?) ?? 1) + 1;
+        await db.update(
+          'Hazards_State',
+          {
+            'type': hazard.hazardType,
+            'severity': hazard.severity,
+            'lat': hazard.centerLat,
+            'lng': hazard.centerLng,
+            'radius': hazard.radiusMeters > 0 ? hazard.radiusMeters : 200.0,
+            'confirm_count': confirmCount,
+            'description': hazard.description.isNotEmpty
+                ? hazard.description
+                : existing.first['description'],
+            'updated_at': now,
+          },
+          where: 'hazard_id = ?',
+          whereArgs: [hazard.hazardId],
+        );
+      }
+      _dlog('HAZARD_CONFIRM ${hazard.hazardId.substring(0, 8)}..');
+    } catch (e) {
+      debugPrint('[MeshEvt] Hazard confirm skipped: $e');
+    }
+  }
+
   Future<void> _handleChatEvent(
     WirePayload decoded,
     List<int> payload,
     String sourceNodeId,
-    dynamic db,
+    Database db,
   ) async {
     try {
       final jsonStr = utf8.decode(payload);
       final map = jsonDecode(jsonStr) as Map<String, dynamic>;
       final roomId = map['room_id'] as String?;
       final content = map['content'] as String?;
-      if (roomId == null || roomId.isEmpty || content == null || content.isEmpty) {
+      if (roomId == null ||
+          roomId.isEmpty ||
+          content == null ||
+          content.isEmpty) {
         debugPrint('[MeshEvt] Chat event missing room_id or content');
         return;
       }
 
-      // 檢查用戶是否已加入此聊天室（避免跨聊天室顯示）
-      final room = await db.query('Chat_Rooms',
-          columns: ['room_id'],
-          where: 'room_id = ?',
-          whereArgs: [roomId],
-          limit: 1) as List<Map<String, dynamic>>;
+      final room = await db.query(
+        'Chat_Rooms',
+        columns: ['room_id'],
+        where: 'room_id = ?',
+        whereArgs: [roomId],
+        limit: 1,
+      );
       if (room.isEmpty) {
         _dlog('CHAT_SKIP(not-joined) room=$roomId');
         return;
@@ -335,25 +601,26 @@ class MeshEventHandler {
           ? Uint8List.fromList(decoded.senderPubKey!)
           : Uint8List.fromList(utf8.encode(sourceNodeId));
 
-      await db.insert('Chat_Messages', {
-        'event_id': decoded.eventId,
-        'room_id': roomId,
-        'sender_pub_key': senderPubKey,
-        'content': content,
-        'reply_to': map['reply_to'] as String?,
-        'hlc_timestamp': decoded.hlcTimestamp > 0
-            ? decoded.hlcTimestamp
-            : DateTime.now().millisecondsSinceEpoch,
-      });
+      await db.insert(
+        'Chat_Messages',
+        {
+          'event_id': decoded.eventId,
+          'room_id': roomId,
+          'sender_pub_key': senderPubKey,
+          'content': content,
+          'reply_to': map['reply_to'] as String?,
+          'hlc_timestamp': decoded.hlcTimestamp > 0
+              ? decoded.hlcTimestamp
+              : DateTime.now().millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
       _dlog('CHAT_INSERT ${decoded.eventId.substring(0, 8)}.. room=$roomId');
     } catch (e) {
       debugPrint('[MeshEvt] Chat event insert skipped: $e');
     }
   }
 
-  // ── Wire Payload 編解碼 ────────────────────────────────────────
-
-  /// 編碼 wire payload：使用 Protobuf MeshEvent 封裝
   static List<int> encodeWirePayload(
     String eventId,
     List<int> payload, {
@@ -371,10 +638,8 @@ class MeshEventHandler {
   }) {
     final meshEvent = pb.MeshEvent()
       ..eventId = eventId
-      ..urgency =
-          pb.UrgencyLevel.valueOf(urgency) ?? pb.UrgencyLevel.INFO
-      ..type = pb.EventType.valueOf(eventType) ??
-          pb.EventType.RESOURCE_REGISTER
+      ..urgency = pb.UrgencyLevel.valueOf(urgency) ?? pb.UrgencyLevel.INFO
+      ..type = pb.EventType.valueOf(eventType) ?? pb.EventType.RESOURCE_REGISTER
       ..payload = payload
       ..ttl = ttl;
     if (signature != null) meshEvent.signature = signature;
@@ -392,9 +657,7 @@ class MeshEventHandler {
     return meshEvent.writeToBuffer();
   }
 
-  /// 解碼 wire payload：嘗試 Protobuf MeshEvent，失敗則 fallback 到舊格式
   static WirePayload? decodeWirePayload(List<int> data) {
-    // 先嘗試 Protobuf 解碼
     try {
       final meshEvent = pb.MeshEvent.fromBuffer(data);
       if (meshEvent.eventId.isNotEmpty) {
@@ -417,9 +680,8 @@ class MeshEventHandler {
       }
     } catch (_) {}
 
-    // Fallback: 舊版格式 eventId(36) + '|' + payload
     try {
-      final pipeIndex = data.indexOf(0x7C); // '|' = 0x7C
+      final pipeIndex = data.indexOf(0x7C);
       if (pipeIndex < 1) return null;
       final eventId = utf8.decode(data.sublist(0, pipeIndex));
       final payload = data.sublist(pipeIndex + 1);
@@ -429,21 +691,18 @@ class MeshEventHandler {
     }
   }
 
-  // ── Bloom Filter 工具（Bit-Vector）──────────────────────────────
-
-  /// Bloom filter 參數：2048 bytes (16384 bits), 7 hash functions
   static const int kBloomSizeBytes = 2048;
   static const int kBloomHashCount = 7;
   static const List<int> kBloomMagic = [0xFF, 0xBF, 0x02, 0x00];
 
-  /// 檢測 bytes 是否帶有 bit-vector bloom magic header
   static bool _hasBloomMagic(List<int> bytes) {
     if (bytes.length < 4) return false;
-    return bytes[0] == 0xFF && bytes[1] == 0xBF &&
-           bytes[2] == 0x02 && bytes[3] == 0x00;
+    return bytes[0] == 0xFF &&
+        bytes[1] == 0xBF &&
+        bytes[2] == 0x02 &&
+        bytes[3] == 0x00;
   }
 
-  /// 簡易 MurmurHash3（32-bit）— 與 Kotlin 端完全一致
   static int _murmurHash(String s, {required int seed}) {
     int h = seed;
     for (final c in s.codeUnits) {
@@ -464,10 +723,12 @@ class MeshEventHandler {
     return h;
   }
 
-  /// 從事件 ID 集合建構 bit-vector Bloom Filter（含 magic header）
   static Uint8List buildBitVectorBloom(Set<String> eventIds) {
-    final bits = Uint8List(kBloomSizeBytes + 4); // +4 for magic header
-    bits[0] = 0xFF; bits[1] = 0xBF; bits[2] = 0x02; bits[3] = 0x00;
+    final bits = Uint8List(kBloomSizeBytes + 4);
+    bits[0] = 0xFF;
+    bits[1] = 0xBF;
+    bits[2] = 0x02;
+    bits[3] = 0x00;
     for (final id in eventIds) {
       for (int i = 0; i < kBloomHashCount; i++) {
         final hash = _murmurHash(id, seed: i) % (kBloomSizeBytes * 8);
@@ -477,27 +738,23 @@ class MeshEventHandler {
     return bits;
   }
 
-  /// 檢查 bloom filter 是否 **可能** 包含指定 event ID
   static bool bloomMayContain(List<int> bloom, String eventId) {
     final offset = _hasBloomMagic(bloom) ? 4 : 0;
     final size = bloom.length - offset;
     if (size <= 0) return false;
     for (int i = 0; i < kBloomHashCount; i++) {
       final hash = _murmurHash(eventId, seed: i) % (size * 8);
-      if ((bloom[offset + (hash >> 3)] & (1 << (hash & 7))) == 0) return false;
+      if ((bloom[offset + (hash >> 3)] & (1 << (hash & 7))) == 0) {
+        return false;
+      }
     }
     return true;
   }
 
-  /// 將 Bloom Filter bytes 解析為事件 ID 集合
-  /// 向下相容：如果帶 magic header 則為 bit-vector 格式（回傳空集合，
-  /// 呼叫端應改用 bloomMayContain 逐一比對）；否則 fallback 到舊版文字格式。
   static Set<String> parseBloomFilter(List<int> bytes) {
     final result = <String>{};
     if (bytes.isEmpty) return result;
-    // 新格式 bit-vector：不再能還原為 ID 集合，回傳空集合
     if (_hasBloomMagic(bytes)) return result;
-    // 舊格式：換行分隔的 event ID 列表
     try {
       final str = utf8.decode(bytes);
       for (final id in str.split('\n')) {
@@ -508,7 +765,6 @@ class MeshEventHandler {
     return result;
   }
 
-  /// 建構本機 Bloom Filter（bit-vector 格式）
   static Future<Uint8List> buildLocalBloomFilter({int limit = 500}) async {
     final db = await DatabaseHelper().database;
     final rows = await db.query(
@@ -521,8 +777,6 @@ class MeshEventHandler {
     return buildBitVectorBloom(ids);
   }
 
-  /// 取得本機事件 ID 集合（供 IBLT 同步使用）
-  /// [excludeChat] 為 true 時排除聊天訊息事件
   Future<Set<String>> getLocalEventIds({bool excludeChat = true}) async {
     final db = await DatabaseHelper().database;
     String where = '';
@@ -531,7 +785,6 @@ class MeshEventHandler {
     return rows.map((r) => r['event_id'] as String).toSet();
   }
 
-  /// 根據 CRC32 keyHash 集合查詢對應事件的完整資料（供 IBLT Fast Path 使用）
   Future<List<Map<String, dynamic>>> getEventsByKeyHashes(
       Set<int> keyHashes) async {
     if (keyHashes.isEmpty) return [];
@@ -559,7 +812,6 @@ class MeshEventHandler {
       orderBy: 'urgency DESC, hlc_timestamp DESC',
     );
 
-    // 過濾出 keyHash 匹配的事件
     final result = <Map<String, dynamic>>[];
     for (final evt in allEvents) {
       final evtId = evt['event_id'] as String;
@@ -571,7 +823,6 @@ class MeshEventHandler {
     return result;
   }
 
-  /// CRC32 — 與 IBLT._crc32 一致
   static int _crc32EventId(String s) {
     int crc = 0xFFFFFFFF;
     for (final b in s.codeUnits) {

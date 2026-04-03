@@ -26,6 +26,7 @@ class _MatchScreenState extends State<MatchScreen>
   final _locationService = LocationService();
   List<MatchEntry> _matches = [];
   List<MatchEntry> _inboundMatches = [];
+  List<ActiveMatchSession> _activeSessions = [];
   List<MyPublish> _myPublishes = [];
   List<CommunityItem> _communityItems = [];
   bool _loading = true;
@@ -107,6 +108,7 @@ class _MatchScreenState extends State<MatchScreen>
         _repo.getCommunityItems(),
         _repo.getOthersSupplies(),
         _repo.getMyRequests(),
+        _repo.getActiveSessions(),
       ]);
       final supplies = results[0] as List<DecodedSupply>;
       final requests = results[1] as List<DecodedRequest>;
@@ -114,6 +116,7 @@ class _MatchScreenState extends State<MatchScreen>
       final community = results[3] as List<CommunityItem>;
       final othersSupplies = results[4] as List<DecodedSupply>;
       final myRequests = results[5] as List<DecodedRequest>;
+      final activeSessions = results[6] as List<ActiveMatchSession>;
 
       final matchResult = _matchService.computeFullMatches(
         mySupplies: supplies,
@@ -126,6 +129,7 @@ class _MatchScreenState extends State<MatchScreen>
         setState(() {
           _matches = matchResult.outboundMatches;
           _inboundMatches = matchResult.inboundMatches;
+          _activeSessions = activeSessions;
           _myPublishes = publishes;
           _communityItems = community;
           _loading = false;
@@ -304,13 +308,13 @@ class _MatchScreenState extends State<MatchScreen>
     if (_myPublishes.isEmpty &&
         _matches.isEmpty &&
         _inboundMatches.isEmpty &&
+        _activeSessions.isEmpty &&
         _communityItems.isEmpty) {
       return _buildEmpty();
     }
 
     return ListView(
-      padding:
-          const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 140),
+      padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 140),
       children: [
         // ── 我的發布 ──
         if (_myPublishes.isNotEmpty) ...[
@@ -323,6 +327,36 @@ class _MatchScreenState extends State<MatchScreen>
                     fontWeight: FontWeight.bold)),
           ),
           ..._myPublishes.map((p) => _buildMyPublishCard(p)),
+          const SizedBox(height: 16),
+          const Divider(color: Colors.white12),
+        ],
+        // ── 進行中媒合 session ──
+        if (_activeSessions.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.route,
+                    color: Colors.lightBlueAccent, size: 18),
+                const SizedBox(width: 6),
+                const Text('進行中媒合',
+                    style: TextStyle(
+                        color: Colors.lightBlueAccent,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
+                const SizedBox(width: 8),
+                Text('${_activeSessions.length} 筆',
+                    style:
+                        const TextStyle(color: Colors.white38, fontSize: 12)),
+              ],
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text('媒合成功後的交接與位置同步 session',
+                style: TextStyle(color: Colors.white30, fontSize: 11)),
+          ),
+          ..._activeSessions.map((s) => _buildActiveSessionCard(s)),
           const SizedBox(height: 16),
           const Divider(color: Colors.white12),
         ],
@@ -417,6 +451,7 @@ class _MatchScreenState extends State<MatchScreen>
         if (_myPublishes.isNotEmpty &&
             _matches.isEmpty &&
             _inboundMatches.isEmpty &&
+            _activeSessions.isEmpty &&
             _communityItems.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
@@ -587,8 +622,7 @@ class _MatchScreenState extends State<MatchScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('取消失敗: $e'), backgroundColor: Colors.red[700]),
+          SnackBar(content: Text('取消失敗: $e'), backgroundColor: Colors.red[700]),
         );
       }
     }
@@ -657,8 +691,8 @@ class _MatchScreenState extends State<MatchScreen>
                   const SizedBox(width: 8),
                   Flexible(
                     child: Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: Colors.green.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(4),
@@ -743,10 +777,41 @@ class _MatchScreenState extends State<MatchScreen>
                   const Spacer(),
                   Icon(Icons.verified_user, size: 13, color: Colors.grey[400]),
                   Text(' L${entry.identityLevel}',
-                      style:
-                          TextStyle(color: Colors.grey[400], fontSize: 12)),
+                      style: TextStyle(color: Colors.grey[400], fontSize: 12)),
                   const SizedBox(width: 8),
                   const Icon(Icons.navigation, color: Colors.white38, size: 16),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openNavigation(entry),
+                      icon: const Icon(Icons.map, size: 16),
+                      label: const Text('查看導航'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: const BorderSide(color: Colors.white24),
+                      ),
+                    ),
+                  ),
+                  if (entry.iAmProvider &&
+                      entry.requesterPubKey != null &&
+                      entry.requesterPubKey!.isNotEmpty) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _startMatchIntent(entry),
+                        icon: const Icon(Icons.handshake, size: 16),
+                        label: const Text('發起媒合'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green[700],
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ],
@@ -762,6 +827,135 @@ class _MatchScreenState extends State<MatchScreen>
           builder: (_) => NavigationScreen(match: entry),
         ))
         .then((_) => _loadAll());
+  }
+
+  Future<void> _startMatchIntent(MatchEntry entry) async {
+    try {
+      await _eventManager.publishMatchIntent(
+        resourceId: entry.resourceId,
+        requestId: entry.requestEventId,
+        requesterPubKey: entry.requesterPubKey!,
+        matchScore: entry.score,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('已向需求者送出媒合意向：${getReadableName(entry.resourceType)}'),
+            backgroundColor: Colors.green[700],
+          ),
+        );
+      }
+      await _loadAll();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('發起媒合失敗: $e'),
+            backgroundColor: Colors.red[700],
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildActiveSessionCard(ActiveMatchSession session) {
+    final readableName = getReadableName(session.resourceType);
+    final whoMoves =
+        session.deliveryMode == 'DELIVER' ? '供給者前往需求者' : '需求者前往供給者';
+    final subtitle = session.iAmRequester ? '你是需求者' : '你是供給者';
+    final entry = MatchEntry(
+      resourceId: session.resourceId,
+      resourceType: session.resourceType,
+      requestResourceType: session.requestResourceType,
+      requestDesc: session.requestDesc,
+      requestEventId: session.requestId,
+      urgency: session.urgency,
+      identityLevel: 0,
+      score: 0,
+      hlcTimestamp: session.updatedAt,
+      supplyQty: session.supplyQty,
+      requestQty: session.requestQty,
+      deliveryMode: session.deliveryMode,
+      mobilityMode: session.mobilityMode,
+      fulfillmentRatio: session.requestQty > 0
+          ? (session.supplyQty / session.requestQty).clamp(0.0, 1.0)
+          : 1.0,
+      distanceMeters: -1,
+      supplyLat: session.lastProviderLat,
+      supplyLng: session.lastProviderLng,
+      requestLat: session.lastRequesterLat,
+      requestLng: session.lastRequesterLng,
+      requesterPubKey: session.requesterPubKey,
+      providerPubKey: session.providerPubKey,
+      iAmProvider: !session.iAmRequester,
+      iAmRequester: session.iAmRequester,
+    );
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      color: const Color(0xFF1a1a2e),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.lightBlueAccent.withValues(alpha: 0.25)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.lightBlueAccent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text('ACTIVE',
+                      style: TextStyle(
+                          color: Colors.lightBlueAccent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(readableName,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(subtitle,
+                style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            const SizedBox(height: 4),
+            Text(whoMoves,
+                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            const SizedBox(height: 4),
+            Text(
+                '供給 ${session.supplyQty.toInt()} 份 ／ 需求 ${session.requestQty.toInt()} 份',
+                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _openNavigation(entry),
+                icon: const Icon(Icons.navigation, size: 16),
+                label: const Text('開啟交接導航'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.lightBlue[700],
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ── 社區動態卡片 ────────────────────────────────────────────────
@@ -830,8 +1024,8 @@ class _MatchScreenState extends State<MatchScreen>
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(_urgencyLabel(item.urgency),
-                              style: TextStyle(
-                                  color: urgencyColor, fontSize: 9)),
+                              style:
+                                  TextStyle(color: urgencyColor, fontSize: 9)),
                         ),
                         const SizedBox(width: 6),
                         Text(timeStr,
@@ -842,8 +1036,7 @@ class _MatchScreenState extends State<MatchScreen>
                     const SizedBox(height: 4),
                     Text(
                       '$readableName  ${item.quantity.toInt()} 份',
-                      style:
-                          const TextStyle(color: Colors.white, fontSize: 13),
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -952,9 +1145,7 @@ class _MatchScreenState extends State<MatchScreen>
     final qty = int.tryParse(qtyController.text) ?? 0;
     if (qty <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('數量必須大於 0'),
-            backgroundColor: Colors.red),
+        const SnackBar(content: Text('數量必須大於 0'), backgroundColor: Colors.red),
       );
       return;
     }
@@ -988,8 +1179,9 @@ class _MatchScreenState extends State<MatchScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                isSupply ? '已發布需求 $qty 份「$readableName」' : '已登記供給 $qty 份「$readableName」'),
+            content: Text(isSupply
+                ? '已發布需求 $qty 份「$readableName」'
+                : '已登記供給 $qty 份「$readableName」'),
             backgroundColor: Colors.green[700],
           ),
         );

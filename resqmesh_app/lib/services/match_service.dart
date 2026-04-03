@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:latlong2/latlong.dart';
+
 import 'location_service.dart';
 import 'match_repository.dart';
 
@@ -7,10 +10,10 @@ import 'match_repository.dart';
 /// 決策依據：災難環境中，物資是否真正能送到（fulfillment + delivery）
 /// 比距離和信任更關鍵；緊急程度用於優先排序
 class MatchWeights {
-  static const double fulfillment = 40; // 數量滿足率
-  static const double urgency = 30; // 緊急程度
-  static const double distance = 15; // 地理距離
-  static const double trust = 15; // 身份信任等級
+  static const double fulfillment = 40;
+  static const double urgency = 30;
+  static const double distance = 15;
+  static const double trust = 15;
 
   /// 滿足率下限 (< 30% 不配對)
   static const double minFulfillment = 0.3;
@@ -37,6 +40,10 @@ class MatchEntry {
   final double? supplyLng;
   final double? requestLat;
   final double? requestLng;
+  final Uint8List? requesterPubKey;
+  final Uint8List? providerPubKey;
+  final bool iAmProvider;
+  final bool iAmRequester;
 
   const MatchEntry({
     required this.resourceId,
@@ -58,13 +65,17 @@ class MatchEntry {
     this.supplyLng,
     this.requestLat,
     this.requestLng,
+    this.requesterPubKey,
+    this.providerPubKey,
+    this.iAmProvider = false,
+    this.iAmRequester = false,
   });
 }
 
 /// 媒合結果（含正向與反向）
 class MatchResult {
-  final List<MatchEntry> outboundMatches; // 我能幫誰
-  final List<MatchEntry> inboundMatches; // 誰能幫我
+  final List<MatchEntry> outboundMatches;
+  final List<MatchEntry> inboundMatches;
 
   const MatchResult({
     required this.outboundMatches,
@@ -86,39 +97,47 @@ class MatchService {
     required List<DecodedSupply> othersSupplies,
     required List<DecodedRequest> myRequests,
   }) {
-    final outbound = computeMatches(mySupplies, allRequests);
-    final inbound = computeMatches(othersSupplies, myRequests);
+    final outbound = computeMatches(
+      mySupplies,
+      allRequests,
+      iAmProvider: true,
+      iAmRequester: false,
+    );
+    final inbound = computeMatches(
+      othersSupplies,
+      myRequests,
+      iAmProvider: false,
+      iAmRequester: true,
+    );
     return MatchResult(outboundMatches: outbound, inboundMatches: inbound);
   }
 
   /// 執行媒合：將供給與需求做 cross-join，過濾+評分
   List<MatchEntry> computeMatches(
     List<DecodedSupply> supplies,
-    List<DecodedRequest> requests,
-  ) {
+    List<DecodedRequest> requests, {
+    required bool iAmProvider,
+    required bool iAmRequester,
+  }) {
     final userLoc = _location.currentLocation;
     final entries = <MatchEntry>[];
 
     for (final supply in supplies) {
       for (final req in requests) {
-        // ① 品項層級比對
         if (!resourceTypeMatches(supply.resourceType, req.resourceType)) {
           continue;
         }
 
-        // ② 行動模式相容性
         if (!mobilityCompatible(supply.deliveryMode, req.mobilityMode)) {
           continue;
         }
 
-        // ③ 數量滿足率
         final fulfillment = req.quantityNeeded > 0
             ? (supply.quantity / req.quantityNeeded).clamp(0.0, 1.0)
             : 1.0;
         if (fulfillment < MatchWeights.minFulfillment) continue;
 
-        // ④ 真實距離計算
-        double distMeters = -1; // 無法計算
+        double distMeters = -1;
         if (supply.lat != null &&
             supply.lng != null &&
             req.lat != null &&
@@ -128,24 +147,26 @@ class MatchService {
             LatLng(req.lat!, req.lng!),
           );
         } else if (userLoc != null) {
-          // fallback: 從使用者到另一方
           if (req.lat != null && req.lng != null) {
             distMeters = LocationService.haversineMeters(
-                userLoc, LatLng(req.lat!, req.lng!));
+              userLoc,
+              LatLng(req.lat!, req.lng!),
+            );
           } else if (supply.lat != null && supply.lng != null) {
             distMeters = LocationService.haversineMeters(
-                userLoc, LatLng(supply.lat!, supply.lng!));
+              userLoc,
+              LatLng(supply.lat!, supply.lng!),
+            );
           }
         }
 
-        final maxRange = (supply.maxRangeMeters > req.maxRangeMeters)
+        final maxRange = supply.maxRangeMeters > req.maxRangeMeters
             ? supply.maxRangeMeters
             : req.maxRangeMeters;
         final distNorm = distMeters >= 0
             ? LocationService.normalizeDistance(distMeters, maxRange: maxRange)
-            : 0.5; // 無座標時的預設
+            : 0.5;
 
-        // ⑤ 評分
         final score = matchScore(
           urgency: req.urgency,
           fulfillment: fulfillment,
@@ -175,6 +196,10 @@ class MatchService {
           supplyLng: supply.lng,
           requestLat: req.lat,
           requestLng: req.lng,
+          requesterPubKey: req.requesterPubKey,
+          providerPubKey: supply.providerPubKey,
+          iAmProvider: iAmProvider,
+          iAmRequester: iAmRequester,
         ));
       }
     }
@@ -185,20 +210,17 @@ class MatchService {
 
   // ── 品項層級比對 ──────────────────────────────────────────────
   /// 規則：至少子分類 (level 2) 要相同
-  ///        若雙方都指定到 level 3，則 item code 必須相同
+  /// 若雙方都指定到 level 3，則 item code 必須相同
   static bool resourceTypeMatches(String supplyType, String reqType) {
     final sParts = supplyType.split('/');
     final rParts = reqType.split('/');
 
-    // Level 1 (大類) 必須相同
     if (sParts.isEmpty || rParts.isEmpty) return false;
     if (sParts[0] != rParts[0]) return false;
 
-    // Level 2 (子類) 必須相同
     if (sParts.length < 2 || rParts.length < 2) return false;
     if (sParts[1] != rParts[1]) return false;
 
-    // Level 3 (具體品項) — 若雙方都指定，必須相同
     if (sParts.length >= 3 && rParts.length >= 3) {
       return sParts[2] == rParts[2];
     }

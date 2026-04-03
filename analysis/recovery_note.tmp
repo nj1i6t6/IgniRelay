@@ -1,0 +1,1 @@
+我目前卡在一個與先前自動產生檔和多次寫檔工具行為有關的工作區狀態問題：根目錄被誤建立了不該存在的檔案（像是 [`res`](res) / [`resq`](resq)），且先前針對 [`resqmesh_app/lib/mesh/bridgefy_transport.dart`](resqmesh_app/lib/mesh/bridgefy_transport.dart) 的覆寫一度寫到錯誤路徑別名。為避免在這種狀態下繼續修改導致更多檔案污染，我建議先切到 [`debug`](resqmesh_app/lib/main.dart:1) 模式，做一次工作區修復與驗證，再回到 [`code`](resqmesh_app/lib/main.dart:1) 繼續完成 UI、測試、APK 與 git 流程。

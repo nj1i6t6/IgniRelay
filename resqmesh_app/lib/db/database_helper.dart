@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onConfigure: (db) async {
         await db.rawQuery('PRAGMA journal_mode=WAL');
       },
@@ -46,10 +46,8 @@ class DatabaseHelper {
     }
     if (oldVersion < 4) {
       // v4: Event_Logs 新增事件原始創建者座標（用於 Zone-Based 地理圍欄路由）
-      await db.execute(
-          'ALTER TABLE Event_Logs ADD COLUMN origin_lat REAL');
-      await db.execute(
-          'ALTER TABLE Event_Logs ADD COLUMN origin_lng REAL');
+      await db.execute('ALTER TABLE Event_Logs ADD COLUMN origin_lat REAL');
+      await db.execute('ALTER TABLE Event_Logs ADD COLUMN origin_lng REAL');
     }
     if (oldVersion < 5) {
       // v5: 據點額度追蹤 + 聊天室
@@ -100,6 +98,45 @@ class DatabaseHelper {
           message TEXT NOT NULL
         )
       ''');
+    }
+    if (oldVersion < 7) {
+      // v7: 需求狀態投影 + 媒合 session + 供給擁有者投影
+      await db.execute(
+          'ALTER TABLE Materials_State ADD COLUMN provider_pub_key BLOB');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS Requests_State (
+          request_id TEXT PRIMARY KEY,
+          status TEXT NOT NULL,
+          hlc_timestamp INTEGER NOT NULL,
+          hlc_counter INTEGER NOT NULL,
+          matched_resource_id TEXT,
+          match_expires_at INTEGER,
+          payload BLOB,
+          requester_pub_key BLOB
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS Match_Sessions (
+          session_id TEXT PRIMARY KEY,
+          resource_id TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          requester_pub_key BLOB NOT NULL,
+          provider_pub_key BLOB NOT NULL,
+          status TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          expires_at INTEGER,
+          last_requester_lat REAL,
+          last_requester_lng REAL,
+          last_provider_lat REAL,
+          last_provider_lng REAL,
+          last_location_update_at INTEGER
+        )
+      ''');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_requests_state_status ON Requests_State(status, hlc_timestamp DESC)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_match_sessions_status ON Match_Sessions(status, updated_at DESC)');
     }
   }
 
@@ -156,9 +193,50 @@ class DatabaseHelper {
         hlc_counter INTEGER NOT NULL,
         matched_request_id TEXT,
         match_expires_at INTEGER,
-        payload BLOB
+        payload BLOB,
+        provider_pub_key BLOB
       )
     ''');
+
+    // Requests_State (需求狀態投影表)
+    await db.execute('''
+      CREATE TABLE Requests_State (
+        request_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        hlc_timestamp INTEGER NOT NULL,
+        hlc_counter INTEGER NOT NULL,
+        matched_resource_id TEXT,
+        match_expires_at INTEGER,
+        payload BLOB,
+        requester_pub_key BLOB
+      )
+    ''');
+
+    await db.execute(
+        'CREATE INDEX idx_requests_state_status ON Requests_State(status, hlc_timestamp DESC)');
+
+    // Match_Sessions (媒合成功後的 session 與雙方最後位置)
+    await db.execute('''
+      CREATE TABLE Match_Sessions (
+        session_id TEXT PRIMARY KEY,
+        resource_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        requester_pub_key BLOB NOT NULL,
+        provider_pub_key BLOB NOT NULL,
+        status TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        expires_at INTEGER,
+        last_requester_lat REAL,
+        last_requester_lng REAL,
+        last_provider_lat REAL,
+        last_provider_lng REAL,
+        last_location_update_at INTEGER
+      )
+    ''');
+
+    await db.execute(
+        'CREATE INDEX idx_match_sessions_status ON Match_Sessions(status, updated_at DESC)');
 
     // Hazards_State (動態危險圖層投影表)
     await db.execute('''
@@ -362,8 +440,7 @@ class DatabaseHelper {
     final db = await database;
     final cutoff =
         DateTime.now().millisecondsSinceEpoch - (24 * 60 * 60 * 1000);
-    return db.delete('Debug_Logs',
-        where: 'timestamp < ?', whereArgs: [cutoff]);
+    return db.delete('Debug_Logs', where: 'timestamp < ?', whereArgs: [cutoff]);
   }
 
   /// 讀取醫療卡 (JSON 字串)

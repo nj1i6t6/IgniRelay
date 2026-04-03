@@ -17,6 +17,8 @@ enum EventType {
   MATCH_AVAILABLE   = 11;  // 回覆：還在
   MATCH_GONE        = 12;  // 回覆：沒了
   CHAT_MESSAGE      = 13;  // 聊天訊息
+  HAZARD_CONFIRM    = 14;  // 危險標記確認 / 附議
+  MATCH_LOCATION_UPDATE = 15; // 媒合成功後的雙方位置更新
 }
 
 // 檢傷及優先級定義 (QoS & Triage)
@@ -37,7 +39,7 @@ message MeshEvent {
 
   // 混合邏輯時鐘 (HLC)
   int64 hlc_timestamp = 6;       // HLC 物理時間部分 (Unix ms)
-  int64 hlc_counter = 7;         // HLC 邏輯計數器 
+  int64 hlc_counter = 7;         // HLC 邏輯計數器
 
   int32 ttl = 8;                 // 剩餘存活跳數
 
@@ -127,6 +129,20 @@ message HazardData {
   double center_lng = 5;         // 中心點經度
   float radius_meters = 6;       // 影響半徑 (公尺)
   int64 observed_at = 7;         // 觀察時間 (Unix ms)
+  string description = 8;        // 補充描述
+}
+
+// 危險標記確認 / 附議 (EventType.HAZARD_CONFIRM)
+message HazardConfirmData {
+  string hazard_id = 1;
+  string hazard_type = 2;
+  uint32 severity = 3;
+  double center_lat = 4;
+  double center_lng = 5;
+  float radius_meters = 6;
+  int64 observed_at = 7;
+  string description = 8;
+  bytes confirmer_pub_key = 9;
 }
 
 // 惡意節點檢舉投票 (EventType.QUARANTINE_VOTE)
@@ -194,7 +210,9 @@ message MatchConfirmData {
 message MatchRejectData {
   string request_id = 1;
   string resource_id = 2;
-  string reason = 3;         // "REQUEST_EXPIRED" / "ALREADY_MATCHED" / "ALREADY_LOCKED"
+  bytes requester_pub_key = 3;
+  bytes provider_pub_key = 4;
+  string reason = 5;         // "REQUEST_EXPIRED" / "ALREADY_MATCHED" / "ALREADY_LOCKED"
 }
 
 // 物資確認詢問 (EventType.MATCH_INQUIRY)
@@ -217,6 +235,18 @@ message ChatMessageData {
   string room_type = 2;        // "nation" / "county" / "township" / "village" / "custom"
   string content = 3;          // 文字內容
   string reply_to = 4;         // 回覆的 message event_id（可選）
+}
+
+// 媒合成功後的位置更新 (EventType.MATCH_LOCATION_UPDATE)
+message MatchLocationUpdateData {
+  string request_id = 1;
+  string resource_id = 2;
+  bytes requester_pub_key = 3;
+  bytes provider_pub_key = 4;
+  bytes sender_pub_key = 5;
+  double lat = 6;
+  double lng = 7;
+  int64 observed_at = 8;
 }
 
 // 聊天室設定

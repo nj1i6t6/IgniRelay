@@ -1,18 +1,21 @@
 import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
-import '../mesh/native_bridge.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:mbtiles/mbtiles.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_mbtiles/vector_map_tiles_mbtiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
+
 import '../mesh/mbtiles_loader.dart';
+import '../mesh/native_bridge.dart';
+import '../mesh/event_manager.dart';
 import '../services/location_service.dart';
 import '../services/match_service.dart';
-import 'physical_handoff.dart';
 import 'ignirelay_theme.dart';
+import 'physical_handoff.dart';
 import 'supply_category_data.dart';
 
 /// 導航引導畫面
@@ -28,6 +31,7 @@ class NavigationScreen extends StatefulWidget {
 
 class _NavigationScreenState extends State<NavigationScreen> {
   final _location = LocationService();
+  final _eventManager = EventManager();
   final _mapController = MapController();
 
   // MBTiles 離線地圖
@@ -46,18 +50,24 @@ class _NavigationScreenState extends State<NavigationScreen> {
   // 位置更新
   Timer? _locationRefresh;
   LatLng? _myLocation;
+  MatchEntry? _liveMatch;
 
   @override
   void initState() {
     super.initState();
     _myLocation = _location.currentLocation;
+    _liveMatch = widget.match;
     _initMBTiles();
     _startBleScan();
     // 每 3 秒刷新位置
-    _locationRefresh = Timer.periodic(const Duration(seconds: 3), (_) {
+    _locationRefresh = Timer.periodic(const Duration(seconds: 3), (_) async {
       final loc = _location.currentLocation;
-      if (loc != null && mounted) {
-        setState(() => _myLocation = loc);
+      final refreshed = await _resolveLiveMatch();
+      if (mounted) {
+        setState(() {
+          if (loc != null) _myLocation = loc;
+          if (refreshed != null) _liveMatch = refreshed;
+        });
       }
     });
   }
@@ -94,8 +104,46 @@ class _NavigationScreenState extends State<NavigationScreen> {
     'resq_hospital',
   };
 
+  Future<MatchEntry?> _resolveLiveMatch() async {
+    final session = await _eventManager.getActiveSessionByMatch(
+      widget.match.resourceId,
+      widget.match.requestEventId,
+    );
+    if (session == null) return null;
+
+    return MatchEntry(
+      resourceId: widget.match.resourceId,
+      resourceType: widget.match.resourceType,
+      requestResourceType: widget.match.requestResourceType,
+      requestDesc: widget.match.requestDesc,
+      requestEventId: widget.match.requestEventId,
+      urgency: widget.match.urgency,
+      identityLevel: widget.match.identityLevel,
+      score: widget.match.score,
+      hlcTimestamp: widget.match.hlcTimestamp,
+      supplyQty: widget.match.supplyQty,
+      requestQty: widget.match.requestQty,
+      deliveryMode: widget.match.deliveryMode,
+      mobilityMode: widget.match.mobilityMode,
+      fulfillmentRatio: widget.match.fulfillmentRatio,
+      distanceMeters: widget.match.distanceMeters,
+      supplyLat: (session['last_provider_lat'] as num?)?.toDouble() ??
+          widget.match.supplyLat,
+      supplyLng: (session['last_provider_lng'] as num?)?.toDouble() ??
+          widget.match.supplyLng,
+      requestLat: (session['last_requester_lat'] as num?)?.toDouble() ??
+          widget.match.requestLat,
+      requestLng: (session['last_requester_lng'] as num?)?.toDouble() ??
+          widget.match.requestLng,
+      requesterPubKey: widget.match.requesterPubKey,
+      providerPubKey: widget.match.providerPubKey,
+      iAmProvider: widget.match.iAmProvider,
+      iAmRequester: widget.match.iAmRequester,
+    );
+  }
+
   LatLng? get _supplyPos {
-    final m = widget.match;
+    final m = _liveMatch ?? widget.match;
     if (m.supplyLat != null && m.supplyLng != null) {
       return LatLng(m.supplyLat!, m.supplyLng!);
     }
@@ -103,7 +151,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   }
 
   LatLng? get _requestPos {
-    final m = widget.match;
+    final m = _liveMatch ?? widget.match;
     if (m.requestLat != null && m.requestLng != null) {
       return LatLng(m.requestLat!, m.requestLng!);
     }
@@ -114,7 +162,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
     // 根據配送方向決定目標
     // DELIVER → 供給者要前往需求者位置
     // PICKUP → 需求者要前往供給者位置
-    if (widget.match.deliveryMode == 'DELIVER') {
+    final currentMatch = _liveMatch ?? widget.match;
+    if (currentMatch.deliveryMode == 'DELIVER') {
       return _requestPos ??
           _supplyPos ??
           _myLocation ??
@@ -184,13 +233,17 @@ class _NavigationScreenState extends State<NavigationScreen> {
   // ── 開始交接 ──────────────────────────────────────────────────
 
   void _startHandoff() {
+    final currentMatch = _liveMatch ?? widget.match;
+    final role = currentMatch.iAmRequester
+        ? HandoffRole.requester
+        : HandoffRole.provider;
     Navigator.of(context).pushReplacement(MaterialPageRoute(
       builder: (_) => PhysicalHandoffScreen(
-        role: HandoffRole.provider,
-        resourceId: widget.match.resourceId,
-        resourceType: widget.match.resourceType,
-        urgency: widget.match.urgency,
-        requestId: widget.match.requestEventId,
+        role: role,
+        resourceId: currentMatch.resourceId,
+        resourceType: currentMatch.resourceType,
+        urgency: currentMatch.urgency,
+        requestId: currentMatch.requestEventId,
       ),
     ));
   }
@@ -199,7 +252,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final m = widget.match;
+    final m = _liveMatch ?? widget.match;
     final readableName = getReadableName(m.resourceType);
     final myLoc = _myLocation;
     final target = _targetPos;
@@ -223,6 +276,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
     } else {
       whoMoves = '需求者前往供給者';
     }
+    final roleLabel = m.iAmRequester ? '你是需求者' : '你是供給者';
 
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
@@ -279,9 +333,17 @@ class _NavigationScreenState extends State<NavigationScreen> {
                           size: 16,
                         ),
                         const SizedBox(width: 4),
-                        Text(whoMoves,
-                            style: const TextStyle(
-                                color: Colors.white54, fontSize: 12)),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(whoMoves,
+                                style: const TextStyle(
+                                    color: Colors.white54, fontSize: 12)),
+                            Text(roleLabel,
+                                style: const TextStyle(
+                                    color: Colors.white38, fontSize: 11)),
+                          ],
+                        ),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -347,25 +409,22 @@ class _NavigationScreenState extends State<NavigationScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _peerDetected ? _startHandoff : null,
+                        onPressed: _startHandoff,
                         icon: Icon(
-                          _peerDetected
-                              ? Icons.handshake
-                              : Icons.bluetooth_searching,
-                          color: _peerDetected ? Colors.white : Colors.white38,
+                          _peerDetected ? Icons.handshake : Icons.navigation,
+                          color: Colors.white,
                         ),
                         label: Text(
-                          _peerDetected ? '開始交接' : '等待偵測到對方藍牙...',
-                          style: TextStyle(
-                            color:
-                                _peerDetected ? Colors.white : Colors.white38,
+                          _peerDetected ? '開始交接' : '開啟交接流程',
+                          style: const TextStyle(
+                            color: Colors.white,
                             fontSize: 16,
                           ),
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _peerDetected
                               ? Colors.amber[700]
-                              : const Color(0xFF2a2a3e),
+                              : Colors.blue[700],
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12)),
@@ -517,7 +576,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
+        color: Colors.blue.withValues(alpha: 0.08),
         border: Border.all(color: Colors.white12),
         borderRadius: BorderRadius.circular(8),
       ),
