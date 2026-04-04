@@ -15,10 +15,11 @@ import CoreBluetooth
 
 class BlePlugin: NSObject, FlutterPlugin {
 
-    // ── Constants (對齊 Android IgniRelayConstants) ─────────────────────
-    static let SERVICE_UUID = CBUUID(string: "0000FFF0-0000-1000-8000-00805F9B34FB")
-    static let BLOOM_CHAR_UUID = CBUUID(string: "0000FFF1-0000-1000-8000-00805F9B34FB")
-    static let EVENT_CHAR_UUID = CBUUID(string: "0000FFF2-0000-1000-8000-00805F9B34FB")
+    // ── Constants (對齊 Android IgniRelayConstants + Dart mesh_constants) ──
+    static let SERVICE_UUID = CBUUID(string: "a4d11949-49d0-5230-96bb-43dd95d2cb2e")
+    static let BLOOM_CHAR_UUID = CBUUID(string: "9b60940f-ca37-5c28-8620-42a89e7fdca7")
+    static let EVENT_CHAR_UUID = CBUUID(string: "a932d89d-c24c-5d11-8320-55374c7feb74")
+    static let HANDSHAKE_CHAR_UUID = CBUUID(string: "24b532d3-243f-5b61-92b0-50af4cf0bd1a")
 
     // ── Flutter Channels ───────────────────────────────────────────────
     private var methodChannel: FlutterMethodChannel?
@@ -43,6 +44,7 @@ class BlePlugin: NSObject, FlutterPlugin {
     private var gattService: CBMutableService?
     private var bloomCharacteristic: CBMutableCharacteristic?
     private var eventCharacteristic: CBMutableCharacteristic?
+    private var handshakeCharacteristic: CBMutableCharacteristic?
     private var gattReady = false
 
     // ── Shared State ───────────────────────────────────────────────────
@@ -386,8 +388,15 @@ class BlePlugin: NSObject, FlutterPlugin {
             permissions: [.writeable]
         )
 
+        handshakeCharacteristic = CBMutableCharacteristic(
+            type: BlePlugin.HANDSHAKE_CHAR_UUID,
+            properties: [.write, .notify],
+            value: nil,
+            permissions: [.writeable]
+        )
+
         let service = CBMutableService(type: BlePlugin.SERVICE_UUID, primary: true)
-        service.characteristics = [bloomCharacteristic!, eventCharacteristic!]
+        service.characteristics = [bloomCharacteristic!, eventCharacteristic!, handshakeCharacteristic!]
         gattService = service
 
         pm.add(service)
@@ -568,6 +577,15 @@ extension BlePlugin: CBPeripheralManagerDelegate {
                 NSLog("[BLE-iOS] Bloom received from \(deviceId): \(data.count) bytes")
                 // 差量推送 outbox 事件
                 pushOutboxToSubscriber(request.central)
+            } else if request.characteristic.uuid == BlePlugin.HANDSHAKE_CHAR_UUID,
+                      let data = request.value {
+                // Central 寫入交接握手資料 → 通知 Dart 層
+                let deviceId = request.central.identifier.uuidString
+                sendEvent([
+                    "type": "handshake_data",
+                    "device": deviceId,
+                    "data": FlutterStandardTypedData(bytes: data),
+                ])
             }
         }
         // 回應第一個請求
@@ -601,6 +619,7 @@ class PeripheralDelegate: NSObject, CBPeripheralDelegate {
 
     var bloomCharacteristic: CBCharacteristic?
     var eventCharacteristic: CBCharacteristic?
+    var handshakeCharacteristic: CBCharacteristic?
 
     init(plugin: BlePlugin, deviceId: String) {
         self.plugin = plugin
@@ -616,7 +635,7 @@ class PeripheralDelegate: NSObject, CBPeripheralDelegate {
 
         if let service = peripheral.services?.first(where: { $0.uuid == BlePlugin.SERVICE_UUID }) {
             peripheral.discoverCharacteristics(
-                [BlePlugin.BLOOM_CHAR_UUID, BlePlugin.EVENT_CHAR_UUID],
+                [BlePlugin.BLOOM_CHAR_UUID, BlePlugin.EVENT_CHAR_UUID, BlePlugin.HANDSHAKE_CHAR_UUID],
                 for: service
             )
         } else {
@@ -636,10 +655,11 @@ class PeripheralDelegate: NSObject, CBPeripheralDelegate {
         for char in service.characteristics ?? [] {
             if char.uuid == BlePlugin.BLOOM_CHAR_UUID { bloomCharacteristic = char }
             if char.uuid == BlePlugin.EVENT_CHAR_UUID { eventCharacteristic = char }
+            if char.uuid == BlePlugin.HANDSHAKE_CHAR_UUID { handshakeCharacteristic = char }
         }
 
         let hasAll = bloomCharacteristic != nil && eventCharacteristic != nil
-        NSLog("[BLE-iOS] Chars discovered: bloom=\(bloomCharacteristic != nil), event=\(eventCharacteristic != nil)")
+        NSLog("[BLE-iOS] Chars discovered: bloom=\(bloomCharacteristic != nil), event=\(eventCharacteristic != nil), handshake=\(handshakeCharacteristic != nil)")
 
         // 訂閱 Event Characteristic 的 Notify
         if let eventChar = eventCharacteristic, eventChar.properties.contains(.notify) {
