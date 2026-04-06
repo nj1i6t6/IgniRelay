@@ -26,8 +26,8 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
   double _maxRange = 1000.0;
   bool _publishing = false;
 
-  // ── 配送模式 ──
-  String _deliveryMode = 'PICKUP'; // 'PICKUP' or 'DELIVER'
+  // ── 配送模式（可複選）──
+  final Set<String> _deliveryModes = {'PICKUP'};
 
   // ── hasExpiry / trackCondition 相關 ──
   DateTime? _expiryDate;
@@ -70,7 +70,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
         resourceType: _fullResourceType,
         quantity: int.parse(_quantityCtrl.text),
         maxRangeMeters: _maxRange,
-        deliveryMode: _deliveryMode,
+        deliveryMode: _deliveryModes.join(','),
       );
 
       if (mounted) {
@@ -366,105 +366,35 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
             ),
             const SizedBox(height: 20),
 
-            // ── 配送模式 ──
-            const Text('配送方式',
+            // ── 交接方式（可複選）──
+            const Text('交接方式（可複選）',
                 style: TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _deliveryMode = 'PICKUP'),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: BoxDecoration(
-                        color: _deliveryMode == 'PICKUP'
-                            ? Colors.blue.withValues(alpha: 0.25)
-                            : const Color(0xFF1a1a2e),
-                        border: Border.all(
-                            color: _deliveryMode == 'PICKUP'
-                                ? Colors.blueAccent
-                                : Colors.white24),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        children: [
-                          Icon(Icons.storefront,
-                              color: _deliveryMode == 'PICKUP'
-                                  ? Colors.blueAccent
-                                  : Colors.white54,
-                              size: 28),
-                          const SizedBox(height: 6),
-                          Text('需求者自取',
-                              style: TextStyle(
-                                color: _deliveryMode == 'PICKUP'
-                                    ? Colors.blueAccent
-                                    : Colors.white54,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              )),
-                          const SizedBox(height: 2),
-                          Text('對方來我這裡取物資',
-                              style: TextStyle(
-                                color: _deliveryMode == 'PICKUP'
-                                    ? Colors.white54
-                                    : Colors.white30,
-                                fontSize: 10,
-                              )),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _deliveryMode = 'DELIVER'),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: BoxDecoration(
-                        color: _deliveryMode == 'DELIVER'
-                            ? Colors.green.withValues(alpha: 0.25)
-                            : const Color(0xFF1a1a2e),
-                        border: Border.all(
-                            color: _deliveryMode == 'DELIVER'
-                                ? Colors.greenAccent
-                                : Colors.white24),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        children: [
-                          Icon(Icons.delivery_dining,
-                              color: _deliveryMode == 'DELIVER'
-                                  ? Colors.greenAccent
-                                  : Colors.white54,
-                              size: 28),
-                          const SizedBox(height: 6),
-                          Text('可協助送達',
-                              style: TextStyle(
-                                color: _deliveryMode == 'DELIVER'
-                                    ? Colors.greenAccent
-                                    : Colors.white54,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              )),
-                          const SizedBox(height: 2),
-                          Text('我可以送過去給對方',
-                              style: TextStyle(
-                                color: _deliveryMode == 'DELIVER'
-                                    ? Colors.white54
-                                    : Colors.white30,
-                                fontSize: 10,
-                              )),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            ...[
+              _buildDeliveryModeCheckbox(
+                mode: 'DELIVER',
+                icon: Icons.delivery_dining,
+                label: '我送過去',
+                subtitle: '主動將物資送到對方位置',
+                activeColor: Colors.greenAccent,
+              ),
+              const SizedBox(height: 8),
+              _buildDeliveryModeCheckbox(
+                mode: 'PICKUP',
+                icon: Icons.storefront,
+                label: '對方來取',
+                subtitle: '對方來我這裡取物資',
+                activeColor: Colors.blueAccent,
+              ),
+              const SizedBox(height: 8),
+              _buildDeliveryModeCheckbox(
+                mode: 'DROP_OFF',
+                icon: Icons.inventory_2,
+                label: '放置物資',
+                subtitle: '無接觸交接 — 放置後通知對方自取',
+                activeColor: Colors.amber,
+              ),
+            ],
             const SizedBox(height: 16),
 
             // ── 備註 ──
@@ -527,6 +457,70 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeliveryModeCheckbox({
+    required String mode,
+    required IconData icon,
+    required String label,
+    required String subtitle,
+    required Color activeColor,
+  }) {
+    final selected = _deliveryModes.contains(mode);
+    return GestureDetector(
+      onTap: () => setState(() {
+        if (selected) {
+          // 至少保留一種模式
+          if (_deliveryModes.length > 1) _deliveryModes.remove(mode);
+        } else {
+          _deliveryModes.add(mode);
+        }
+      }),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected
+              ? activeColor.withValues(alpha: 0.15)
+              : const Color(0xFF1a1a2e),
+          border: Border.all(
+              color: selected ? activeColor : Colors.white24),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.check_box : Icons.check_box_outline_blank,
+              color: selected ? activeColor : Colors.white38,
+              size: 22,
+            ),
+            const SizedBox(width: 12),
+            Icon(icon,
+                color: selected ? activeColor : Colors.white54, size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: TextStyle(
+                        color: selected ? activeColor : Colors.white54,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      )),
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      style: TextStyle(
+                        color: selected ? Colors.white54 : Colors.white30,
+                        fontSize: 11,
+                      )),
+                ],
               ),
             ),
           ],

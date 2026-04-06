@@ -9,6 +9,8 @@ class EventType extends $pb.ProtobufEnum {
   static const EventType REQUEST_BROADCAST =
       EventType._(1, 'REQUEST_BROADCAST');
   static const EventType MATCH_INTENT = EventType._(2, 'MATCH_INTENT');
+  // slot 2 reused as MATCH_OFFER (same wire value, new semantic)
+  static const EventType MATCH_OFFER = EventType._(2, 'MATCH_OFFER');
   static const EventType PHYSICAL_HANDSHAKE =
       EventType._(3, 'PHYSICAL_HANDSHAKE');
   static const EventType HAZARD_MARKER = EventType._(4, 'HAZARD_MARKER');
@@ -16,12 +18,24 @@ class EventType extends $pb.ProtobufEnum {
   static const EventType MATCH_CANCEL = EventType._(6, 'MATCH_CANCEL');
   static const EventType FIRE_ALARM_RF = EventType._(7, 'FIRE_ALARM_RF');
   static const EventType MATCH_CONFIRM = EventType._(8, 'MATCH_CONFIRM');
+  // slot 8 reused as MATCH_ACCEPT (same wire value, new semantic)
+  static const EventType MATCH_ACCEPT = EventType._(8, 'MATCH_ACCEPT');
   static const EventType MATCH_REJECT = EventType._(9, 'MATCH_REJECT');
+  // slot 9 reused as MATCH_DECLINE (same wire value, new semantic)
+  static const EventType MATCH_DECLINE = EventType._(9, 'MATCH_DECLINE');
   static const EventType MATCH_INQUIRY = EventType._(10, 'MATCH_INQUIRY');
   static const EventType MATCH_AVAILABLE = EventType._(11, 'MATCH_AVAILABLE');
   static const EventType MATCH_GONE = EventType._(12, 'MATCH_GONE');
   static const EventType CHAT_MESSAGE = EventType._(13, 'CHAT_MESSAGE');
   static const EventType LOCATION_UPDATE = EventType._(14, 'LOCATION_UPDATE');
+  // ── 新增 slot (>= 15) ──
+  static const EventType MATCH_REQUEST =
+      EventType._(15, 'MATCH_REQUEST');
+  static const EventType HANDSHAKE_COMPLETE =
+      EventType._(16, 'HANDSHAKE_COMPLETE');
+  static const EventType STATION_CLAIM = EventType._(17, 'STATION_CLAIM');
+  static const EventType STATION_RESPONSE =
+      EventType._(18, 'STATION_RESPONSE');
 
   static const $core.List<EventType> values = <EventType>[
     RESOURCE_REGISTER,
@@ -39,6 +53,10 @@ class EventType extends $pb.ProtobufEnum {
     MATCH_GONE,
     CHAT_MESSAGE,
     LOCATION_UPDATE,
+    MATCH_REQUEST,
+    HANDSHAKE_COMPLETE,
+    STATION_CLAIM,
+    STATION_RESPONSE,
   ];
 
   static final $core.Map<$core.int, EventType> _byValue =

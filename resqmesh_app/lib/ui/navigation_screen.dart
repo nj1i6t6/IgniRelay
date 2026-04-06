@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../mesh/native_bridge.dart';
+import '../services/negotiation_manager.dart';
+import '../services/negotiation_events.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:mbtiles/mbtiles.dart';
@@ -22,8 +25,9 @@ import 'supply_category_data.dart';
 /// 顯示供給/需求兩方座標、直線距離、方位、BLE 近接偵測
 class NavigationScreen extends StatefulWidget {
   final MatchEntry match;
+  final String negotiationId;
 
-  const NavigationScreen({super.key, required this.match});
+  const NavigationScreen({super.key, required this.match, required this.negotiationId});
 
   @override
   State<NavigationScreen> createState() => _NavigationScreenState();
@@ -51,13 +55,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
   Timer? _locationRefresh;
   LatLng? _myLocation;
 
-  // 對方位置（從 Match_Sessions 讀取）
+  // 對方位置（從 Match_Negotiations 讀取）
   LatLng? _peerLocation;
   StreamSubscription? _meshEventSub;
 
-  // Session ID 用於位置同步
-  String get _sessionId =>
-      '${widget.match.resourceId}_${widget.match.requestId.isNotEmpty ? widget.match.requestId : widget.match.requestEventId}';
+  // Negotiation 事件訂閱（取消/完成偵測）
+  late final StreamSubscription _negotiationSub;
 
   @override
   void initState() {
@@ -73,7 +76,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
         setState(() => _myLocation = loc);
         // 背景發送位置更新（內部有 30s 節流）
         _eventManager.publishLocationUpdate(
-          sessionId: _sessionId,
+          negotiationId: widget.negotiationId,
           lat: loc.latitude,
           lng: loc.longitude,
         );
@@ -85,14 +88,46 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _meshEventSub = MeshEventHandler().events.listen((_) {
       _loadPeerLocation();
     });
+    // 監聽 Negotiation 事件（取消 / 完成）
+    _negotiationSub = NegotiationManager().events.listen((event) {
+      if (event is NegotiationCancelled && event.negotiationId == widget.negotiationId) {
+        _locationRefresh?.cancel();
+        if (mounted) {
+          HapticFeedback.vibrate();
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => AlertDialog(
+              backgroundColor: const Color(0xFF1a1a2e),
+              title: const Text('媒合已取消', style: TextStyle(color: Colors.white)),
+              content: const Text('對方已取消此次媒合。', style: TextStyle(color: Colors.white70)),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
+                  child: const Text('返回首頁', style: TextStyle(color: Colors.redAccent)),
+                ),
+              ],
+            ),
+          );
+        }
+      } else if (event is NegotiationCompleted && event.negotiationId == widget.negotiationId) {
+        _locationRefresh?.cancel();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('交接完成！'), backgroundColor: Colors.green),
+          );
+          Navigator.popUntil(context, (r) => r.isFirst);
+        }
+      }
+    });
   }
 
   Future<void> _loadPeerLocation() async {
     try {
       final db = await DatabaseHelper().database;
-      final rows = await db.query('Match_Sessions',
-          where: "session_id = ? AND status = 'ACTIVE'",
-          whereArgs: [_sessionId],
+      final rows = await db.query('Match_Negotiations',
+          where: "negotiation_id = ? AND status IN ('ACCEPTED', 'NAVIGATING')",
+          whereArgs: [widget.negotiationId],
           limit: 1);
       if (rows.isEmpty || !mounted) return;
 
@@ -256,6 +291,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
         resourceType: widget.match.resourceType,
         urgency: widget.match.urgency,
         requestId: widget.match.requestEventId,
+        negotiationId: widget.negotiationId,
       ),
     ));
   }
@@ -635,6 +671,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   @override
   void dispose() {
+    _negotiationSub.cancel();
     _stopBleScan();
     _locationRefresh?.cancel();
     _meshEventSub?.cancel();

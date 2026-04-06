@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onConfigure: (db) async {
         await db.rawQuery('PRAGMA journal_mode=WAL');
       },
@@ -136,6 +136,88 @@ class DatabaseHelper {
       await db.execute(
           'CREATE INDEX IF NOT EXISTS idx_match_sessions_status ON Match_Sessions(status)');
     }
+    if (oldVersion < 8) {
+      // 1. Safety check: Match_Sessions may not exist in some upgrade paths
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='Match_Sessions'");
+      if (tables.isNotEmpty) {
+        await db.execute('ALTER TABLE Match_Sessions RENAME TO Match_Sessions_v7_backup');
+      }
+
+      // 2. Create Match_Negotiations table
+      await db.execute('''
+        CREATE TABLE Match_Negotiations (
+          negotiation_id TEXT PRIMARY KEY,
+          resource_id TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          initiator_role TEXT NOT NULL,
+          provider_pub_key BLOB NOT NULL,
+          requester_pub_key BLOB NOT NULL,
+          offered_qty REAL NOT NULL,
+          requested_qty REAL NOT NULL,
+          agreed_qty REAL,
+          status TEXT NOT NULL DEFAULT 'PENDING',
+          provider_lat REAL,
+          provider_lng REAL,
+          requester_lat REAL,
+          requester_lng REAL,
+          actual_delivered_qty REAL,
+          handshake_method TEXT,
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL,
+          responded_at INTEGER,
+          navigating_at INTEGER,
+          completed_at INTEGER,
+          match_score REAL
+        )
+      ''');
+
+      // 3. Create indexes
+      await db.execute('''
+        CREATE UNIQUE INDEX idx_active_negotiation
+        ON Match_Negotiations (resource_id, request_id)
+        WHERE status IN ('PENDING', 'ACCEPTED', 'NAVIGATING')
+      ''');
+      await db.execute(
+        'CREATE INDEX idx_negotiation_status ON Match_Negotiations (status)');
+      await db.execute(
+        'CREATE INDEX idx_negotiation_resource ON Match_Negotiations (resource_id, status)');
+      await db.execute(
+        'CREATE INDEX idx_negotiation_request ON Match_Negotiations (request_id, status)');
+
+      // 4. Materials_State: add total_qty and delivery_mode columns
+      await db.execute('ALTER TABLE Materials_State ADD COLUMN total_qty REAL');
+      await db.execute('ALTER TABLE Materials_State ADD COLUMN delivery_mode TEXT');
+
+      // 5. Requests_State: add quantity_needed, mobility_mode, note columns
+      await db.execute('ALTER TABLE Requests_State ADD COLUMN quantity_needed REAL');
+      await db.execute('ALTER TABLE Requests_State ADD COLUMN mobility_mode TEXT');
+      await db.execute('ALTER TABLE Requests_State ADD COLUMN note TEXT');
+
+      // 6. Reset old PENDING/LOCKED statuses to AVAILABLE
+      await db.execute('''
+        UPDATE Materials_State
+        SET status = 'AVAILABLE', matched_request_id = NULL, match_expires_at = NULL
+        WHERE status IN ('PENDING', 'LOCKED')
+      ''');
+
+      // 7. Requests_State: rename AVAILABLE to OPEN, reset LOCKED
+      await db.execute('''
+        UPDATE Requests_State SET status = 'OPEN'
+        WHERE status IN ('AVAILABLE', 'LOCKED')
+      ''');
+
+      // 8. Create Orphan_Events table
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS Orphan_Events (
+          event_id TEXT PRIMARY KEY,
+          event_type INTEGER NOT NULL,
+          payload BLOB NOT NULL,
+          buffered_at INTEGER NOT NULL,
+          retry_count INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -191,7 +273,9 @@ class DatabaseHelper {
         hlc_counter INTEGER NOT NULL,
         matched_request_id TEXT,
         match_expires_at INTEGER,
-        payload BLOB
+        payload BLOB,
+        total_qty REAL,
+        delivery_mode TEXT
       )
     ''');
 
@@ -278,41 +362,73 @@ class DatabaseHelper {
       )
     ''');
 
+    // Orphan_Events (孤立事件緩衝表)
+    await db.execute('''
+      CREATE TABLE Orphan_Events (
+        event_id TEXT PRIMARY KEY,
+        event_type INTEGER NOT NULL,
+        payload BLOB NOT NULL,
+        buffered_at INTEGER NOT NULL,
+        retry_count INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+
     // Requests_State (需求狀態投影表)
     await db.execute('''
       CREATE TABLE Requests_State (
         request_id TEXT PRIMARY KEY,
         event_id TEXT NOT NULL,
         sender_pub_key BLOB NOT NULL,
-        status TEXT NOT NULL DEFAULT 'AVAILABLE',
+        status TEXT NOT NULL DEFAULT 'OPEN',
         hlc_timestamp INTEGER NOT NULL,
         hlc_counter INTEGER NOT NULL,
         matched_resource_id TEXT,
         match_expires_at INTEGER,
-        payload BLOB
+        payload BLOB,
+        quantity_needed REAL,
+        mobility_mode TEXT,
+        note TEXT
       )
     ''');
 
-    // Match_Sessions (媒合 Session 追蹤表)
+    // Match_Negotiations (媒合協商追蹤表)
     await db.execute('''
-      CREATE TABLE Match_Sessions (
-        session_id TEXT PRIMARY KEY,
+      CREATE TABLE Match_Negotiations (
+        negotiation_id TEXT PRIMARY KEY,
         resource_id TEXT NOT NULL,
         request_id TEXT NOT NULL,
+        initiator_role TEXT NOT NULL,
         provider_pub_key BLOB NOT NULL,
         requester_pub_key BLOB NOT NULL,
-        status TEXT NOT NULL DEFAULT 'ACTIVE',
+        offered_qty REAL NOT NULL,
+        requested_qty REAL NOT NULL,
+        agreed_qty REAL,
+        status TEXT NOT NULL DEFAULT 'PENDING',
         provider_lat REAL,
         provider_lng REAL,
         requester_lat REAL,
         requester_lng REAL,
+        actual_delivered_qty REAL,
+        handshake_method TEXT,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        completed_at INTEGER
+        expires_at INTEGER NOT NULL,
+        responded_at INTEGER,
+        navigating_at INTEGER,
+        completed_at INTEGER,
+        match_score REAL
       )
     ''');
+    await db.execute('''
+      CREATE UNIQUE INDEX idx_active_negotiation
+      ON Match_Negotiations (resource_id, request_id)
+      WHERE status IN ('PENDING', 'ACCEPTED', 'NAVIGATING')
+    ''');
     await db.execute(
-        'CREATE INDEX idx_match_sessions_status ON Match_Sessions(status)');
+        'CREATE INDEX idx_negotiation_status ON Match_Negotiations (status)');
+    await db.execute(
+        'CREATE INDEX idx_negotiation_resource ON Match_Negotiations (resource_id, status)');
+    await db.execute(
+        'CREATE INDEX idx_negotiation_request ON Match_Negotiations (request_id, status)');
 
     // 初始化 GeoContext
     await db.execute('''
@@ -418,8 +534,8 @@ class DatabaseHelper {
         'timestamp': DateTime.now().millisecondsSinceEpoch,
         'source': source,
         'message': message,
-      }).catchError((_) {});
-    }).catchError((_) {});
+      }).catchError((_) => 0);
+    }).catchError((_) => null);
   }
 
   /// 匯出全部除錯日誌

@@ -15,6 +15,10 @@ class PhysicalHandoffScreen extends StatefulWidget {
   final String? requestId;
   final String resourceType;
   final int urgency;
+  final String negotiationId;
+
+  /// 交接方法：'PIN_4DIGIT', 'QR_CODE', 'BLE', 'DROP_OFF'
+  final String method;
 
   /// Requester 模式需要 Provider 的 BLE deviceId
   final String? providerDeviceId;
@@ -24,6 +28,8 @@ class PhysicalHandoffScreen extends StatefulWidget {
     required this.role,
     required this.resourceId,
     required this.resourceType,
+    required this.negotiationId,
+    this.method = 'PIN_4DIGIT',
     this.requestId,
     this.urgency = 1,
     this.providerDeviceId,
@@ -51,6 +57,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
   bool _waitingForBle = false;
   StreamSubscription? _handoffSub;
 
+  // ── DROP_OFF 專用狀態 ──
+  bool _dropOffPlaced = false;
+  String _dropOffPhotoDesc = '';
+  double? _dropOffLat;
+  double? _dropOffLng;
+
   Duration get _pendingTimeout {
     return widget.urgency >= 2
         ? const Duration(minutes: 30)
@@ -61,6 +73,9 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
   void initState() {
     super.initState();
     _pin = (Random().nextInt(9000) + 1000).toString();
+
+    // DROP_OFF 模式不需要 PIN 驗證或 BLE 廣播
+    if (widget.method == 'DROP_OFF') return;
 
     if (widget.role == HandoffRole.provider) {
       _startAutoRevertTimer();
@@ -90,9 +105,14 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
   void _onBleVerificationSuccess() async {
     if (!mounted || _handoffComplete) return;
     HapticFeedback.heavyImpact();
-    await _eventManager.completeHandoff(
+    await _eventManager.publishHandshakeComplete(
+      negotiationId: widget.negotiationId,
       resourceId: widget.resourceId,
       requestId: widget.requestId ?? '',
+      providerPubKey: [],
+      requesterPubKey: [],
+      actualDeliveredQty: 0,
+      method: widget.method,
     );
     setState(() => _handoffComplete = true);
     _autoRevertTimer?.cancel();
@@ -103,7 +123,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
   void _startAutoRevertTimer() {
     _autoRevertTimer = Timer(_pendingTimeout, () async {
       if (!_handoffComplete && mounted) {
-        await _eventManager.cancelHandoff(resourceId: widget.resourceId);
+        await _eventManager.publishMatchCancel(
+          negotiationId: widget.negotiationId,
+          resourceId: widget.resourceId,
+          requestId: widget.requestId ?? '',
+          reason: 'TIMEOUT',
+        );
         setState(() => _handoffCancelled = true);
       }
     });
@@ -125,9 +150,14 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
         );
         if (success) {
           HapticFeedback.heavyImpact();
-          await _eventManager.completeHandoff(
+          await _eventManager.publishHandshakeComplete(
+            negotiationId: widget.negotiationId,
             resourceId: widget.resourceId,
             requestId: widget.requestId ?? '',
+            providerPubKey: [],
+            requesterPubKey: [],
+            actualDeliveredQty: 0,
+            method: widget.method,
           );
           setState(() {
             _handoffComplete = true;
@@ -149,9 +179,14 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     // 本地驗證 (同裝置 fallback 或無 BLE 時)
     if (entered == _pin) {
       HapticFeedback.heavyImpact();
-      await _eventManager.completeHandoff(
+      await _eventManager.publishHandshakeComplete(
+        negotiationId: widget.negotiationId,
         resourceId: widget.resourceId,
         requestId: widget.requestId ?? '',
+        providerPubKey: [],
+        requesterPubKey: [],
+        actualDeliveredQty: 0,
+        method: widget.method,
       );
       setState(() => _handoffComplete = true);
       _autoRevertTimer?.cancel();
@@ -167,7 +202,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     _totalWrongAttempts++;
 
     if (_totalWrongAttempts >= 6) {
-      _eventManager.cancelHandoff(resourceId: widget.resourceId);
+      _eventManager.publishMatchCancel(
+        negotiationId: widget.negotiationId,
+        resourceId: widget.resourceId,
+        requestId: widget.requestId ?? '',
+        reason: 'TOO_MANY_ATTEMPTS',
+      );
       setState(() => _handoffCancelled = true);
     } else if (_wrongAttempts >= 3) {
       _startLockout();
@@ -206,9 +246,13 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: widget.role == HandoffRole.provider
-          ? _buildProviderView()
-          : _buildRequesterView(),
+      body: widget.method == 'DROP_OFF'
+          ? (widget.role == HandoffRole.provider
+              ? _buildDropOffProviderView()
+              : _buildDropOffRequesterView())
+          : (widget.role == HandoffRole.provider
+              ? _buildProviderView()
+              : _buildRequesterView()),
     );
   }
 
@@ -388,6 +432,214 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     );
   }
 
+  /// DROP_OFF 完成時呼叫 publishHandshakeComplete
+  Future<void> _completeDropOff() async {
+    HapticFeedback.heavyImpact();
+    await _eventManager.publishHandshakeComplete(
+      negotiationId: widget.negotiationId,
+      resourceId: widget.resourceId,
+      requestId: widget.requestId ?? '',
+      providerPubKey: [],
+      requesterPubKey: [],
+      actualDeliveredQty: 0,
+      method: 'DROP_OFF',
+    );
+    setState(() => _handoffComplete = true);
+  }
+
+  // ── DROP_OFF Provider：放置物資 + GPS + 照片描述 ──
+  Widget _buildDropOffProviderView() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          const SizedBox(height: 16),
+          const Icon(Icons.inventory_2, color: Colors.amber, size: 64),
+          const SizedBox(height: 16),
+          Text(
+            '物資：${widget.resourceType}',
+            style: const TextStyle(color: Colors.white70, fontSize: 16),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            '無接觸交接 — 放置物資',
+            style: TextStyle(
+                color: Colors.amber, fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 24),
+
+          // GPS 位置選擇
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1a1a2e),
+              border: Border.all(color: Colors.white24),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('放置位置',
+                    style: TextStyle(color: Colors.white70, fontSize: 14)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.my_location,
+                        color: Colors.cyan, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _dropOffLat != null
+                            ? '${_dropOffLat!.toStringAsFixed(5)}, ${_dropOffLng!.toStringAsFixed(5)}'
+                            : '點擊使用目前位置',
+                        style: TextStyle(
+                          color: _dropOffLat != null
+                              ? Colors.white
+                              : Colors.white38,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        // 使用預設位置（實際可接入定位服務）
+                        setState(() {
+                          _dropOffLat = 25.045;
+                          _dropOffLng = 121.543;
+                        });
+                      },
+                      child: const Text('定位',
+                          style: TextStyle(color: Colors.cyan, fontSize: 13)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 照片描述 (選填)
+          TextField(
+            onChanged: (v) => _dropOffPhotoDesc = v,
+            style: const TextStyle(color: Colors.white),
+            maxLines: 2,
+            decoration: InputDecoration(
+              labelText: '放置描述 / 照片備註（選填）',
+              labelStyle: const TextStyle(color: Colors.white54),
+              hintText: '例如：放在大門左側紙箱旁',
+              hintStyle: const TextStyle(color: Colors.white24, fontSize: 12),
+              prefixIcon:
+                  const Icon(Icons.photo_camera, color: Colors.white54),
+              enabledBorder: OutlineInputBorder(
+                borderSide: const BorderSide(color: Colors.white24),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: const BorderSide(color: Colors.amber),
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // 放置物資按鈕
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _dropOffPlaced
+                  ? null
+                  : () async {
+                      setState(() => _dropOffPlaced = true);
+                      await _completeDropOff();
+                    },
+              icon: _dropOffPlaced
+                  ? const Icon(Icons.check, color: Colors.white)
+                  : const Icon(Icons.place, color: Colors.white),
+              label: Text(
+                _dropOffPlaced ? '已放置，等待對方取回' : '確認放置物資',
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor:
+                    _dropOffPlaced ? Colors.grey[700] : Colors.amber[700],
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── DROP_OFF Requester：單邊確認已取得 ──
+  Widget _buildDropOffRequesterView() {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          const SizedBox(height: 32),
+          const Icon(Icons.inventory_2, color: Colors.amber, size: 64),
+          const SizedBox(height: 16),
+          Text(
+            '物資：${widget.resourceType}',
+            style: const TextStyle(color: Colors.white70, fontSize: 16),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            '無接觸交接',
+            style: TextStyle(
+                color: Colors.amber, fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: 0.1),
+              border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Column(
+              children: [
+                Icon(Icons.info_outline, color: Colors.amber, size: 24),
+                SizedBox(height: 8),
+                Text(
+                  '供給方已將物資放置於指定位置，\n請前往取回後確認。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // 已取得按鈕（單邊確認）
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _completeDropOff,
+              icon: const Icon(Icons.check_circle, color: Colors.white),
+              label: const Text(
+                '已取得物資',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.amber[700],
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSuccess() {
     return Scaffold(
       backgroundColor: const Color(0xFF0d1a0d),
@@ -463,7 +715,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     _autoRevertTimer?.cancel();
     _handoffSub?.cancel();
     _pinCtrl.dispose();
-    if (widget.role == HandoffRole.provider) {
+    if (widget.role == HandoffRole.provider && widget.method != 'DROP_OFF') {
       NativeBridge.stopHandoffAdvertising();
     }
     super.dispose();

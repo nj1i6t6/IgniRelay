@@ -298,6 +298,7 @@ class ResourceData extends $pb.GeneratedMessage {
     $core.double? lat,
     $core.double? lng,
     $fixnum.Int64? expiresAt,
+    $core.String? deliveryMode,
   }) {
     final $result = create();
     if (resourceId != null) $result.resourceId = resourceId;
@@ -309,6 +310,7 @@ class ResourceData extends $pb.GeneratedMessage {
     if (lat != null) $result.lat = lat;
     if (lng != null) $result.lng = lng;
     if (expiresAt != null) $result.expiresAt = expiresAt;
+    if (deliveryMode != null) $result.deliveryMode = deliveryMode;
     return $result;
   }
 
@@ -330,6 +332,7 @@ class ResourceData extends $pb.GeneratedMessage {
     ..a<$core.double>(7, 'lat', $pb.PbFieldType.OD)
     ..a<$core.double>(8, 'lng', $pb.PbFieldType.OD)
     ..aInt64(9, 'expiresAt', protoName: 'expires_at')
+    ..aOS(16, 'deliveryMode', protoName: 'delivery_mode')
     ..hasRequiredFields = false;
 
   @$core.override
@@ -402,6 +405,13 @@ class ResourceData extends $pb.GeneratedMessage {
   set expiresAt($fixnum.Int64 v) {
     $_setInt64(8, v);
   }
+
+  @$pb.TagNumber(16)
+  $core.String get deliveryMode => $_getSZ(9);
+  @$pb.TagNumber(16)
+  set deliveryMode($core.String v) {
+    $_setString(9, v);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -418,6 +428,8 @@ class RequestData extends $pb.GeneratedMessage {
     $core.double? lat,
     $core.double? lng,
     $core.double? maxRangeMeters,
+    $core.String? mobilityMode,
+    $core.String? note,
   }) {
     final $result = create();
     if (requestId != null) $result.requestId = requestId;
@@ -428,6 +440,8 @@ class RequestData extends $pb.GeneratedMessage {
     if (lat != null) $result.lat = lat;
     if (lng != null) $result.lng = lng;
     if (maxRangeMeters != null) $result.maxRangeMeters = maxRangeMeters;
+    if (mobilityMode != null) $result.mobilityMode = mobilityMode;
+    if (note != null) $result.note = note;
     return $result;
   }
 
@@ -452,6 +466,8 @@ class RequestData extends $pb.GeneratedMessage {
     ..a<$core.double>(7, 'lng', $pb.PbFieldType.OD)
     ..a<$core.double>(8, 'maxRangeMeters', $pb.PbFieldType.OF,
         protoName: 'max_range_meters')
+    ..aOS(9, 'mobilityMode', protoName: 'mobility_mode')
+    ..aOS(10, 'note')
     ..hasRequiredFields = false;
 
   @$core.override
@@ -516,6 +532,20 @@ class RequestData extends $pb.GeneratedMessage {
   @$pb.TagNumber(8)
   set maxRangeMeters($core.double v) {
     $_setFloat(7, v);
+  }
+
+  @$pb.TagNumber(9)
+  $core.String get mobilityMode => $_getSZ(8);
+  @$pb.TagNumber(9)
+  set mobilityMode($core.String v) {
+    $_setString(8, v);
+  }
+
+  @$pb.TagNumber(10)
+  $core.String get note => $_getSZ(9);
+  @$pb.TagNumber(10)
+  set note($core.String v) {
+    $_setString(9, v);
   }
 }
 
@@ -913,11 +943,13 @@ class MatchCancelData extends $pb.GeneratedMessage {
     $core.String? requestId,
     $core.String? resourceId,
     $core.String? reason,
+    $core.String? negotiationId,
   }) {
     final $result = create();
     if (requestId != null) $result.requestId = requestId;
     if (resourceId != null) $result.resourceId = resourceId;
     if (reason != null) $result.reason = reason;
+    if (negotiationId != null) $result.negotiationId = negotiationId;
     return $result;
   }
 
@@ -932,6 +964,7 @@ class MatchCancelData extends $pb.GeneratedMessage {
     ..aOS(1, 'requestId', protoName: 'request_id')
     ..aOS(2, 'resourceId', protoName: 'resource_id')
     ..aOS(3, 'reason')
+    ..aOS(4, 'negotiationId', protoName: 'negotiation_id')
     ..hasRequiredFields = false;
 
   @$core.override
@@ -961,6 +994,13 @@ class MatchCancelData extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   set reason($core.String v) {
     $_setString(2, v);
+  }
+
+  @$pb.TagNumber(4)
+  $core.String get negotiationId => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set negotiationId($core.String v) {
+    $_setString(3, v);
   }
 }
 
@@ -1540,5 +1580,688 @@ class LocationUpdateData extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   set timestamp($fixnum.Int64 v) {
     $_setInt64(3, v);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MatchOfferData (媒合出價)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MatchOfferData extends $pb.GeneratedMessage {
+  factory MatchOfferData({
+    $core.String? negotiationId,
+    $core.String? resourceId,
+    $core.String? requestId,
+    $core.List<$core.int>? providerPubKey,
+    $core.List<$core.int>? requesterPubKey,
+    $core.double? offeredQty,
+    $core.double? matchScore,
+    $fixnum.Int64? expiresAt,
+  }) {
+    final $result = create();
+    if (negotiationId != null) $result.negotiationId = negotiationId;
+    if (resourceId != null) $result.resourceId = resourceId;
+    if (requestId != null) $result.requestId = requestId;
+    if (providerPubKey != null) $result.providerPubKey = providerPubKey;
+    if (requesterPubKey != null) $result.requesterPubKey = requesterPubKey;
+    if (offeredQty != null) $result.offeredQty = offeredQty;
+    if (matchScore != null) $result.matchScore = matchScore;
+    if (expiresAt != null) $result.expiresAt = expiresAt;
+    return $result;
+  }
+
+  MatchOfferData._() : super();
+
+  factory MatchOfferData.fromBuffer($core.List<$core.int> i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('MatchOfferData',
+      package: const $pb.PackageName('resqmesh'), createEmptyInstance: create)
+    ..aOS(1, 'negotiationId', protoName: 'negotiation_id')
+    ..aOS(2, 'resourceId', protoName: 'resource_id')
+    ..aOS(3, 'requestId', protoName: 'request_id')
+    ..a<$core.List<$core.int>>(4, 'providerPubKey', $pb.PbFieldType.OY,
+        protoName: 'provider_pub_key')
+    ..a<$core.List<$core.int>>(5, 'requesterPubKey', $pb.PbFieldType.OY,
+        protoName: 'requester_pub_key')
+    ..a<$core.double>(6, 'offeredQty', $pb.PbFieldType.OF,
+        protoName: 'offered_qty')
+    ..a<$core.double>(7, 'matchScore', $pb.PbFieldType.OF,
+        protoName: 'match_score')
+    ..aInt64(8, 'expiresAt', protoName: 'expires_at')
+    ..hasRequiredFields = false;
+
+  @$core.override
+  MatchOfferData createEmptyInstance() => create();
+  static MatchOfferData create() => MatchOfferData._();
+  @$core.override
+  MatchOfferData clone() => MatchOfferData()..mergeFromMessage(this);
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$pb.TagNumber(1)
+  $core.String get negotiationId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set negotiationId($core.String v) {
+    $_setString(0, v);
+  }
+
+  @$pb.TagNumber(2)
+  $core.String get resourceId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set resourceId($core.String v) {
+    $_setString(1, v);
+  }
+
+  @$pb.TagNumber(3)
+  $core.String get requestId => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set requestId($core.String v) {
+    $_setString(2, v);
+  }
+
+  @$pb.TagNumber(4)
+  $core.List<$core.int> get providerPubKey => $_getN(3);
+  @$pb.TagNumber(4)
+  set providerPubKey($core.List<$core.int> v) {
+    $_setBytes(3, v);
+  }
+
+  @$pb.TagNumber(5)
+  $core.List<$core.int> get requesterPubKey => $_getN(4);
+  @$pb.TagNumber(5)
+  set requesterPubKey($core.List<$core.int> v) {
+    $_setBytes(4, v);
+  }
+
+  @$pb.TagNumber(6)
+  $core.double get offeredQty => $_getN(5);
+  @$pb.TagNumber(6)
+  set offeredQty($core.double v) {
+    $_setFloat(5, v);
+  }
+
+  @$pb.TagNumber(7)
+  $core.double get matchScore => $_getN(6);
+  @$pb.TagNumber(7)
+  set matchScore($core.double v) {
+    $_setFloat(6, v);
+  }
+
+  @$pb.TagNumber(8)
+  $fixnum.Int64 get expiresAt => $_getI64(7);
+  @$pb.TagNumber(8)
+  set expiresAt($fixnum.Int64 v) {
+    $_setInt64(7, v);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MatchRequestData (媒合請求)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MatchRequestData extends $pb.GeneratedMessage {
+  factory MatchRequestData({
+    $core.String? negotiationId,
+    $core.String? resourceId,
+    $core.String? requestId,
+    $core.List<$core.int>? providerPubKey,
+    $core.List<$core.int>? requesterPubKey,
+    $core.double? requestedQty,
+    $fixnum.Int64? expiresAt,
+  }) {
+    final $result = create();
+    if (negotiationId != null) $result.negotiationId = negotiationId;
+    if (resourceId != null) $result.resourceId = resourceId;
+    if (requestId != null) $result.requestId = requestId;
+    if (providerPubKey != null) $result.providerPubKey = providerPubKey;
+    if (requesterPubKey != null) $result.requesterPubKey = requesterPubKey;
+    if (requestedQty != null) $result.requestedQty = requestedQty;
+    if (expiresAt != null) $result.expiresAt = expiresAt;
+    return $result;
+  }
+
+  MatchRequestData._() : super();
+
+  factory MatchRequestData.fromBuffer($core.List<$core.int> i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('MatchRequestData',
+      package: const $pb.PackageName('resqmesh'), createEmptyInstance: create)
+    ..aOS(1, 'negotiationId', protoName: 'negotiation_id')
+    ..aOS(2, 'resourceId', protoName: 'resource_id')
+    ..aOS(3, 'requestId', protoName: 'request_id')
+    ..a<$core.List<$core.int>>(4, 'providerPubKey', $pb.PbFieldType.OY,
+        protoName: 'provider_pub_key')
+    ..a<$core.List<$core.int>>(5, 'requesterPubKey', $pb.PbFieldType.OY,
+        protoName: 'requester_pub_key')
+    ..a<$core.double>(6, 'requestedQty', $pb.PbFieldType.OF,
+        protoName: 'requested_qty')
+    ..aInt64(7, 'expiresAt', protoName: 'expires_at')
+    ..hasRequiredFields = false;
+
+  @$core.override
+  MatchRequestData createEmptyInstance() => create();
+  static MatchRequestData create() => MatchRequestData._();
+  @$core.override
+  MatchRequestData clone() => MatchRequestData()..mergeFromMessage(this);
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$pb.TagNumber(1)
+  $core.String get negotiationId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set negotiationId($core.String v) {
+    $_setString(0, v);
+  }
+
+  @$pb.TagNumber(2)
+  $core.String get resourceId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set resourceId($core.String v) {
+    $_setString(1, v);
+  }
+
+  @$pb.TagNumber(3)
+  $core.String get requestId => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set requestId($core.String v) {
+    $_setString(2, v);
+  }
+
+  @$pb.TagNumber(4)
+  $core.List<$core.int> get providerPubKey => $_getN(3);
+  @$pb.TagNumber(4)
+  set providerPubKey($core.List<$core.int> v) {
+    $_setBytes(3, v);
+  }
+
+  @$pb.TagNumber(5)
+  $core.List<$core.int> get requesterPubKey => $_getN(4);
+  @$pb.TagNumber(5)
+  set requesterPubKey($core.List<$core.int> v) {
+    $_setBytes(4, v);
+  }
+
+  @$pb.TagNumber(6)
+  $core.double get requestedQty => $_getN(5);
+  @$pb.TagNumber(6)
+  set requestedQty($core.double v) {
+    $_setFloat(5, v);
+  }
+
+  @$pb.TagNumber(7)
+  $fixnum.Int64 get expiresAt => $_getI64(6);
+  @$pb.TagNumber(7)
+  set expiresAt($fixnum.Int64 v) {
+    $_setInt64(6, v);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MatchAcceptData (媒合接受)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MatchAcceptData extends $pb.GeneratedMessage {
+  factory MatchAcceptData({
+    $core.String? negotiationId,
+    $core.String? resourceId,
+    $core.String? requestId,
+    $core.List<$core.int>? acceptorPubKey,
+    $core.double? agreedQty,
+  }) {
+    final $result = create();
+    if (negotiationId != null) $result.negotiationId = negotiationId;
+    if (resourceId != null) $result.resourceId = resourceId;
+    if (requestId != null) $result.requestId = requestId;
+    if (acceptorPubKey != null) $result.acceptorPubKey = acceptorPubKey;
+    if (agreedQty != null) $result.agreedQty = agreedQty;
+    return $result;
+  }
+
+  MatchAcceptData._() : super();
+
+  factory MatchAcceptData.fromBuffer($core.List<$core.int> i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('MatchAcceptData',
+      package: const $pb.PackageName('resqmesh'), createEmptyInstance: create)
+    ..aOS(1, 'negotiationId', protoName: 'negotiation_id')
+    ..aOS(2, 'resourceId', protoName: 'resource_id')
+    ..aOS(3, 'requestId', protoName: 'request_id')
+    ..a<$core.List<$core.int>>(4, 'acceptorPubKey', $pb.PbFieldType.OY,
+        protoName: 'acceptor_pub_key')
+    ..a<$core.double>(5, 'agreedQty', $pb.PbFieldType.OF,
+        protoName: 'agreed_qty')
+    ..hasRequiredFields = false;
+
+  @$core.override
+  MatchAcceptData createEmptyInstance() => create();
+  static MatchAcceptData create() => MatchAcceptData._();
+  @$core.override
+  MatchAcceptData clone() => MatchAcceptData()..mergeFromMessage(this);
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$pb.TagNumber(1)
+  $core.String get negotiationId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set negotiationId($core.String v) {
+    $_setString(0, v);
+  }
+
+  @$pb.TagNumber(2)
+  $core.String get resourceId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set resourceId($core.String v) {
+    $_setString(1, v);
+  }
+
+  @$pb.TagNumber(3)
+  $core.String get requestId => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set requestId($core.String v) {
+    $_setString(2, v);
+  }
+
+  @$pb.TagNumber(4)
+  $core.List<$core.int> get acceptorPubKey => $_getN(3);
+  @$pb.TagNumber(4)
+  set acceptorPubKey($core.List<$core.int> v) {
+    $_setBytes(3, v);
+  }
+
+  @$pb.TagNumber(5)
+  $core.double get agreedQty => $_getN(4);
+  @$pb.TagNumber(5)
+  set agreedQty($core.double v) {
+    $_setFloat(4, v);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MatchDeclineData (媒合拒絕)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MatchDeclineData extends $pb.GeneratedMessage {
+  factory MatchDeclineData({
+    $core.String? negotiationId,
+    $core.String? resourceId,
+    $core.String? requestId,
+    $core.String? reason,
+  }) {
+    final $result = create();
+    if (negotiationId != null) $result.negotiationId = negotiationId;
+    if (resourceId != null) $result.resourceId = resourceId;
+    if (requestId != null) $result.requestId = requestId;
+    if (reason != null) $result.reason = reason;
+    return $result;
+  }
+
+  MatchDeclineData._() : super();
+
+  factory MatchDeclineData.fromBuffer($core.List<$core.int> i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('MatchDeclineData',
+      package: const $pb.PackageName('resqmesh'), createEmptyInstance: create)
+    ..aOS(1, 'negotiationId', protoName: 'negotiation_id')
+    ..aOS(2, 'resourceId', protoName: 'resource_id')
+    ..aOS(3, 'requestId', protoName: 'request_id')
+    ..aOS(4, 'reason')
+    ..hasRequiredFields = false;
+
+  @$core.override
+  MatchDeclineData createEmptyInstance() => create();
+  static MatchDeclineData create() => MatchDeclineData._();
+  @$core.override
+  MatchDeclineData clone() => MatchDeclineData()..mergeFromMessage(this);
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$pb.TagNumber(1)
+  $core.String get negotiationId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set negotiationId($core.String v) {
+    $_setString(0, v);
+  }
+
+  @$pb.TagNumber(2)
+  $core.String get resourceId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set resourceId($core.String v) {
+    $_setString(1, v);
+  }
+
+  @$pb.TagNumber(3)
+  $core.String get requestId => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set requestId($core.String v) {
+    $_setString(2, v);
+  }
+
+  @$pb.TagNumber(4)
+  $core.String get reason => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set reason($core.String v) {
+    $_setString(3, v);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HandshakeCompleteData (交割完成憑證)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class HandshakeCompleteData extends $pb.GeneratedMessage {
+  factory HandshakeCompleteData({
+    $core.String? negotiationId,
+    $core.String? resourceId,
+    $core.String? requestId,
+    $core.List<$core.int>? providerPubKey,
+    $core.List<$core.int>? requesterPubKey,
+    $core.double? actualDeliveredQty,
+    $core.String? method,
+    $core.List<$core.int>? providerSignature,
+    $core.List<$core.int>? requesterSignature,
+  }) {
+    final $result = create();
+    if (negotiationId != null) $result.negotiationId = negotiationId;
+    if (resourceId != null) $result.resourceId = resourceId;
+    if (requestId != null) $result.requestId = requestId;
+    if (providerPubKey != null) $result.providerPubKey = providerPubKey;
+    if (requesterPubKey != null) $result.requesterPubKey = requesterPubKey;
+    if (actualDeliveredQty != null)
+      $result.actualDeliveredQty = actualDeliveredQty;
+    if (method != null) $result.method = method;
+    if (providerSignature != null)
+      $result.providerSignature = providerSignature;
+    if (requesterSignature != null)
+      $result.requesterSignature = requesterSignature;
+    return $result;
+  }
+
+  HandshakeCompleteData._() : super();
+
+  factory HandshakeCompleteData.fromBuffer($core.List<$core.int> i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('HandshakeCompleteData',
+      package: const $pb.PackageName('resqmesh'), createEmptyInstance: create)
+    ..aOS(1, 'negotiationId', protoName: 'negotiation_id')
+    ..aOS(2, 'resourceId', protoName: 'resource_id')
+    ..aOS(3, 'requestId', protoName: 'request_id')
+    ..a<$core.List<$core.int>>(4, 'providerPubKey', $pb.PbFieldType.OY,
+        protoName: 'provider_pub_key')
+    ..a<$core.List<$core.int>>(5, 'requesterPubKey', $pb.PbFieldType.OY,
+        protoName: 'requester_pub_key')
+    ..a<$core.double>(6, 'actualDeliveredQty', $pb.PbFieldType.OF,
+        protoName: 'actual_delivered_qty')
+    ..aOS(7, 'method')
+    ..a<$core.List<$core.int>>(8, 'providerSignature', $pb.PbFieldType.OY,
+        protoName: 'provider_signature')
+    ..a<$core.List<$core.int>>(9, 'requesterSignature', $pb.PbFieldType.OY,
+        protoName: 'requester_signature')
+    ..hasRequiredFields = false;
+
+  @$core.override
+  HandshakeCompleteData createEmptyInstance() => create();
+  static HandshakeCompleteData create() => HandshakeCompleteData._();
+  @$core.override
+  HandshakeCompleteData clone() =>
+      HandshakeCompleteData()..mergeFromMessage(this);
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$pb.TagNumber(1)
+  $core.String get negotiationId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set negotiationId($core.String v) {
+    $_setString(0, v);
+  }
+
+  @$pb.TagNumber(2)
+  $core.String get resourceId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set resourceId($core.String v) {
+    $_setString(1, v);
+  }
+
+  @$pb.TagNumber(3)
+  $core.String get requestId => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set requestId($core.String v) {
+    $_setString(2, v);
+  }
+
+  @$pb.TagNumber(4)
+  $core.List<$core.int> get providerPubKey => $_getN(3);
+  @$pb.TagNumber(4)
+  set providerPubKey($core.List<$core.int> v) {
+    $_setBytes(3, v);
+  }
+
+  @$pb.TagNumber(5)
+  $core.List<$core.int> get requesterPubKey => $_getN(4);
+  @$pb.TagNumber(5)
+  set requesterPubKey($core.List<$core.int> v) {
+    $_setBytes(4, v);
+  }
+
+  @$pb.TagNumber(6)
+  $core.double get actualDeliveredQty => $_getN(5);
+  @$pb.TagNumber(6)
+  set actualDeliveredQty($core.double v) {
+    $_setFloat(5, v);
+  }
+
+  @$pb.TagNumber(7)
+  $core.String get method => $_getSZ(6);
+  @$pb.TagNumber(7)
+  set method($core.String v) {
+    $_setString(6, v);
+  }
+
+  @$pb.TagNumber(8)
+  $core.List<$core.int> get providerSignature => $_getN(7);
+  @$pb.TagNumber(8)
+  set providerSignature($core.List<$core.int> v) {
+    $_setBytes(7, v);
+  }
+
+  @$pb.TagNumber(9)
+  $core.List<$core.int> get requesterSignature => $_getN(8);
+  @$pb.TagNumber(9)
+  set requesterSignature($core.List<$core.int> v) {
+    $_setBytes(8, v);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// StationClaimData (據點領取請求)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class StationClaimData extends $pb.GeneratedMessage {
+  factory StationClaimData({
+    $core.String? resourceId,
+    $core.String? requestId,
+    $core.List<$core.int>? requesterPubKey,
+    $core.String? category,
+    $core.double? requestedQty,
+  }) {
+    final $result = create();
+    if (resourceId != null) $result.resourceId = resourceId;
+    if (requestId != null) $result.requestId = requestId;
+    if (requesterPubKey != null) $result.requesterPubKey = requesterPubKey;
+    if (category != null) $result.category = category;
+    if (requestedQty != null) $result.requestedQty = requestedQty;
+    return $result;
+  }
+
+  StationClaimData._() : super();
+
+  factory StationClaimData.fromBuffer($core.List<$core.int> i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('StationClaimData',
+      package: const $pb.PackageName('resqmesh'), createEmptyInstance: create)
+    ..aOS(1, 'resourceId', protoName: 'resource_id')
+    ..aOS(2, 'requestId', protoName: 'request_id')
+    ..a<$core.List<$core.int>>(3, 'requesterPubKey', $pb.PbFieldType.OY,
+        protoName: 'requester_pub_key')
+    ..aOS(4, 'category')
+    ..a<$core.double>(5, 'requestedQty', $pb.PbFieldType.OF,
+        protoName: 'requested_qty')
+    ..hasRequiredFields = false;
+
+  @$core.override
+  StationClaimData createEmptyInstance() => create();
+  static StationClaimData create() => StationClaimData._();
+  @$core.override
+  StationClaimData clone() => StationClaimData()..mergeFromMessage(this);
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$pb.TagNumber(1)
+  $core.String get resourceId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set resourceId($core.String v) {
+    $_setString(0, v);
+  }
+
+  @$pb.TagNumber(2)
+  $core.String get requestId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set requestId($core.String v) {
+    $_setString(1, v);
+  }
+
+  @$pb.TagNumber(3)
+  $core.List<$core.int> get requesterPubKey => $_getN(2);
+  @$pb.TagNumber(3)
+  set requesterPubKey($core.List<$core.int> v) {
+    $_setBytes(2, v);
+  }
+
+  @$pb.TagNumber(4)
+  $core.String get category => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set category($core.String v) {
+    $_setString(3, v);
+  }
+
+  @$pb.TagNumber(5)
+  $core.double get requestedQty => $_getN(4);
+  @$pb.TagNumber(5)
+  set requestedQty($core.double v) {
+    $_setFloat(4, v);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// StationResponseData (據點領取回應)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class StationResponseData extends $pb.GeneratedMessage {
+  factory StationResponseData({
+    $core.String? resourceId,
+    $core.String? requestId,
+    $core.List<$core.int>? requesterPubKey,
+    $core.bool? approved,
+    $core.double? approvedQty,
+    $core.String? denyReason,
+    $fixnum.Int64? pickupDeadline,
+  }) {
+    final $result = create();
+    if (resourceId != null) $result.resourceId = resourceId;
+    if (requestId != null) $result.requestId = requestId;
+    if (requesterPubKey != null) $result.requesterPubKey = requesterPubKey;
+    if (approved != null) $result.approved = approved;
+    if (approvedQty != null) $result.approvedQty = approvedQty;
+    if (denyReason != null) $result.denyReason = denyReason;
+    if (pickupDeadline != null) $result.pickupDeadline = pickupDeadline;
+    return $result;
+  }
+
+  StationResponseData._() : super();
+
+  factory StationResponseData.fromBuffer($core.List<$core.int> i,
+          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('StationResponseData',
+      package: const $pb.PackageName('resqmesh'), createEmptyInstance: create)
+    ..aOS(1, 'resourceId', protoName: 'resource_id')
+    ..aOS(2, 'requestId', protoName: 'request_id')
+    ..a<$core.List<$core.int>>(3, 'requesterPubKey', $pb.PbFieldType.OY,
+        protoName: 'requester_pub_key')
+    ..aOB(4, 'approved')
+    ..a<$core.double>(5, 'approvedQty', $pb.PbFieldType.OF,
+        protoName: 'approved_qty')
+    ..aOS(6, 'denyReason', protoName: 'deny_reason')
+    ..aInt64(7, 'pickupDeadline', protoName: 'pickup_deadline')
+    ..hasRequiredFields = false;
+
+  @$core.override
+  StationResponseData createEmptyInstance() => create();
+  static StationResponseData create() => StationResponseData._();
+  @$core.override
+  StationResponseData clone() =>
+      StationResponseData()..mergeFromMessage(this);
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$pb.TagNumber(1)
+  $core.String get resourceId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set resourceId($core.String v) {
+    $_setString(0, v);
+  }
+
+  @$pb.TagNumber(2)
+  $core.String get requestId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set requestId($core.String v) {
+    $_setString(1, v);
+  }
+
+  @$pb.TagNumber(3)
+  $core.List<$core.int> get requesterPubKey => $_getN(2);
+  @$pb.TagNumber(3)
+  set requesterPubKey($core.List<$core.int> v) {
+    $_setBytes(2, v);
+  }
+
+  @$pb.TagNumber(4)
+  $core.bool get approved => $_getBF(3);
+  @$pb.TagNumber(4)
+  set approved($core.bool v) {
+    $_setBool(3, v);
+  }
+
+  @$pb.TagNumber(5)
+  $core.double get approvedQty => $_getN(4);
+  @$pb.TagNumber(5)
+  set approvedQty($core.double v) {
+    $_setFloat(4, v);
+  }
+
+  @$pb.TagNumber(6)
+  $core.String get denyReason => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set denyReason($core.String v) {
+    $_setString(5, v);
+  }
+
+  @$pb.TagNumber(7)
+  $fixnum.Int64 get pickupDeadline => $_getI64(6);
+  @$pb.TagNumber(7)
+  set pickupDeadline($fixnum.Int64 v) {
+    $_setInt64(6, v);
   }
 }

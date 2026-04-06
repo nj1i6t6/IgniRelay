@@ -8,27 +8,10 @@ import '../db/database_helper.dart';
 import '../proto/mesh_protocol.pb.dart' as pb;
 import '../crypto/identity_manager.dart';
 import '../services/location_service.dart';
+import '../services/negotiation_manager.dart';
+
 import 'mesh_router.dart';
 import 'mesh_transport.dart';
-
-/// 待處理的媒合回應（供 EventManager 輪詢）
-class PendingMatchAction {
-  final String type; // 'CONFIRM' or 'REJECT'
-  final String requestId;
-  final String resourceId;
-  final List<int> requesterPubKey;
-  final List<int> providerPubKey;
-  final String reason;
-
-  PendingMatchAction({
-    required this.type,
-    required this.requestId,
-    required this.resourceId,
-    required this.requesterPubKey,
-    required this.providerPubKey,
-    this.reason = '',
-  });
-}
 
 /// 事件類型常數（供 wire payload 解碼使用）
 class EventType {
@@ -47,6 +30,8 @@ class EventType {
   static const int matchGone = 12;
   static const int chatMessage = 13;
   static const int locationUpdate = 14;
+  static const int matchRequest = 15;
+  static const int handshakeComplete = 16;
 }
 
 /// Wire payload 解碼結果
@@ -93,6 +78,8 @@ class MeshEventHandler {
   static final MeshEventHandler _instance = MeshEventHandler._internal();
   factory MeshEventHandler() => _instance;
   MeshEventHandler._internal();
+
+  final NegotiationManager _negotiationManager = NegotiationManager();
 
   // 已看過的 event_id（去重）
   final Set<String> _seenEvents = {};
@@ -248,54 +235,71 @@ class MeshEventHandler {
         return; // DB 已有此事件，不需要重複處理
       }
 
-      // 如果是物資登記事件，投影到 Materials_State
-      if (decoded.eventType == EventType.resourceRegister && payload.isNotEmpty) {
-        await _handleResourceRegisterEvent(decoded, payload, evtId, db);
-      }
+      // ── Event dispatch ─────────────────────────────────────────
+      final eventType = decoded.eventType;
+      final senderPubKey = decoded.senderPubKey ?? <int>[];
+      final payloadBytes = Uint8List.fromList(payload);
 
-      // 如果是需求廣播事件，投影到 Requests_State
-      if (decoded.eventType == EventType.requestBroadcast && payload.isNotEmpty) {
-        await _handleRequestBroadcastEvent(decoded, payload, evtId, db);
-      }
+      switch (eventType) {
+        // ── Infrastructure events → handle locally ──
+        case EventType.resourceRegister:
+          if (payload.isNotEmpty) {
+            await _handleResourceRegisterEvent(decoded, payload, evtId, db);
+          }
+          break;
+        case EventType.requestBroadcast:
+          if (payload.isNotEmpty) {
+            await _handleRequestBroadcastEvent(decoded, payload, evtId, db);
+          }
+          break;
+        case EventType.physicalHandshake:
+          // Slot 3 kept for backward compat
+          if (payload.isNotEmpty) {
+            await _handlePhysicalHandshakeEvent({'raw': payload});
+          }
+          break;
+        case EventType.hazardMarker:
+          if (payload.isNotEmpty) {
+            await _handleHazardEvent(decoded, payload, sourceNodeId, db);
+          }
+          break;
+        case EventType.quarantineVote:
+          // existing quarantine vote handling (no-op in current codebase)
+          break;
+        case EventType.fireAlarmRf:
+          // existing fire alarm RF handling (no-op in current codebase)
+          break;
+        case EventType.chatMessage:
+          if (payload.isNotEmpty) {
+            await _handleChatEvent(decoded, payload, sourceNodeId, db);
+          }
+          break;
 
-      // 如果是危險區域事件，寫入 Hazards_State
-      if (decoded.eventType == EventType.hazardMarker && payload.isNotEmpty) {
-        await _handleHazardEvent(decoded, payload, sourceNodeId, db);
-      }
+        // ── Deprecated slots → silently ignore ──
+        case EventType.matchInquiry:  // 10
+        case EventType.matchAvailable: // 11
+        case EventType.matchGone:      // 12
+          break;
 
-      // 如果是聊天訊息事件，寫入 Chat_Messages
-      if (decoded.eventType == EventType.chatMessage && payload.isNotEmpty) {
-        await _handleChatEvent(decoded, payload, sourceNodeId, db);
-      }
+        // ── Negotiation events → delegate to Application Layer ──
+        case EventType.matchIntent:       // 2 (matchOffer)
+        case EventType.matchRequest:      // 15
+        case EventType.matchConfirm:      // 8 (matchAccept)
+        case EventType.matchReject:       // 9 (matchDecline)
+        case EventType.matchCancel:       // 6
+        case EventType.handshakeComplete: // 16
+          await _negotiationManager.handleRemoteEvent(
+            eventType, payloadBytes, senderPubKey);
+          break;
 
-      // 媒合意向：供給者發起 → 需求者收到
-      if (decoded.eventType == EventType.matchIntent && payload.isNotEmpty) {
-        await _handleMatchIntentEvent(decoded, payload, db);
-      }
+        case EventType.locationUpdate: // 14 — negotiation-related
+          await _negotiationManager.handleRemoteEvent(
+            eventType, payloadBytes, senderPubKey);
+          break;
 
-      // 媒合確認：需求者確認 → 全網收到
-      if (decoded.eventType == EventType.matchConfirm && payload.isNotEmpty) {
-        await _handleMatchConfirmEvent(decoded, payload, db);
-      }
-
-      // 媒合拒絕：需求者拒絕 → 供給者收到
-      if (decoded.eventType == EventType.matchReject && payload.isNotEmpty) {
-        await _handleMatchRejectEvent(decoded, payload, db);
-      }
-
-      // 取消配對事件：更新本地狀態
-      if (decoded.eventType == EventType.matchCancel && payload.isNotEmpty) {
-        await _handleMatchCancelEvent(decoded, payload, db);
-      }
-
-      // 物理交割事件：標記完成
-      if (decoded.eventType == EventType.physicalHandshake && payload.isNotEmpty) {
-        await _handlePhysicalHandshakeEvent(decoded, payload, db);
-      }
-
-      // 位置更新事件：更新 Match_Sessions
-      if (decoded.eventType == EventType.locationUpdate && payload.isNotEmpty) {
-        await _handleLocationUpdateEvent(decoded, payload, db);
+        default:
+          _dlog('RECV unknown eventType=$eventType');
+          break;
       }
 
       receivedEventCount++;
@@ -319,6 +323,14 @@ class MeshEventHandler {
     try {
       final rd = pb.ResourceData.fromBuffer(payload);
       if (rd.resourceId.isEmpty) return;
+
+      String deliveryMode = rd.deliveryMode;
+      if (deliveryMode.isEmpty) {
+        // Fallback: description field might hold delivery mode
+        deliveryMode = (rd.description == 'DELIVER' || rd.description == 'PICKUP' || rd.description == 'DROP_OFF')
+            ? rd.description : 'PICKUP';
+      }
+
       await db.insert('Materials_State', {
         'resource_id': rd.resourceId,
         'status': 'AVAILABLE',
@@ -328,6 +340,8 @@ class MeshEventHandler {
         'hlc_counter': decoded.hlcCounter,
         'matched_request_id': null,
         'match_expires_at': null,
+        'total_qty': rd.quantity,
+        'delivery_mode': deliveryMode,
         'payload': Uint8List.fromList(payload),
       });
       _dlog('SUPPLY_SYNC ${rd.resourceId.substring(0, 8)}.. to Materials_State');
@@ -347,6 +361,17 @@ class MeshEventHandler {
     try {
       final rd = pb.RequestData.fromBuffer(payload);
       if (rd.requestId.isEmpty) return;
+
+      // Extract new fields (with fallback to description parsing for old events)
+      String mobilityMode = rd.mobilityMode;
+      String note = rd.note;
+      if (mobilityMode.isEmpty && rd.description.isNotEmpty) {
+        final parts = rd.description.split('|');
+        mobilityMode = parts.isNotEmpty ? parts[0] : 'CAN_GO';
+        note = parts.length > 1 ? parts.sublist(1).join('|') : '';
+      }
+      if (mobilityMode.isEmpty) mobilityMode = 'CAN_GO';
+
       await db.insert('Requests_State', {
         'request_id': rd.requestId,
         'event_id': eventId,
@@ -360,6 +385,9 @@ class MeshEventHandler {
         'hlc_counter': decoded.hlcCounter,
         'matched_resource_id': null,
         'match_expires_at': null,
+        'quantity_needed': rd.quantityNeeded,
+        'mobility_mode': mobilityMode,
+        'note': note,
         'payload': Uint8List.fromList(payload),
       });
       _dlog('REQUEST_SYNC ${rd.requestId.substring(0, 8)}.. to Requests_State');
@@ -467,294 +495,17 @@ class MeshEventHandler {
     }
   }
 
-  /// 處理 MATCH_INTENT：供給者發起媒合意向
-  /// 需求者收到後，檢查需求是否仍可用，自動回覆 CONFIRM 或 REJECT
-  Future<void> _handleMatchIntentEvent(
-    WirePayload decoded,
-    List<int> payload,
-    dynamic db,
-  ) async {
-    try {
-      final intent = pb.MatchIntentData.fromBuffer(payload);
-      _dlog('MATCH_INTENT received: resource=${intent.resourceId.substring(0, 8)}.. request=${intent.requestId.substring(0, 8)}..');
-
-      // 檢查這筆需求是否是自己的且仍可用
-      final myPubKey = await _getMyPubKeyBytes();
-      if (!_bytesEqual(intent.requesterPubKey, myPubKey)) {
-        // 不是給我的 intent，忽略（但事件已存入 Event_Logs）
-        return;
-      }
-
-      // 檢查 Requests_State（如果有的話）
-      final reqRows = await db.query('Requests_State',
-          where: 'request_id = ?',
-          whereArgs: [intent.requestId],
-          limit: 1);
-
-      bool isAvailable = true;
-      if (reqRows.isNotEmpty) {
-        final status = reqRows.first['status'] as String?;
-        isAvailable = (status == 'AVAILABLE');
-      }
-
-      if (isAvailable) {
-        // 鎖定需求
-        if (reqRows.isNotEmpty) {
-          await db.update(
-            'Requests_State',
-            {
-              'status': 'LOCKED',
-              'matched_resource_id': intent.resourceId,
-              'match_expires_at': DateTime.now().millisecondsSinceEpoch + (30 * 60 * 1000),
-            },
-            where: 'request_id = ?',
-            whereArgs: [intent.requestId],
-          );
-        }
-        // 通知上層自動發 MATCH_CONFIRM（透過 stream callback）
-        _pendingConfirms.add(PendingMatchAction(
-          type: 'CONFIRM',
-          requestId: intent.requestId,
-          resourceId: intent.resourceId,
-          requesterPubKey: intent.requesterPubKey,
-          providerPubKey: intent.providerPubKey,
-        ));
-        _dlog('MATCH_INTENT → auto CONFIRM for ${intent.requestId.substring(0, 8)}..');
-      } else {
-        _pendingConfirms.add(PendingMatchAction(
-          type: 'REJECT',
-          requestId: intent.requestId,
-          resourceId: intent.resourceId,
-          requesterPubKey: intent.requesterPubKey,
-          providerPubKey: intent.providerPubKey,
-          reason: 'ALREADY_LOCKED',
-        ));
-        _dlog('MATCH_INTENT → auto REJECT for ${intent.requestId.substring(0, 8)}.. (already locked)');
-      }
-    } catch (e) {
-      debugPrint('[MeshEvt] MATCH_INTENT handler error: $e');
-    }
+  Future<void> _handlePhysicalHandshakeEvent(Map<String, dynamic> row) async {
+    // Slot 3 preserved for backward compatibility
+    // New handshake flow uses slot 16 (handshakeComplete) via NegotiationManager
+    // Just log that we received it; don't process
+    debugPrint('[MeshEventHandler] Received legacy physicalHandshake, ignoring');
   }
 
-  /// 處理 MATCH_CONFIRM：需求者確認媒合
-  Future<void> _handleMatchConfirmEvent(
-    WirePayload decoded,
-    List<int> payload,
-    dynamic db,
-  ) async {
-    try {
-      final confirm = pb.MatchConfirmData.fromBuffer(payload);
-      _dlog('MATCH_CONFIRM received: resource=${confirm.resourceId.substring(0, 8)}.. request=${confirm.requestId.substring(0, 8)}..');
-
-      // 鎖定供給方 Materials_State
-      await db.update(
-        'Materials_State',
-        {
-          'status': 'LOCKED',
-          'matched_request_id': confirm.requestId,
-          'match_expires_at': DateTime.now().millisecondsSinceEpoch + (4 * 3600 * 1000),
-        },
-        where: "resource_id = ? AND status IN ('AVAILABLE', 'PENDING')",
-        whereArgs: [confirm.resourceId],
-      );
-
-      // 建立 Match_Session
-      final sessionId = '${confirm.resourceId}_${confirm.requestId}';
-      try {
-        final now = DateTime.now().millisecondsSinceEpoch;
-        await db.insert('Match_Sessions', {
-          'session_id': sessionId,
-          'resource_id': confirm.resourceId,
-          'request_id': confirm.requestId,
-          'provider_pub_key': Uint8List.fromList(confirm.providerPubKey),
-          'requester_pub_key': Uint8List.fromList(confirm.requesterPubKey),
-          'status': 'ACTIVE',
-          'created_at': now,
-          'updated_at': now,
-        });
-      } catch (_) {
-        // session 可能已存在
-      }
-
-      _dlog('MATCH_CONFIRM → session created, supply LOCKED');
-    } catch (e) {
-      debugPrint('[MeshEvt] MATCH_CONFIRM handler error: $e');
-    }
-  }
-
-  /// 處理 MATCH_REJECT：需求者拒絕媒合
-  Future<void> _handleMatchRejectEvent(
-    WirePayload decoded,
-    List<int> payload,
-    dynamic db,
-  ) async {
-    try {
-      final reject = pb.MatchRejectData.fromBuffer(payload);
-      _dlog('MATCH_REJECT received: resource=${reject.resourceId.substring(0, 8)}.. reason=${reject.reason}');
-
-      // 釋放供給方 Materials_State 回 AVAILABLE
-      await db.update(
-        'Materials_State',
-        {
-          'status': 'AVAILABLE',
-          'matched_request_id': null,
-          'match_expires_at': null,
-        },
-        where: "resource_id = ? AND status = 'PENDING'",
-        whereArgs: [reject.resourceId],
-      );
-
-      _dlog('MATCH_REJECT → supply released back to AVAILABLE');
-    } catch (e) {
-      debugPrint('[MeshEvt] MATCH_REJECT handler error: $e');
-    }
-  }
-
-  /// 處理 MATCH_CANCEL：取消配對
-  Future<void> _handleMatchCancelEvent(
-    WirePayload decoded,
-    List<int> payload,
-    dynamic db,
-  ) async {
-    try {
-      final cancelStr = utf8.decode(payload);
-      // 格式: CANCEL:SUPPLY:eventId 或 CANCEL:REQUEST:eventId
-      final parts = cancelStr.split(':');
-      if (parts.length >= 3 && parts[0] == 'CANCEL') {
-        final cancelType = parts[1]; // SUPPLY or REQUEST
-        if (cancelType == 'SUPPLY') {
-          // 從 Event_Logs 找到被取消的供給的 payload 並清理 Materials_State
-          final evtId = parts[2];
-          final events = await db.query('Event_Logs',
-              where: 'event_id = ?', whereArgs: [evtId], limit: 1);
-          if (events.isNotEmpty) {
-            final evtPayload = events.first['payload'] as Uint8List?;
-            if (evtPayload != null) {
-              try {
-                final rd = pb.ResourceData.fromBuffer(evtPayload);
-                await db.update(
-                  'Materials_State',
-                  {'status': 'CONSUMED'},
-                  where: 'resource_id = ?',
-                  whereArgs: [rd.resourceId],
-                );
-              } catch (_) {}
-            }
-          }
-        }
-        _dlog('MATCH_CANCEL processed: $cancelStr');
-      }
-    } catch (e) {
-      debugPrint('[MeshEvt] MATCH_CANCEL handler error: $e');
-    }
-  }
-
-  /// 處理 PHYSICAL_HANDSHAKE：物理交割完成
-  Future<void> _handlePhysicalHandshakeEvent(
-    WirePayload decoded,
-    List<int> payload,
-    dynamic db,
-  ) async {
-    try {
-      final handshake = pb.PhysicalHandshakeData.fromBuffer(payload);
-      _dlog('HANDSHAKE received: resource=${handshake.resourceId.substring(0, 8)}..');
-
-      // 標記物資為 CONSUMED
-      await db.update(
-        'Materials_State',
-        {'status': 'CONSUMED'},
-        where: 'resource_id = ?',
-        whereArgs: [handshake.resourceId],
-      );
-
-      // 標記需求為 CONSUMED
-      await db.update(
-        'Requests_State',
-        {'status': 'CONSUMED'},
-        where: "request_id = ?",
-        whereArgs: [handshake.requestId],
-      );
-
-      // 完成 Match_Session
-      final sessionId = '${handshake.resourceId}_${handshake.requestId}';
-      await db.update(
-        'Match_Sessions',
-        {
-          'status': 'COMPLETED',
-          'completed_at': DateTime.now().millisecondsSinceEpoch,
-          'updated_at': DateTime.now().millisecondsSinceEpoch,
-        },
-        where: 'session_id = ?',
-        whereArgs: [sessionId],
-      );
-
-      _dlog('HANDSHAKE → supply CONSUMED, session COMPLETED');
-    } catch (e) {
-      debugPrint('[MeshEvt] HANDSHAKE handler error: $e');
-    }
-  }
-
-  /// 處理 LOCATION_UPDATE：更新 Match_Sessions 中的對方位置
-  Future<void> _handleLocationUpdateEvent(
-    WirePayload decoded,
-    List<int> payload,
-    dynamic db,
-  ) async {
-    try {
-      final locUpdate = pb.LocationUpdateData.fromBuffer(payload);
-      if (locUpdate.sessionId.isEmpty) return;
-
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final senderPubKey = decoded.senderPubKey != null
-          ? Uint8List.fromList(decoded.senderPubKey!)
-          : null;
-      if (senderPubKey == null) return;
-
-      // 查 session 判斷 sender 是 provider 還是 requester
-      final session = await db.query('Match_Sessions',
-          where: "session_id = ? AND status = 'ACTIVE'",
-          whereArgs: [locUpdate.sessionId],
-          limit: 1);
-      if (session.isEmpty) return;
-
-      final providerKey = session.first['provider_pub_key'] as Uint8List?;
-      if (providerKey != null && _bytesEqual(providerKey, senderPubKey)) {
-        await db.update('Match_Sessions', {
-          'provider_lat': locUpdate.lat,
-          'provider_lng': locUpdate.lng,
-          'updated_at': now,
-        }, where: 'session_id = ?', whereArgs: [locUpdate.sessionId]);
-      } else {
-        await db.update('Match_Sessions', {
-          'requester_lat': locUpdate.lat,
-          'requester_lng': locUpdate.lng,
-          'updated_at': now,
-        }, where: 'session_id = ?', whereArgs: [locUpdate.sessionId]);
-      }
-
-      _dlog('LOC_UPDATE session=${locUpdate.sessionId.substring(0, 8)}.. lat=${locUpdate.lat.toStringAsFixed(5)}');
-    } catch (e) {
-      debugPrint('[MeshEvt] LOCATION_UPDATE handler error: $e');
-    }
-  }
-
-  // ── Pending Match Actions（供上層輪詢）──────────────────────────
-  final List<PendingMatchAction> _pendingConfirms = [];
-
-  /// 取出並清空 pending match actions（供 EventManager 輪詢使用）
-  List<PendingMatchAction> drainPendingMatchActions() {
-    final actions = List<PendingMatchAction>.from(_pendingConfirms);
-    _pendingConfirms.clear();
-    return actions;
-  }
-
-  /// 輔助：比較兩組 bytes 是否相等
-  bool _bytesEqual(List<int> a, List<int> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
+  /// 處理 LOCATION_UPDATE（向後相容保留，實際由 NegotiationManager 處理）
+  Future<void> _handleLocationUpdateEvent(Map<String, dynamic> row) async {
+    // Location updates are now handled by NegotiationManager via handleRemoteEvent
+    // This handler is kept for backward compat but delegates up
   }
 
   /// 輔助：取得自己的公鑰 bytes

@@ -22,10 +22,18 @@ import 'mesh/transport_factory.dart';
 import 'mesh/native_bridge.dart';
 import 'services/location_service.dart';
 import 'services/chat_service.dart';
+
+import 'crdt/hlc.dart';
 import 'proto/mesh_protocol.pb.dart' as pb;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Set app build timestamp for HLC clock protection
+  const buildTimestamp = int.fromEnvironment(
+    'BUILD_TIMESTAMP',
+    defaultValue: 1712102400000, // 2024-04-03 fallback
+  );
+  HLC.setAppBuildTimestamp(buildTimestamp);
   // 直接 runApp，所有 init 在 _StartupRouter._init() 背景執行
   // 讓 Flutter 第一幀立即渲染 loading 畫面，不黑屏
   runApp(IgniRelayApp(transport: TransportFactory.create()));
@@ -384,13 +392,14 @@ class _MainTabControllerState extends State<MainTabController> {
     }
   }
 
-  /// 檢查是否收到媒合意向通知（有人願意提供物資給我）
+  /// 檢查是否收到媒合意向通知（有人願意提供/請求物資）
   Future<void> _checkAndAlertMatch() async {
     final db = await DatabaseHelper().database;
     final cutoff = DateTime.now().millisecondsSinceEpoch - 60000;
+    // Check for matchOffer (2) and matchRequest (15)
     final recentMatch = await db.query(
       'Event_Logs',
-      where: 'event_type = 2 AND hlc_timestamp > ?',
+      where: '(event_type = 2 OR event_type = 15) AND hlc_timestamp > ?',
       whereArgs: [cutoff],
       orderBy: 'hlc_timestamp DESC',
       limit: 5,
@@ -404,16 +413,24 @@ class _MainTabControllerState extends State<MainTabController> {
 
       final payload = evt['payload'] as Uint8List?;
       if (payload == null || payload.isEmpty) continue;
+      final eventType = (evt['event_type'] as int?) ?? 0;
 
       try {
-        final intent = pb.MatchIntentData.fromBuffer(payload);
-        // 只通知需求者（requesterPubKey 匹配本機）
-        final reqPubKey = intent.requesterPubKey;
-        if (reqPubKey.isEmpty) continue;
-        bool isMe = reqPubKey.length == myPubKey.length;
+        List<int> targetPubKey = [];
+        if (eventType == 2) {
+          // matchOffer → notify requester
+          final data = pb.MatchOfferData.fromBuffer(payload);
+          targetPubKey = data.requesterPubKey;
+        } else if (eventType == 15) {
+          // matchRequest → notify provider
+          final data = pb.MatchRequestData.fromBuffer(payload);
+          targetPubKey = data.providerPubKey;
+        }
+        if (targetPubKey.isEmpty) continue;
+        bool isMe = targetPubKey.length == myPubKey.length;
         if (isMe) {
           for (int i = 0; i < myPubKey.length; i++) {
-            if (reqPubKey[i] != myPubKey[i]) { isMe = false; break; }
+            if (targetPubKey[i] != myPubKey[i]) { isMe = false; break; }
           }
         }
         if (!isMe) continue;
@@ -421,9 +438,12 @@ class _MainTabControllerState extends State<MainTabController> {
         _alertedEventIds.add(eventId);
         if (!mounted) return;
 
+        final msg = eventType == 2
+            ? '有人願意提供你需要的物資！點擊查看。'
+            : '有人需要你的物資！點擊查看。';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('有人願意提供你需要的物資！點擊查看媒合結果。'),
+            content: Text(msg),
             backgroundColor: Colors.green[700],
             duration: const Duration(seconds: 8),
             action: SnackBarAction(

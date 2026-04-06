@@ -156,7 +156,7 @@ class MatchService {
           urgency: req.urgency,
           fulfillment: fulfillment,
           distanceNorm: distNorm,
-          trustNorm: req.identityLevel / 3.0,
+          trustNorm: (req.identityLevel / 3.0).clamp(0.0, 1.0),
         );
 
         final reqDesc = req.note.isNotEmpty ? req.note : req.resourceType;
@@ -217,8 +217,14 @@ class MatchService {
   // ── 行動模式相容性 ────────────────────────────────────────────
   /// PICKUP + CAN_GO = ✅  DELIVER + CAN_GO = ✅  DELIVER + NEED_DELIVER = ✅
   /// PICKUP + NEED_DELIVER = ❌
-  static bool mobilityCompatible(String deliveryMode, String mobilityMode) {
-    return !(deliveryMode == 'PICKUP' && mobilityMode == 'NEED_DELIVER');
+  static bool mobilityCompatible(String supplyMode, String demandMode) {
+    // DROP_OFF only compatible with DROP_OFF
+    if (supplyMode == 'DROP_OFF' || demandMode == 'DROP_OFF') {
+      return supplyMode == 'DROP_OFF' && demandMode == 'DROP_OFF';
+    }
+    // PICKUP + NEED_DELIVER is the only incompatible pair
+    if (supplyMode == 'PICKUP' && demandMode == 'NEED_DELIVER') return false;
+    return true;
   }
 
   // ── 評分公式 ──────────────────────────────────────────────────

@@ -5,35 +5,54 @@ import '../mesh/event_manager.dart';
 import '../crypto/identity_manager.dart';
 import '../proto/mesh_protocol.pb.dart' as pb;
 import 'location_service.dart';
+import 'negotiation_manager.dart';
+import 'negotiation_repo.dart';
 
 /// 媒合相關資料查詢 (Repository 層)
 /// 負責 DB 讀取和 Protobuf 解碼，不含業務邏輯
+/// 使用 Match_Negotiations 取代舊 Match_Sessions
 class MatchRepository {
   final _db = DatabaseHelper();
   final _identity = IdentityManager();
   final _eventManager = EventManager();
+  final _negotiationRepo = NegotiationRepo();
+  final _negotiationManager = NegotiationManager();
 
   /// 查詢所有可用的物資供給 (已解碼)
+  /// 從 Materials_State 讀取 total_qty, delivery_mode
+  /// 狀態篩選: AVAILABLE 或 DEPLETED
   Future<List<DecodedSupply>> getAvailableSupplies() async {
-    final raw = await _eventManager.getAvailableSupplies();
-    final results = <DecodedSupply>[];
+    final db = await _db.database;
+    final rows = await db.query(
+      'Materials_State',
+      where: "status IN ('AVAILABLE', 'DEPLETED')",
+      orderBy: 'hlc_timestamp DESC',
+    );
 
-    for (final row in raw) {
+    final results = <DecodedSupply>[];
+    for (final row in rows) {
       final payload = row['payload'] as Uint8List?;
       if (payload == null) continue;
+
+      final resourceId = row['resource_id'] as String;
+      final totalQty = (row['total_qty'] as num?)?.toDouble() ?? 0.0;
+      final deliveryMode = (row['delivery_mode'] as String?) ?? 'PICKUP';
+
       try {
         final rd = pb.ResourceData.fromBuffer(payload);
+        final availableQty =
+            await _negotiationRepo.computeAvailableQty(resourceId);
+
         results.add(DecodedSupply(
-          resourceId: rd.resourceId,
+          resourceId: resourceId,
           resourceType: rd.resourceType,
-          quantity: rd.quantity,
-          deliveryMode:
-              (rd.description == 'PICKUP' || rd.description == 'DELIVER')
-                  ? rd.description
-                  : 'PICKUP',
+          quantity: totalQty > 0 ? totalQty : rd.quantity,
+          availableQty: availableQty,
+          deliveryMode: deliveryMode,
           lat: rd.lat != 0 ? rd.lat : null,
           lng: rd.lng != 0 ? rd.lng : null,
           maxRangeMeters: rd.maxRangeMeters,
+          unit: rd.unit.isNotEmpty ? rd.unit : '份',
         ));
       } catch (e) {
         // 無法解碼 protobuf，跳過
@@ -44,35 +63,62 @@ class MatchRepository {
   }
 
   /// 查詢所有物資需求 (已解碼)
+  /// 從 Requests_State 讀取 quantity_needed, mobility_mode, note
+  /// 狀態篩選: OPEN 或 MATCHED
   Future<List<DecodedRequest>> getRequests({int limit = 50}) async {
     final db = await _db.database;
-    final rows = await db.query(
-      'Event_Logs',
-      where: 'event_type = ?',
-      whereArgs: [EventType.requestBroadcast],
-      orderBy: 'hlc_timestamp DESC',
-      limit: limit,
-    );
+    final rows = await db.rawQuery('''
+      SELECT r.request_id, r.event_id, r.sender_pub_key, r.status,
+             r.hlc_timestamp, r.quantity_needed, r.mobility_mode, r.note,
+             r.payload, e.urgency, e.identity_level
+      FROM Requests_State r
+      LEFT JOIN Event_Logs e ON r.event_id = e.event_id
+      WHERE r.status IN ('OPEN', 'MATCHED')
+      ORDER BY r.hlc_timestamp DESC
+      LIMIT ?
+    ''', [limit]);
 
     final results = <DecodedRequest>[];
     for (final row in rows) {
       final payload = row['payload'] as Uint8List?;
       if (payload == null) continue;
 
+      final requestId = (row['request_id'] as String?) ?? '';
+      final stateQty = (row['quantity_needed'] as num?)?.toDouble();
+      final stateMobility = row['mobility_mode'] as String?;
+      final stateNote = row['note'] as String?;
+
       try {
         final rd = pb.RequestData.fromBuffer(payload);
         if (rd.resourceType.isEmpty) continue;
 
-        final descParts = rd.description.split('|');
-        final mode = descParts.isNotEmpty ? descParts[0] : 'CAN_GO';
-        final note = descParts.length > 1 ? descParts.sublist(1).join('|') : '';
+        // 優先使用 Requests_State 欄位，fallback 到 description 解析
+        String mobilityMode;
+        String note;
+        if (stateMobility != null && stateMobility.isNotEmpty) {
+          mobilityMode = stateMobility;
+        } else {
+          final descParts = rd.description.split('|');
+          mobilityMode = descParts.isNotEmpty ? descParts[0] : 'CAN_GO';
+        }
+        if (stateNote != null && stateNote.isNotEmpty) {
+          note = stateNote;
+        } else {
+          final descParts = rd.description.split('|');
+          note = descParts.length > 1 ? descParts.sublist(1).join('|') : '';
+        }
+
+        final quantityNeeded = stateQty ?? rd.quantityNeeded;
+        final remainingNeed =
+            await _negotiationRepo.computeRemainingNeed(requestId);
 
         results.add(DecodedRequest(
           eventId: (row['event_id'] as String?) ?? '',
-          requestId: rd.requestId,
+          requestId: requestId,
           resourceType: rd.resourceType,
-          quantityNeeded: rd.quantityNeeded,
-          mobilityMode: mode,
+          quantityNeeded: quantityNeeded,
+          remainingNeed: remainingNeed,
+          mobilityMode: mobilityMode,
           note: note,
           urgency: (row['urgency'] as int?) ?? 0,
           identityLevel: (row['identity_level'] as int?) ?? 0,
@@ -81,6 +127,7 @@ class MatchRepository {
           lng: rd.lng != 0 ? rd.lng : null,
           maxRangeMeters: rd.maxRangeMeters,
           senderPubKey: (row['sender_pub_key'] as Uint8List?)?.toList(),
+          status: (row['status'] as String?) ?? 'OPEN',
         ));
       } catch (_) {
         // 無法解碼或不是 RequestData，跳過
@@ -90,112 +137,179 @@ class MatchRepository {
     return results;
   }
 
-  /// 查詢自己的發布 (供給 + 需求)
+  /// 查詢自己的發布 (供給 + 需求)，含協商狀態
   Future<List<MyPublish>> getMyPublishes({int limit = 20}) async {
     final pubKeyBytes = await _identity.getPublicKeyBytes();
     final myPubKey = Uint8List.fromList(pubKeyBytes);
     final db = await _db.database;
 
-    final rows = await db.query(
-      'Event_Logs',
-      where: 'sender_pub_key = ? AND (event_type = ? OR event_type = ?)',
-      whereArgs: [
-        myPubKey,
-        EventType.resourceRegister,
-        EventType.requestBroadcast
-      ],
-      orderBy: 'hlc_timestamp DESC',
-      limit: limit,
-    );
-
     final results = <MyPublish>[];
-    for (final row in rows) {
-      final eventType = (row['event_type'] as int?) ?? 0;
+
+    // ── 供給部分：從 Materials_State JOIN Event_Logs ──
+    final supplyRows = await db.rawQuery('''
+      SELECT m.resource_id, m.status AS mat_status, m.total_qty,
+             m.delivery_mode, m.payload, e.hlc_timestamp, e.event_id
+      FROM Materials_State m
+      JOIN Event_Logs e ON m.payload = e.payload AND e.event_type = ?
+      WHERE e.sender_pub_key = ?
+      ORDER BY e.hlc_timestamp DESC
+      LIMIT ?
+    ''', [EventType.resourceRegister, myPubKey, limit]);
+
+    for (final row in supplyRows) {
       final payload = row['payload'] as Uint8List?;
-      final hlcTs = (row['hlc_timestamp'] as int?) ?? 0;
-      final eventId = (row['event_id'] as String?) ?? '';
-      final isSupply = eventType == EventType.resourceRegister;
+      if (payload == null) continue;
 
-      String title = '';
-      String subtitle = '';
+      final resourceId = row['resource_id'] as String;
+      final matStatus = (row['mat_status'] as String?) ?? 'AVAILABLE';
 
-      if (isSupply && payload != null) {
-        try {
-          final rd = pb.ResourceData.fromBuffer(payload);
-          title = rd.resourceType; // 由 UI 層用 getReadableName 轉換
-          subtitle = '${rd.quantity.toInt()} 份';
-          subtitle += rd.description == 'DELIVER' ? ' · 可協助送達' : ' · 需求者自取';
+      // 跳過已消耗的
+      if (matStatus == 'CONSUMED' || matStatus == 'CANCELLED') continue;
 
-          // 檢查是否已鎖定/消耗
-          final matState = await db.query('Materials_State',
-              where: 'resource_id = ?', whereArgs: [rd.resourceId]);
-          if (matState.isNotEmpty) {
-            final status = matState.first['status'] as String?;
-            if (status == 'LOCKED' || status == 'CONSUMED') continue;
-          }
-        } catch (_) {
-          title = 'UNKNOWN_SUPPLY';
+      try {
+        final rd = pb.ResourceData.fromBuffer(payload);
+        final totalQty = (row['total_qty'] as num?)?.toDouble() ?? rd.quantity;
+        final deliveryMode =
+            (row['delivery_mode'] as String?) ?? 'PICKUP';
+
+        String title = rd.resourceType;
+        String subtitle = '${totalQty.toInt()} 份';
+        subtitle +=
+            deliveryMode == 'DELIVER' ? ' · 可協助送達' : ' · 需求者自取';
+
+        // 查詢協商數量
+        final negotiations = await _negotiationRepo.getByResource(
+          resourceId,
+          statuses: ['PENDING', 'ACCEPTED', 'NAVIGATING'],
+        );
+        if (negotiations.isNotEmpty) {
+          subtitle += ' · ${negotiations.length} 筆協商中';
         }
-      } else if (!isSupply && payload != null) {
-        try {
-          final rd = pb.RequestData.fromBuffer(payload);
-          if (rd.resourceType.isEmpty) continue;
-          title = rd.resourceType;
-          subtitle = '${rd.quantityNeeded.toInt()} 份';
-          final parts = rd.description.split('|');
-          final mode = parts.isNotEmpty ? parts[0] : 'CAN_GO';
-          subtitle += mode == 'NEED_DELIVER' ? ' · 需協助送達' : ' · 可自行前往';
-        } catch (_) {
-          continue;
-        }
+
+        results.add(MyPublish(
+          eventId: (row['event_id'] as String?) ?? '',
+          isSupply: true,
+          title: title,
+          subtitle: subtitle,
+          timestamp: (row['hlc_timestamp'] as int?) ?? 0,
+          status: matStatus,
+        ));
+      } catch (_) {
+        continue;
       }
+    }
 
-      results.add(MyPublish(
-        eventId: eventId,
-        isSupply: isSupply,
-        title: title,
-        subtitle: subtitle,
-        timestamp: hlcTs,
-      ));
+    // ── 需求部分：從 Requests_State ──
+    final requestRows = await db.rawQuery('''
+      SELECT r.request_id, r.event_id, r.status, r.hlc_timestamp,
+             r.quantity_needed, r.mobility_mode, r.note, r.payload
+      FROM Requests_State r
+      WHERE r.sender_pub_key = ?
+      ORDER BY r.hlc_timestamp DESC
+      LIMIT ?
+    ''', [myPubKey, limit]);
+
+    for (final row in requestRows) {
+      final payload = row['payload'] as Uint8List?;
+      if (payload == null) continue;
+
+      final requestId = (row['request_id'] as String?) ?? '';
+      final reqStatus = (row['status'] as String?) ?? 'OPEN';
+
+      // 跳過已取消/已滿足的
+      if (reqStatus == 'CANCELLED' || reqStatus == 'FULFILLED') continue;
+
+      try {
+        final rd = pb.RequestData.fromBuffer(payload);
+        if (rd.resourceType.isEmpty) continue;
+
+        final qtyNeeded =
+            (row['quantity_needed'] as num?)?.toDouble() ?? rd.quantityNeeded;
+        final mobilityMode =
+            (row['mobility_mode'] as String?) ??
+            (rd.description.split('|').isNotEmpty
+                ? rd.description.split('|')[0]
+                : 'CAN_GO');
+
+        String title = rd.resourceType;
+        String subtitle = '${qtyNeeded.toInt()} 份';
+        subtitle +=
+            mobilityMode == 'NEED_DELIVER' ? ' · 需協助送達' : ' · 可自行前往';
+
+        // 查詢協商數量
+        final negotiations = await _negotiationRepo.getByRequest(
+          requestId,
+          statuses: ['PENDING', 'ACCEPTED', 'NAVIGATING'],
+        );
+        if (negotiations.isNotEmpty) {
+          subtitle += ' · ${negotiations.length} 筆協商中';
+        }
+
+        results.add(MyPublish(
+          eventId: (row['event_id'] as String?) ?? '',
+          isSupply: false,
+          title: title,
+          subtitle: subtitle,
+          timestamp: (row['hlc_timestamp'] as int?) ?? 0,
+          status: reqStatus,
+        ));
+      } catch (_) {
+        continue;
+      }
+    }
+
+    // 按時間排序
+    results.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    if (results.length > limit) {
+      return results.sublist(0, limit);
     }
     return results;
   }
 
   /// 查詢別人的可用物資供給（需求者反向媒合用）
+  /// 使用 Materials_State 的 total_qty, delivery_mode 欄位
   Future<List<DecodedSupply>> getOthersSupplies() async {
     final pubKeyBytes = await _identity.getPublicKeyBytes();
     final myPubKey = Uint8List.fromList(pubKeyBytes);
     final db = await _db.database;
 
-    // 查詢 Materials_State AVAILABLE 且 sender 不是自己的
     final rows = await db.rawQuery('''
-      SELECT m.resource_id, m.payload, e.sender_pub_key
+      SELECT m.resource_id, m.total_qty, m.delivery_mode, m.payload,
+             e.sender_pub_key
       FROM Materials_State m
-      JOIN Event_Logs e ON m.payload = e.payload AND e.event_type = 0
+      JOIN Event_Logs e ON m.payload = e.payload AND e.event_type = ?
       WHERE m.status = 'AVAILABLE' AND e.sender_pub_key != ?
-    ''', [myPubKey]);
+    ''', [EventType.resourceRegister, myPubKey]);
 
     final results = <DecodedSupply>[];
     final seenIds = <String>{};
     for (final row in rows) {
       final payload = row['payload'] as Uint8List?;
       if (payload == null) continue;
+
+      final resourceId = (row['resource_id'] as String?) ?? '';
+      if (seenIds.contains(resourceId)) continue;
+      seenIds.add(resourceId);
+
       try {
         final rd = pb.ResourceData.fromBuffer(payload);
-        if (seenIds.contains(rd.resourceId)) continue;
-        seenIds.add(rd.resourceId);
+        final totalQty = (row['total_qty'] as num?)?.toDouble() ?? rd.quantity;
+        final deliveryMode =
+            (row['delivery_mode'] as String?) ?? 'PICKUP';
+        final availableQty =
+            await _negotiationRepo.computeAvailableQty(resourceId);
+
         results.add(DecodedSupply(
-          resourceId: rd.resourceId,
+          resourceId: resourceId,
           resourceType: rd.resourceType,
-          quantity: rd.quantity,
-          deliveryMode:
-              (rd.description == 'PICKUP' || rd.description == 'DELIVER')
-                  ? rd.description
-                  : 'PICKUP',
+          quantity: totalQty,
+          availableQty: availableQty,
+          deliveryMode: deliveryMode,
           lat: rd.lat != 0 ? rd.lat : null,
           lng: rd.lng != 0 ? rd.lng : null,
           maxRangeMeters: rd.maxRangeMeters,
           senderPubKey: (row['sender_pub_key'] as Uint8List?)?.toList(),
+          unit: rd.unit.isNotEmpty ? rd.unit : '份',
         ));
       } catch (_) {
         continue;
@@ -205,35 +319,64 @@ class MatchRepository {
   }
 
   /// 查詢我自己發布的需求（反向媒合用）
+  /// 直接從 Requests_State 讀取新欄位
   Future<List<DecodedRequest>> getMyRequests({int limit = 50}) async {
     final pubKeyBytes = await _identity.getPublicKeyBytes();
     final myPubKey = Uint8List.fromList(pubKeyBytes);
     final db = await _db.database;
 
-    final rows = await db.query(
-      'Event_Logs',
-      where: 'sender_pub_key = ? AND event_type = ?',
-      whereArgs: [myPubKey, EventType.requestBroadcast],
-      orderBy: 'hlc_timestamp DESC',
-      limit: limit,
-    );
+    final rows = await db.rawQuery('''
+      SELECT r.request_id, r.event_id, r.sender_pub_key, r.status,
+             r.hlc_timestamp, r.quantity_needed, r.mobility_mode, r.note,
+             r.payload, e.urgency, e.identity_level
+      FROM Requests_State r
+      LEFT JOIN Event_Logs e ON r.event_id = e.event_id
+      WHERE r.sender_pub_key = ? AND r.status IN ('OPEN', 'MATCHED')
+      ORDER BY r.hlc_timestamp DESC
+      LIMIT ?
+    ''', [myPubKey, limit]);
 
     final results = <DecodedRequest>[];
     for (final row in rows) {
       final payload = row['payload'] as Uint8List?;
       if (payload == null) continue;
+
+      final requestId = (row['request_id'] as String?) ?? '';
+      final stateQty = (row['quantity_needed'] as num?)?.toDouble();
+      final stateMobility = row['mobility_mode'] as String?;
+      final stateNote = row['note'] as String?;
+
       try {
         final rd = pb.RequestData.fromBuffer(payload);
         if (rd.resourceType.isEmpty) continue;
-        final descParts = rd.description.split('|');
-        final mode = descParts.isNotEmpty ? descParts[0] : 'CAN_GO';
-        final note =
-            descParts.length > 1 ? descParts.sublist(1).join('|') : '';
+
+        // 優先使用 Requests_State 欄位，fallback 到 description 解析
+        String mobilityMode;
+        String note;
+        if (stateMobility != null && stateMobility.isNotEmpty) {
+          mobilityMode = stateMobility;
+        } else {
+          final descParts = rd.description.split('|');
+          mobilityMode = descParts.isNotEmpty ? descParts[0] : 'CAN_GO';
+        }
+        if (stateNote != null && stateNote.isNotEmpty) {
+          note = stateNote;
+        } else {
+          final descParts = rd.description.split('|');
+          note = descParts.length > 1 ? descParts.sublist(1).join('|') : '';
+        }
+
+        final quantityNeeded = stateQty ?? rd.quantityNeeded;
+        final remainingNeed =
+            await _negotiationRepo.computeRemainingNeed(requestId);
+
         results.add(DecodedRequest(
           eventId: (row['event_id'] as String?) ?? '',
+          requestId: requestId,
           resourceType: rd.resourceType,
-          quantityNeeded: rd.quantityNeeded,
-          mobilityMode: mode,
+          quantityNeeded: quantityNeeded,
+          remainingNeed: remainingNeed,
+          mobilityMode: mobilityMode,
           note: note,
           urgency: (row['urgency'] as int?) ?? 0,
           identityLevel: (row['identity_level'] as int?) ?? 0,
@@ -241,6 +384,8 @@ class MatchRepository {
           lat: rd.lat != 0 ? rd.lat : null,
           lng: rd.lng != 0 ? rd.lng : null,
           maxRangeMeters: rd.maxRangeMeters,
+          senderPubKey: (row['sender_pub_key'] as Uint8List?)?.toList(),
+          status: (row['status'] as String?) ?? 'OPEN',
         ));
       } catch (_) {
         continue;
@@ -256,6 +401,7 @@ class MatchRepository {
   /// - event_type = RESOURCE_REGISTER 或 REQUEST_BROADCAST
   /// - 24 小時內
   /// - origin_lat/origin_lng 與我同里（物資）或同鄉鎮（SOS）
+  /// - 排除已消耗/已取消的物資 (透過 Materials_State/Requests_State)
   Future<List<CommunityItem>> getCommunityItems({int limit = 50}) async {
     final pubKeyBytes = await _identity.getPublicKeyBytes();
     final myPubKey = Uint8List.fromList(pubKeyBytes);
@@ -277,15 +423,27 @@ class MatchRepository {
       limit: limit,
     );
 
-    // 取得已配對的 resource_id，從社群動態排除
-    final matchedResourceIds = <String>{};
+    // 取得已消耗/取消的 resource_id，從社群動態排除
+    final excludedResourceIds = <String>{};
     try {
-      final matchedRows = await db.query('Materials_State',
+      final excludedRows = await db.query('Materials_State',
           columns: ['resource_id'],
-          where: "status IN ('PENDING', 'LOCKED', 'CONSUMED')");
-      for (final r in matchedRows) {
+          where: "status IN ('CONSUMED', 'CANCELLED')");
+      for (final r in excludedRows) {
         final rid = r['resource_id'] as String?;
-        if (rid != null) matchedResourceIds.add(rid);
+        if (rid != null) excludedResourceIds.add(rid);
+      }
+    } catch (_) {}
+
+    // 取得已取消/已滿足的 request_id
+    final excludedRequestIds = <String>{};
+    try {
+      final excludedReqs = await db.query('Requests_State',
+          columns: ['request_id'],
+          where: "status IN ('CANCELLED', 'FULFILLED')");
+      for (final r in excludedReqs) {
+        final rid = r['request_id'] as String?;
+        if (rid != null) excludedRequestIds.add(rid);
       }
     } catch (_) {}
 
@@ -322,8 +480,8 @@ class MatchRepository {
       if (isSupply) {
         try {
           final rd = pb.ResourceData.fromBuffer(payload);
-          // 排除已配對的物資
-          if (matchedResourceIds.contains(rd.resourceId)) continue;
+          // 排除已消耗/已取消的物資
+          if (excludedResourceIds.contains(rd.resourceId)) continue;
           results.add(CommunityItem(
             eventId: (row['event_id'] as String?) ?? '',
             isSupply: true,
@@ -343,6 +501,9 @@ class MatchRepository {
         try {
           final rd = pb.RequestData.fromBuffer(payload);
           if (rd.resourceType.isEmpty) continue;
+          // 排除已取消/已滿足的需求
+          if (excludedRequestIds.contains(rd.requestId)) continue;
+
           final descParts = rd.description.split('|');
           final note =
               descParts.length > 1 ? descParts.sublist(1).join('|') : '';
@@ -374,29 +535,34 @@ class DecodedSupply {
   final String resourceId;
   final String resourceType;
   final double quantity;
+  final double availableQty;
   final String deliveryMode;
   final double? lat;
   final double? lng;
   final double maxRangeMeters;
-  final List<int>? senderPubKey; // 供給者公鑰
+  final List<int>? senderPubKey;
+  final String unit;
 
   const DecodedSupply({
     required this.resourceId,
     required this.resourceType,
     required this.quantity,
+    required this.availableQty,
     required this.deliveryMode,
     this.lat,
     this.lng,
     this.maxRangeMeters = 20000,
     this.senderPubKey,
+    this.unit = '份',
   });
 }
 
 class DecodedRequest {
   final String eventId;
-  final String requestId; // RequestData.requestId
+  final String requestId;
   final String resourceType;
   final double quantityNeeded;
+  final double remainingNeed;
   final String mobilityMode;
   final String note;
   final int urgency;
@@ -405,13 +571,15 @@ class DecodedRequest {
   final double? lat;
   final double? lng;
   final double maxRangeMeters;
-  final List<int>? senderPubKey; // 需求者公鑰
+  final List<int>? senderPubKey;
+  final String status;
 
   const DecodedRequest({
     required this.eventId,
     this.requestId = '',
     required this.resourceType,
     required this.quantityNeeded,
+    this.remainingNeed = 0.0,
     required this.mobilityMode,
     required this.note,
     required this.urgency,
@@ -421,6 +589,7 @@ class DecodedRequest {
     this.lng,
     this.maxRangeMeters = 20000,
     this.senderPubKey,
+    this.status = 'OPEN',
   });
 }
 
@@ -430,6 +599,7 @@ class MyPublish {
   final String title;
   final String subtitle;
   final int timestamp;
+  final String status;
 
   const MyPublish({
     required this.eventId,
@@ -437,6 +607,7 @@ class MyPublish {
     required this.title,
     required this.subtitle,
     required this.timestamp,
+    this.status = '',
   });
 }
 

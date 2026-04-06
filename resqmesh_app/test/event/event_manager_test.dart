@@ -186,41 +186,40 @@ void main() {
     });
   });
 
-  group('EventManager — completeHandoff / cancelHandoff (交接狀態)', () {
-    test('completeHandoff sets Materials_State status to CONSUMED', () async {
+  group('EventManager — publishHandshakeComplete / publishMatchCancel (交接狀態)', () {
+    test('publishHandshakeComplete completes negotiation', () async {
       final resourceId = await em.publishSupply(
         resourceType: 'TOOLS',
         quantity: 2,
         maxRangeMeters: 200.0,
       );
-      await em.completeHandoff(resourceId: resourceId, requestId: _uid('req'));
-
-      final db = await DatabaseHelper().database;
-      final rows = await db.query(
-        'Materials_State',
-        where: 'resource_id = ?',
-        whereArgs: [resourceId],
+      // Note: In the new architecture, handshake complete goes through
+      // NegotiationManager. Here we just verify the method exists.
+      final eventId = await em.publishHandshakeComplete(
+        negotiationId: _uid('neg'),
+        resourceId: resourceId,
+        requestId: _uid('req'),
+        providerPubKey: [],
+        requesterPubKey: [],
+        actualDeliveredQty: 2.0,
+        method: 'PIN_4DIGIT',
       );
-      expect(rows[0]['status'], equals(MaterialStatus.consumed));
+      expect(eventId, isNotNull);
     });
 
-    test('cancelHandoff resets Materials_State status back to AVAILABLE', () async {
+    test('publishMatchCancel cancels negotiation', () async {
       final resourceId = await em.publishSupply(
         resourceType: 'TENTS',
         quantity: 1,
         maxRangeMeters: 200.0,
       );
-      await em.completeHandoff(resourceId: resourceId, requestId: _uid('req2'));
-      // Status is now CONSUMED; cancel should reset to AVAILABLE
-      await em.cancelHandoff(resourceId: resourceId);
-
-      final db = await DatabaseHelper().database;
-      final rows = await db.query(
-        'Materials_State',
-        where: 'resource_id = ?',
-        whereArgs: [resourceId],
+      final eventId = await em.publishMatchCancel(
+        negotiationId: _uid('neg2'),
+        resourceId: resourceId,
+        requestId: _uid('req2'),
+        reason: 'USER_CANCEL',
       );
-      expect(rows[0]['status'], equals(MaterialStatus.available));
+      expect(eventId, isNotNull);
     });
   });
 

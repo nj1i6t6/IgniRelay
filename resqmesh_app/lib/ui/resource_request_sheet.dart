@@ -262,104 +262,32 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
             ),
             const SizedBox(height: 20),
 
-            // ── 行動模式 ──
-            const Text('您的行動能力',
+            // ── 交接方式 ──
+            const Text('交接方式',
                 style: TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _mobilityMode = 'CAN_GO'),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: BoxDecoration(
-                        color: _mobilityMode == 'CAN_GO'
-                            ? Colors.green.withValues(alpha: 0.25)
-                            : const Color(0xFF1a1a2e),
-                        border: Border.all(
-                            color: _mobilityMode == 'CAN_GO'
-                                ? Colors.greenAccent
-                                : Colors.white24),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        children: [
-                          Icon(Icons.directions_walk,
-                              color: _mobilityMode == 'CAN_GO'
-                                  ? Colors.greenAccent
-                                  : Colors.white54,
-                              size: 28),
-                          const SizedBox(height: 6),
-                          Text('可自行前往',
-                              style: TextStyle(
-                                color: _mobilityMode == 'CAN_GO'
-                                    ? Colors.greenAccent
-                                    : Colors.white54,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              )),
-                          const SizedBox(height: 2),
-                          Text('我可以移動去取物資',
-                              style: TextStyle(
-                                color: _mobilityMode == 'CAN_GO'
-                                    ? Colors.white54
-                                    : Colors.white30,
-                                fontSize: 10,
-                              )),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _mobilityMode = 'NEED_DELIVER'),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: BoxDecoration(
-                        color: _mobilityMode == 'NEED_DELIVER'
-                            ? Colors.orange.withValues(alpha: 0.25)
-                            : const Color(0xFF1a1a2e),
-                        border: Border.all(
-                            color: _mobilityMode == 'NEED_DELIVER'
-                                ? Colors.orange
-                                : Colors.white24),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        children: [
-                          Icon(Icons.accessibility_new,
-                              color: _mobilityMode == 'NEED_DELIVER'
-                                  ? Colors.orange
-                                  : Colors.white54,
-                              size: 28),
-                          const SizedBox(height: 6),
-                          Text('需協助送達',
-                              style: TextStyle(
-                                color: _mobilityMode == 'NEED_DELIVER'
-                                    ? Colors.orange
-                                    : Colors.white54,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              )),
-                          const SizedBox(height: 2),
-                          Text('無法移動，需要人送來',
-                              style: TextStyle(
-                                color: _mobilityMode == 'NEED_DELIVER'
-                                    ? Colors.white54
-                                    : Colors.white30,
-                                fontSize: 10,
-                              )),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            _buildMobilityOption(
+              mode: 'CAN_GO',
+              icon: Icons.directions_walk,
+              label: '我可以過去拿',
+              subtitle: '我可以移動去取物資',
+              activeColor: Colors.greenAccent,
+            ),
+            const SizedBox(height: 8),
+            _buildMobilityOption(
+              mode: 'NEED_DELIVER',
+              icon: Icons.accessibility_new,
+              label: '需要送過來',
+              subtitle: '無法移動，需要人送來',
+              activeColor: Colors.orange,
+            ),
+            const SizedBox(height: 8),
+            _buildMobilityOption(
+              mode: 'DROP_OFF',
+              icon: Icons.inventory_2,
+              label: '無接觸交接',
+              subtitle: '供給方放置物資，我自行取回',
+              activeColor: Colors.amber,
             ),
             const SizedBox(height: 20),
 
@@ -425,6 +353,63 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobilityOption({
+    required String mode,
+    required IconData icon,
+    required String label,
+    required String subtitle,
+    required Color activeColor,
+  }) {
+    final selected = _mobilityMode == mode;
+    return GestureDetector(
+      onTap: () => setState(() => _mobilityMode = mode),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected
+              ? activeColor.withValues(alpha: 0.15)
+              : const Color(0xFF1a1a2e),
+          border: Border.all(
+              color: selected ? activeColor : Colors.white24),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: selected ? activeColor : Colors.white38,
+              size: 22,
+            ),
+            const SizedBox(width: 12),
+            Icon(icon,
+                color: selected ? activeColor : Colors.white54, size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: TextStyle(
+                        color: selected ? activeColor : Colors.white54,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      )),
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      style: TextStyle(
+                        color: selected ? Colors.white54 : Colors.white30,
+                        fontSize: 11,
+                      )),
+                ],
               ),
             ),
           ],

@@ -7,37 +7,51 @@ import 'package:uuid/uuid.dart';
 import '../crdt/hlc.dart';
 import '../crypto/identity_manager.dart';
 import '../crypto/signer.dart';
+
 import '../db/database_helper.dart';
 import '../models/medical_card.dart';
 import '../proto/mesh_protocol.pb.dart' as pb;
-import 'mesh_event_handler.dart';
+import '../services/negotiation_manager.dart';
 import 'triage_queue.dart';
 
 // 事件類型常數（對應 Protobuf EventType enum）
 class EventType {
+  // ── Broadcast (unchanged) ──
   static const int resourceRegister = 0;
   static const int requestBroadcast = 1;
-  static const int matchIntent = 2;
-  static const int physicalHandshake = 3;
-  static const int hazardMarker = 4;
-  static const int quarantineVote = 5;
-  static const int matchCancel = 6;
-  static const int fireAlarmRf = 7;
-  static const int matchConfirm = 8;
-  static const int matchReject = 9;
-  static const int matchInquiry = 10;
-  static const int matchAvailable = 11;
-  static const int matchGone = 12;
-  static const int chatMessage = 13;
+  // ── Match negotiation (redefined) ──
+  static const int matchOffer   = 2;       // was matchIntent
+  static const int physicalHandshake = 3;  // preserved
+  static const int matchAccept  = 8;       // was matchConfirm
+  static const int matchDecline = 9;       // was matchReject
+  static const int matchCancel  = 6;       // preserved
+  // ── New slots ──
+  static const int matchRequest      = 15;
+  static const int handshakeComplete = 16;
+  static const int stationClaim      = 17;
+  static const int stationResponse   = 18;
+  // ── Navigation (unchanged) ──
   static const int locationUpdate = 14;
+  // ── Non-match (unchanged) ──
+  static const int hazardMarker    = 4;
+  static const int quarantineVote  = 5;
+  static const int fireAlarmRf     = 7;
+  static const int chatMessage     = 13;
+  // ── Deprecated (ignored but don't crash) ──
+  // slot 10 (matchInquiry), 11 (matchAvailable), 12 (matchGone)
+
+  // Backward compat aliases
+  static const int matchIntent = matchOffer;
+  static const int matchConfirm = matchAccept;
+  static const int matchReject = matchDecline;
 }
 
 // 物資狀態常數
 class MaterialStatus {
   static const String available = 'AVAILABLE';
-  static const String pending = 'PENDING';
-  static const String locked = 'LOCKED';
+  static const String depleted = 'DEPLETED';
   static const String consumed = 'CONSUMED';
+  static const String cancelled = 'CANCELLED';
 }
 
 /// 速率限制例外
@@ -243,7 +257,7 @@ class EventManager {
     final resourceData = pb.ResourceData()
       ..resourceId = resourceId
       ..resourceType = resourceType
-      ..description = deliveryMode
+      ..deliveryMode = deliveryMode
       ..quantity = quantity.toDouble()
       ..unit = unit
       ..maxRangeMeters = maxRangeMeters.toDouble();
@@ -258,6 +272,8 @@ class EventManager {
     await db.insert('Materials_State', {
       'resource_id': resourceId,
       'status': MaterialStatus.available,
+      'total_qty': quantity.toDouble(),
+      'delivery_mode': deliveryMode,
       'hlc_timestamp': hlc.timestamp,
       'hlc_counter': hlc.counter,
       'matched_request_id': null,
@@ -307,11 +323,12 @@ class EventManager {
     final hlc = HLC.now();
     final pubKeyBytes = await _identity.getPublicKeyBytes();
 
-    // 使用 RequestData protobuf（mobilityMode 編碼在 description 前綴）
+    // 使用 RequestData protobuf（含 mobilityMode 和 note 欄位）
     final requestData = pb.RequestData()
       ..requestId = eventId
       ..resourceType = resourceType
-      ..description = '$mobilityMode|$note'
+      ..mobilityMode = mobilityMode
+      ..note = note
       ..quantityNeeded = quantity.toDouble()
       ..urgency = pb.UrgencyLevel.RESOURCE
       ..maxRangeMeters = maxRangeMeters.toDouble();
@@ -322,6 +339,20 @@ class EventManager {
     final signature = await Signer.signPayload(payload);
 
     final db = await _db.database;
+
+    // 寫入 Requests_State（本地也寫入）
+    await db.insert('Requests_State', {
+      'request_id': eventId,
+      'sender_pub_key': Uint8List.fromList(pubKeyBytes),
+      'resource_type': resourceType,
+      'quantity_needed': quantity.toDouble(),
+      'mobility_mode': mobilityMode,
+      'note': note,
+      'status': 'OPEN',
+      'hlc_timestamp': hlc.timestamp,
+      'hlc_counter': hlc.counter,
+    });
+
     await db.insert('Event_Logs', {
       'event_id': eventId,
       'sender_pub_key': Uint8List.fromList(pubKeyBytes),
@@ -477,313 +508,224 @@ class EventManager {
   }
 
   // ── 超時自動釋放配對 ─────────────────────────────────────────
-  /// PENDING 超過 30 分鐘 → AVAILABLE，LOCKED 超過 4 小時 → AVAILABLE
   Future<void> expireStaleMatches() async {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final db = await _db.database;
-
-    // PENDING 超過 30 分鐘 → 回到 AVAILABLE
-    await db.update(
-      'Materials_State',
-      {
-        'status': MaterialStatus.available,
-        'matched_request_id': null,
-        'match_expires_at': null,
-      },
-      where: "status = 'PENDING' AND match_expires_at IS NOT NULL AND match_expires_at < ?",
-      whereArgs: [now],
-    );
-
-    // LOCKED 超過 4 小時 → 回到 AVAILABLE
-    await db.update(
-      'Materials_State',
-      {
-        'status': MaterialStatus.available,
-        'matched_request_id': null,
-        'match_expires_at': null,
-      },
-      where: "status = 'LOCKED' AND match_expires_at IS NOT NULL AND match_expires_at < ?",
-      whereArgs: [now],
-    );
+    await NegotiationManager().expireStaleNegotiations();
   }
 
-  // ── 發布配對意向（鎖定 supply 為 PENDING）──────────────────────
-  Future<String> publishMatchIntent({
+  /// 供給方主動：發送 MATCH_OFFER（不鎖定物資）
+  Future<String?> publishMatchOffer({
     required String resourceId,
     required String requestId,
     required List<int> requesterPubKey,
+    required double offeredQty,
     required double matchScore,
   }) async {
-    final hlc = HLC.now();
-    final db = await _db.database;
+    final pubKey = await _identity.getPublicKeyBytes();
+    final negotiationId = _uuid.v4();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final expiresAt = now + 2700000; // 45 minutes
 
-    // 檢查 supply 是否仍為 AVAILABLE
-    final mat = await db.query('Materials_State',
-        where: 'resource_id = ? AND status = ?',
-        whereArgs: [resourceId, MaterialStatus.available]);
-    if (mat.isEmpty) throw Exception('Supply no longer available');
+    // Create negotiation via Application Layer
+    final created = await NegotiationManager().createNegotiation(
+      negotiationId: negotiationId,
+      resourceId: resourceId,
+      requestId: requestId,
+      initiatorRole: 'PROVIDER',
+      providerPubKey: pubKey,
+      requesterPubKey: requesterPubKey,
+      offeredQty: offeredQty,
+      requestedQty: 0,
+      expiresAt: expiresAt,
+      matchScore: matchScore,
+    );
+    if (!created) return null;
 
-    // 立刻改為 PENDING + 設定 30 分鐘超時
-    final expiresAt = DateTime.now().millisecondsSinceEpoch + (30 * 60 * 1000);
-    await db.update(
-      'Materials_State',
-      {
-        'status': MaterialStatus.pending,
-        'matched_request_id': requestId,
-        'match_expires_at': expiresAt,
-        'hlc_timestamp': hlc.timestamp,
-        'hlc_counter': hlc.counter,
-      },
-      where: 'resource_id = ?',
-      whereArgs: [resourceId],
+    final data = pb.MatchOfferData(
+      negotiationId: negotiationId,
+      resourceId: resourceId,
+      requestId: requestId,
+      providerPubKey: pubKey,
+      requesterPubKey: requesterPubKey,
+      offeredQty: offeredQty,
+      matchScore: matchScore,
+      expiresAt: fixnum.Int64(expiresAt),
     );
 
-    // 建立 MatchIntentData 並廣播
-    final pubKeyBytes = await _identity.getPublicKeyBytes();
-    final intentData = pb.MatchIntentData()
-      ..requestId = requestId
-      ..resourceId = resourceId
-      ..requesterPubKey = requesterPubKey
-      ..providerPubKey = pubKeyBytes
-      ..matchScore = matchScore;
-    final payload = Uint8List.fromList(intentData.writeToBuffer());
-    final signature = await Signer.signPayload(payload);
-
-    final eventId = _uuid.v4();
-    await db.insert('Event_Logs', {
-      'event_id': eventId,
-      'sender_pub_key': Uint8List.fromList(pubKeyBytes),
-      'identity_level': _identity.getIdentityLevel(),
-      'event_type': EventType.matchIntent,
-      'urgency': 1,
-      'hlc_timestamp': hlc.timestamp,
-      'hlc_counter': hlc.counter,
-      'ttl': 10,
-      'node_tier': 1,
-      'chunk_index': 0,
-      'total_chunks': 1,
-      'payload': payload,
-      'signature': Uint8List.fromList(signature),
-      'is_synced': 0,
-    });
-
-    _queue.enqueue(
-        MeshTask(eventId, 1, payload, eventType: EventType.matchIntent));
+    final payload = data.writeToBuffer();
+    final eventId = await _publishAndStore(
+      payload: payload,
+      eventType: EventType.matchOffer,
+      urgency: 1,
+      ttl: 5,
+    );
     return eventId;
   }
 
-  // ── 發布媒合確認（需求者 → 全網）────────────────────────────────
-  Future<String> publishMatchConfirm({
-    required String requestId,
+  /// 需求方主動：發送 MATCH_REQUEST
+  Future<String?> publishMatchRequest({
     required String resourceId,
-    required List<int> requesterPubKey,
+    required String requestId,
     required List<int> providerPubKey,
+    required double requestedQty,
   }) async {
-    final eventId = _uuid.v4();
-    final hlc = HLC.now();
-    final pubKeyBytes = await _identity.getPublicKeyBytes();
-
-    final confirmData = pb.MatchConfirmData()
-      ..requestId = requestId
-      ..resourceId = resourceId
-      ..requesterPubKey = requesterPubKey
-      ..providerPubKey = providerPubKey;
-    final payload = Uint8List.fromList(confirmData.writeToBuffer());
-    final signature = await Signer.signPayload(payload);
-
-    final db = await _db.database;
-    await db.insert('Event_Logs', {
-      'event_id': eventId,
-      'sender_pub_key': Uint8List.fromList(pubKeyBytes),
-      'identity_level': _identity.getIdentityLevel(),
-      'event_type': EventType.matchConfirm,
-      'urgency': 1,
-      'hlc_timestamp': hlc.timestamp,
-      'hlc_counter': hlc.counter,
-      'ttl': 10,
-      'node_tier': 1,
-      'chunk_index': 0,
-      'total_chunks': 1,
-      'payload': payload,
-      'signature': Uint8List.fromList(signature),
-      'is_synced': 0,
-    });
-
-    // 建立 Match_Session
-    final sessionId = '${resourceId}_$requestId';
+    final pubKey = await _identity.getPublicKeyBytes();
+    final negotiationId = _uuid.v4();
     final now = DateTime.now().millisecondsSinceEpoch;
-    try {
-      await db.insert('Match_Sessions', {
-        'session_id': sessionId,
-        'resource_id': resourceId,
-        'request_id': requestId,
-        'provider_pub_key': Uint8List.fromList(providerPubKey),
-        'requester_pub_key': Uint8List.fromList(requesterPubKey),
-        'status': 'ACTIVE',
-        'created_at': now,
-        'updated_at': now,
-      });
-    } catch (_) {}
+    final expiresAt = now + 2700000; // 45 minutes
 
-    _queue.enqueue(MeshTask(eventId, 1, payload, eventType: EventType.matchConfirm));
+    final created = await NegotiationManager().createNegotiation(
+      negotiationId: negotiationId,
+      resourceId: resourceId,
+      requestId: requestId,
+      initiatorRole: 'REQUESTER',
+      providerPubKey: providerPubKey,
+      requesterPubKey: pubKey,
+      offeredQty: 0,
+      requestedQty: requestedQty,
+      expiresAt: expiresAt,
+    );
+    if (!created) return null;
+
+    final data = pb.MatchRequestData(
+      negotiationId: negotiationId,
+      resourceId: resourceId,
+      requestId: requestId,
+      providerPubKey: providerPubKey,
+      requesterPubKey: pubKey,
+      requestedQty: requestedQty,
+      expiresAt: fixnum.Int64(expiresAt),
+    );
+
+    final payload = data.writeToBuffer();
+    final eventId = await _publishAndStore(
+      payload: payload,
+      eventType: EventType.matchRequest,
+      urgency: 1,
+      ttl: 5,
+    );
     return eventId;
   }
 
-  // ── 發布媒合拒絕（需求者 → 供給者）─────────────────────────────
-  Future<String> publishMatchReject({
-    required String requestId,
+  /// 接受對方的協商提議
+  Future<String?> publishMatchAccept({
+    required String negotiationId,
     required String resourceId,
-    String reason = 'ALREADY_LOCKED',
+    required String requestId,
+    required double agreedQty,
   }) async {
-    final eventId = _uuid.v4();
-    final hlc = HLC.now();
-    final pubKeyBytes = await _identity.getPublicKeyBytes();
+    final pubKey = await _identity.getPublicKeyBytes();
 
-    final rejectData = pb.MatchRejectData()
-      ..requestId = requestId
-      ..resourceId = resourceId
-      ..reason = reason;
-    final payload = Uint8List.fromList(rejectData.writeToBuffer());
-    final signature = await Signer.signPayload(payload);
+    // Accept via Application Layer (CAS check)
+    final accepted = await NegotiationManager().acceptNegotiation(
+      negotiationId, pubKey);
+    if (!accepted) return null;
 
-    final db = await _db.database;
-    await db.insert('Event_Logs', {
-      'event_id': eventId,
-      'sender_pub_key': Uint8List.fromList(pubKeyBytes),
-      'identity_level': _identity.getIdentityLevel(),
-      'event_type': EventType.matchReject,
-      'urgency': 1,
-      'hlc_timestamp': hlc.timestamp,
-      'hlc_counter': hlc.counter,
-      'ttl': 10,
-      'node_tier': 1,
-      'chunk_index': 0,
-      'total_chunks': 1,
-      'payload': payload,
-      'signature': Uint8List.fromList(signature),
-      'is_synced': 0,
-    });
+    final data = pb.MatchAcceptData(
+      negotiationId: negotiationId,
+      resourceId: resourceId,
+      requestId: requestId,
+      acceptorPubKey: pubKey,
+      agreedQty: agreedQty,
+    );
 
-    _queue.enqueue(MeshTask(eventId, 1, payload, eventType: EventType.matchReject));
+    final payload = data.writeToBuffer();
+    final eventId = await _publishAndStore(
+      payload: payload,
+      eventType: EventType.matchAccept,
+      urgency: 1,
+      ttl: 5,
+    );
     return eventId;
   }
 
-  // ── 處理 PIN 完成實體交接（含廣播 PHYSICAL_HANDSHAKE）─────────
-  Future<void> completeHandoff({
+  /// 拒絕對方的協商提議
+  Future<String?> publishMatchDecline({
+    required String negotiationId,
     required String resourceId,
     required String requestId,
+    required String reason,
   }) async {
-    final hlc = HLC.now();
-    final db = await _db.database;
-    final pubKeyBytes = await _identity.getPublicKeyBytes();
+    final pubKey = await _identity.getPublicKeyBytes();
+    await NegotiationManager().declineNegotiation(
+      negotiationId, pubKey, reason);
 
-    // 更新本地 Materials_State
-    await db.update(
-      'Materials_State',
-      {
-        'status': MaterialStatus.consumed,
-        'hlc_timestamp': hlc.timestamp,
-        'hlc_counter': hlc.counter,
-        'matched_request_id': requestId,
-      },
-      where: 'resource_id = ?',
-      whereArgs: [resourceId],
+    final data = pb.MatchDeclineData(
+      negotiationId: negotiationId,
+      resourceId: resourceId,
+      requestId: requestId,
+      reason: reason,
     );
 
-    // 更新 Requests_State
-    await db.update(
-      'Requests_State',
-      {'status': 'CONSUMED'},
-      where: 'request_id = ?',
-      whereArgs: [requestId],
+    final payload = data.writeToBuffer();
+    final eventId = await _publishAndStore(
+      payload: payload,
+      eventType: EventType.matchDecline,
+      urgency: 1,
+      ttl: 3,
     );
-
-    // 完成 Match_Session
-    final sessionId = '${resourceId}_$requestId';
-    final now = DateTime.now().millisecondsSinceEpoch;
-    await db.update(
-      'Match_Sessions',
-      {
-        'status': 'COMPLETED',
-        'completed_at': now,
-        'updated_at': now,
-      },
-      where: 'session_id = ?',
-      whereArgs: [sessionId],
-    );
-
-    // 廣播 PHYSICAL_HANDSHAKE 到 Mesh
-    final handshakeData = pb.PhysicalHandshakeData()
-      ..resourceId = resourceId
-      ..requestId = requestId
-      ..providerPubKey = pubKeyBytes
-      ..method = 'PIN_4DIGIT';
-    final payload = Uint8List.fromList(handshakeData.writeToBuffer());
-    final signature = await Signer.signPayload(payload);
-
-    final eventId = _uuid.v4();
-    await db.insert('Event_Logs', {
-      'event_id': eventId,
-      'sender_pub_key': Uint8List.fromList(pubKeyBytes),
-      'identity_level': _identity.getIdentityLevel(),
-      'event_type': EventType.physicalHandshake,
-      'urgency': 1,
-      'hlc_timestamp': hlc.timestamp,
-      'hlc_counter': hlc.counter,
-      'ttl': 10,
-      'node_tier': 1,
-      'chunk_index': 0,
-      'total_chunks': 1,
-      'payload': payload,
-      'signature': Uint8List.fromList(signature),
-      'is_synced': 0,
-    });
-    _queue.enqueue(MeshTask(eventId, 1, payload, eventType: EventType.physicalHandshake));
+    return eventId;
   }
 
-  // ── 取消媒合（PIN 失敗超限）─────────────────────────────────────
-  Future<void> cancelHandoff({required String resourceId}) async {
-    final hlc = HLC.now();
-    final db = await _db.database;
+  /// 交接完成
+  Future<String?> publishHandshakeComplete({
+    required String negotiationId,
+    required String resourceId,
+    required String requestId,
+    required List<int> providerPubKey,
+    required List<int> requesterPubKey,
+    required double actualDeliveredQty,
+    required String method,
+  }) async {
+    final pubKey = await _identity.getPublicKeyBytes();
+    await NegotiationManager().completeHandshake(
+      negotiationId, pubKey, actualDeliveredQty);
 
-    await db.update(
-      'Materials_State',
-      {
-        'status': MaterialStatus.available,
-        'hlc_timestamp': hlc.timestamp,
-        'hlc_counter': hlc.counter,
-        'matched_request_id': null,
-        'match_expires_at': null,
-      },
-      where: 'resource_id = ?',
-      whereArgs: [resourceId],
+    final data = pb.HandshakeCompleteData(
+      negotiationId: negotiationId,
+      resourceId: resourceId,
+      requestId: requestId,
+      providerPubKey: providerPubKey,
+      requesterPubKey: requesterPubKey,
+      actualDeliveredQty: actualDeliveredQty,
+      method: method,
     );
+
+    final payload = data.writeToBuffer();
+    final eventId = await _publishAndStore(
+      payload: payload,
+      eventType: EventType.handshakeComplete,
+      urgency: 1,
+      ttl: 10,
+    );
+    return eventId;
   }
 
-  // ── 處理 pending match actions（由 MeshEventHandler 產生）──────
-  Future<void> processPendingMatchActions() async {
-    final handler = MeshEventHandler();
-    final actions = handler.drainPendingMatchActions();
-    for (final action in actions) {
-      try {
-        if (action.type == 'CONFIRM') {
-          await publishMatchConfirm(
-            requestId: action.requestId,
-            resourceId: action.resourceId,
-            requesterPubKey: action.requesterPubKey,
-            providerPubKey: action.providerPubKey,
-          );
-        } else if (action.type == 'REJECT') {
-          await publishMatchReject(
-            requestId: action.requestId,
-            resourceId: action.resourceId,
-            reason: action.reason,
-          );
-        }
-      } catch (e) {
-        debugPrint('[EventMgr] Process pending match action error: $e');
-      }
-    }
+  /// 取消協商
+  Future<String?> publishMatchCancel({
+    required String negotiationId,
+    required String resourceId,
+    required String requestId,
+    required String reason,
+  }) async {
+    final pubKey = await _identity.getPublicKeyBytes();
+    await NegotiationManager().cancelNegotiation(
+      negotiationId, pubKey, reason);
+
+    final data = pb.MatchCancelData(
+      negotiationId: negotiationId,
+      resourceId: resourceId,
+      requestId: requestId,
+      reason: reason,
+    );
+
+    final payload = data.writeToBuffer();
+    final eventId = await _publishAndStore(
+      payload: payload,
+      eventType: EventType.matchCancel,
+      urgency: 2, // SOS_YELLOW — higher priority
+      ttl: 5,
+    );
+    return eventId;
   }
 
   // ── 媒合中位置同步（10m + 30s 節流）──────────────────────────
@@ -791,7 +733,7 @@ class EventManager {
   static const int _locationSyncThrottleMs = 30000; // 30 秒
 
   Future<void> publishLocationUpdate({
-    required String sessionId,
+    required String negotiationId,
     required double lat,
     required double lng,
   }) async {
@@ -799,71 +741,25 @@ class EventManager {
     if (now - _lastLocationSyncMs < _locationSyncThrottleMs) return;
     _lastLocationSyncMs = now;
 
-    final eventId = _uuid.v4();
-    final hlc = HLC.now();
     final pubKeyBytes = await _identity.getPublicKeyBytes();
 
     final locData = pb.LocationUpdateData()
-      ..sessionId = sessionId
+      ..sessionId = negotiationId
       ..lat = lat
       ..lng = lng
       ..timestamp = fixnum.Int64(now);
-    final payload = Uint8List.fromList(locData.writeToBuffer());
-    final signature = await Signer.signPayload(payload);
+    final payload = locData.writeToBuffer();
 
-    final db = await _db.database;
-    await db.insert('Event_Logs', {
-      'event_id': eventId,
-      'sender_pub_key': Uint8List.fromList(pubKeyBytes),
-      'identity_level': _identity.getIdentityLevel(),
-      'event_type': EventType.locationUpdate,
-      'urgency': 0,
-      'hlc_timestamp': hlc.timestamp,
-      'hlc_counter': hlc.counter,
-      'ttl': 3, // 短 TTL，位置資訊不需要長距離傳播
-      'received_lat': lat,
-      'received_lng': lng,
-      'origin_lat': lat,
-      'origin_lng': lng,
-      'node_tier': 1,
-      'chunk_index': 0,
-      'total_chunks': 1,
-      'payload': payload,
-      'signature': Uint8List.fromList(signature),
-      'is_synced': 0,
-    });
+    // Store location in Match_Negotiations via NegotiationManager
+    await NegotiationManager().updateLocation(
+      negotiationId, pubKeyBytes, lat, lng);
 
-    // 更新 Match_Sessions 中自己的位置
-    final myPubKey = Uint8List.fromList(pubKeyBytes);
-    // 判斷自己是 provider 還是 requester
-    final session = await db.query('Match_Sessions',
-        where: 'session_id = ?', whereArgs: [sessionId], limit: 1);
-    if (session.isNotEmpty) {
-      final providerKey = session.first['provider_pub_key'] as Uint8List?;
-      if (providerKey != null && _bytesEqual(providerKey, myPubKey)) {
-        await db.update('Match_Sessions', {
-          'provider_lat': lat,
-          'provider_lng': lng,
-          'updated_at': now,
-        }, where: 'session_id = ?', whereArgs: [sessionId]);
-      } else {
-        await db.update('Match_Sessions', {
-          'requester_lat': lat,
-          'requester_lng': lng,
-          'updated_at': now,
-        }, where: 'session_id = ?', whereArgs: [sessionId]);
-      }
-    }
-
-    _queue.enqueue(MeshTask(eventId, 0, payload, eventType: EventType.locationUpdate));
-  }
-
-  bool _bytesEqual(List<int> a, List<int> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
+    await _publishAndStore(
+      payload: payload,
+      eventType: EventType.locationUpdate,
+      urgency: 0,
+      ttl: 3, // 短 TTL，位置資訊不需要長距離傳播
+    );
   }
 
   // ── 查詢活躍 Match Sessions ───────────────────────────────────
@@ -1210,5 +1106,40 @@ class EventManager {
       'is_synced': 0,
     });
     _queue.enqueue(MeshTask(cancelId, 0, Uint8List.fromList(cancelPayload), eventType: EventType.matchCancel));
+  }
+
+  // ── 簽名、儲存、廣播 helper ──────────────────────────────────────
+  Future<String> _publishAndStore({
+    required List<int> payload,
+    required int eventType,
+    required int urgency,
+    required int ttl,
+  }) async {
+    final hlc = HLC.now();
+    final eventId = _uuid.v4();
+    final pubKey = await _identity.getPublicKeyBytes();
+    final idLevel = _identity.getIdentityLevel();
+    final sig = await Signer.signPayload(Uint8List.fromList(payload));
+
+    final db = await _db.database;
+    await db.insert('Event_Logs', {
+      'event_id': eventId,
+      'sender_pub_key': Uint8List.fromList(pubKey),
+      'identity_level': idLevel,
+      'event_type': eventType,
+      'urgency': urgency,
+      'hlc_timestamp': hlc.timestamp,
+      'hlc_counter': hlc.counter,
+      'ttl': ttl,
+      'node_tier': 0,
+      'chunk_index': 0,
+      'total_chunks': 1,
+      'payload': Uint8List.fromList(payload),
+      'signature': Uint8List.fromList(sig),
+      'is_synced': 0,
+    });
+
+    _queue.enqueue(MeshTask(eventId, urgency, Uint8List.fromList(payload), eventType: eventType));
+    return eventId;
   }
 }
