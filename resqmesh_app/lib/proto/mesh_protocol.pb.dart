@@ -1237,7 +1237,7 @@ class MedicalSummary extends $pb.GeneratedMessage {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MeshEnvelope (Bridgefy 廣播驅動頂層封包)
+// MeshEnvelope (BLE Mesh 廣播頂層封包)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class MeshEnvelope extends $pb.GeneratedMessage {

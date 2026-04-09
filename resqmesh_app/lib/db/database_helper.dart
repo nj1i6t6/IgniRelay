@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'medical_card_repo.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -9,7 +10,9 @@ class DatabaseHelper {
   DatabaseHelper._internal();
 
   Database? _db;
+  late final MedicalCardRepo _medicalCardRepo = MedicalCardRepo(this);
 
+  /// Exposed for MedicalCardRepo (and other repos) to access the DB.
   Future<Database> get database async {
     if (_db != null) return _db!;
     _db = await _initDb();
@@ -502,30 +505,9 @@ class DatabaseHelper {
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
-  /// 儲存醫療卡 (JSON 字串)
-  /// 使用 upsert 策略：先確保 Local_Users 記錄存在，再更新 medical_card
-  Future<void> saveMedicalCard(List<int> pubKey, String medicalCardJson) async {
-    final db = await database;
-    final pubKeyBytes = Uint8List.fromList(pubKey);
-    // 先確保用戶記錄存在（ConflictAlgorithm.ignore = 已存在則不動）
-    await db.insert(
-      'Local_Users',
-      {
-        'pub_key': pubKeyBytes,
-        'alias': '',
-        'identity_level': 0,
-        'medical_card': medicalCardJson,
-      },
-      conflictAlgorithm: ConflictAlgorithm.ignore,
-    );
-    // 再更新 medical_card 欄位（此時記錄一定存在）
-    await db.update(
-      'Local_Users',
-      {'medical_card': medicalCardJson},
-      where: 'pub_key = ?',
-      whereArgs: [pubKeyBytes],
-    );
-  }
+  /// 儲存醫療卡 (JSON 字串) — delegates to MedicalCardRepo
+  Future<void> saveMedicalCard(List<int> pubKey, String medicalCardJson) =>
+      _medicalCardRepo.saveMedicalCard(pubKey, medicalCardJson);
 
   /// 寫入除錯日誌（fire-and-forget，不影響效能）
   void writeDebugLog(String source, String message) {
@@ -553,17 +535,7 @@ class DatabaseHelper {
         where: 'timestamp < ?', whereArgs: [cutoff]);
   }
 
-  /// 讀取醫療卡 (JSON 字串)
-  Future<String?> getMedicalCard(List<int> pubKey) async {
-    final db = await database;
-    final pubKeyBytes = Uint8List.fromList(pubKey);
-    final result = await db.query(
-      'Local_Users',
-      columns: ['medical_card'],
-      where: 'pub_key = ?',
-      whereArgs: [pubKeyBytes],
-    );
-    if (result.isEmpty) return null;
-    return result.first['medical_card'] as String?;
-  }
+  /// 讀取醫療卡 (JSON 字串) — delegates to MedicalCardRepo
+  Future<String?> getMedicalCard(List<int> pubKey) =>
+      _medicalCardRepo.getMedicalCard(pubKey);
 }

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:fixnum/fixnum.dart' as fixnum;
@@ -12,6 +11,7 @@ import '../db/database_helper.dart';
 import '../models/medical_card.dart';
 import '../proto/mesh_protocol.pb.dart' as pb;
 import '../services/negotiation_manager.dart';
+import 'hazard_manager.dart';
 import 'triage_queue.dart';
 
 // 事件類型常數（對應 Protobuf EventType enum）
@@ -74,6 +74,9 @@ class EventManager {
   final _queue = TriageQueue();
 
   TriageQueue get queue => _queue;
+
+  /// Hazard 管理委派（publish, confirm, update, delete, query）
+  final HazardManager hazards = HazardManager();
 
   // ── 速率限制 ────────────────────────────────────────────────────
   // 用 HLC 時間窗口（不依賴 wallclock）防止時鐘跳躍
@@ -343,14 +346,15 @@ class EventManager {
     // 寫入 Requests_State（本地也寫入）
     await db.insert('Requests_State', {
       'request_id': eventId,
+      'event_id': eventId,
       'sender_pub_key': Uint8List.fromList(pubKeyBytes),
-      'resource_type': resourceType,
       'quantity_needed': quantity.toDouble(),
       'mobility_mode': mobilityMode,
       'note': note,
       'status': 'OPEN',
       'hlc_timestamp': hlc.timestamp,
       'hlc_counter': hlc.counter,
+      'payload': payload,
     });
 
     await db.insert('Event_Logs', {
@@ -378,7 +382,7 @@ class EventManager {
     return eventId;
   }
 
-  // ── 發布危險標記 ────────────────────────────────────────────────
+  /// 發布危險標記（委派至 HazardManager，rate limit 在此檢查）
   Future<String> publishHazard({
     required String type,
     required int severity,
@@ -388,66 +392,10 @@ class EventManager {
     String description = '',
   }) async {
     await _checkRateLimit();
-
-    final hazardId = _uuid.v4();
-    final eventId = _uuid.v4();
-    final hlc = HLC.now();
-    final pubKeyBytes = await _identity.getPublicKeyBytes();
-
-    // 使用 Protobuf 二進位序列化 (取代字串拼接)
-    final hazardData = pb.HazardData()
-      ..hazardId = hazardId
-      ..hazardType = type
-      ..severity = severity
-      ..centerLat = lat
-      ..centerLng = lng
-      ..radiusMeters = radiusMeters.toDouble();
-    if (description.isNotEmpty) hazardData.description = description;
-    final payload = Uint8List.fromList(hazardData.writeToBuffer());
-    final signature = await Signer.signPayload(payload);
-
-    final db = await _db.database;
-
-    // reported_by 存為 hex 字串（TEXT 欄位）
-    final reporterHex =
-        pubKeyBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-    await db.insert('Hazards_State', {
-      'hazard_id': hazardId,
-      'type': type,
-      'severity': severity,
-      'lat': lat,
-      'lng': lng,
-      'radius': radiusMeters,
-      'reported_by': reporterHex,
-      'created_at': hlc.timestamp,
-      'confirm_count': 1,
-      'description': description.isNotEmpty ? description : null,
-      'updated_at': hlc.timestamp,
-    });
-
-    await db.insert('Event_Logs', {
-      'event_id': eventId,
-      'sender_pub_key': Uint8List.fromList(pubKeyBytes),
-      'identity_level': _identity.getIdentityLevel(),
-      'event_type': EventType.hazardMarker,
-      'urgency': 2, // SOS_YELLOW
-      'hlc_timestamp': hlc.timestamp,
-      'hlc_counter': hlc.counter,
-      'ttl': 8,
-      'received_lat': lat,
-      'received_lng': lng,
-      'origin_lat': lat,
-      'origin_lng': lng,
-      'node_tier': 1,
-      'chunk_index': 0,
-      'total_chunks': 1,
-      'payload': payload,
-      'signature': Uint8List.fromList(signature),
-      'is_synced': 0,
-    });
-
-    _queue.enqueue(MeshTask(eventId, 2, payload, eventType: EventType.hazardMarker));
-    return hazardId;
+    return hazards.publishHazard(
+      type: type, severity: severity, lat: lat, lng: lng,
+      radiusMeters: radiusMeters, description: description,
+    );
   }
 
   // ── 發布聊天訊息 ─────────────────────────────────────────────
@@ -781,233 +729,21 @@ class EventManager {
     );
   }
 
-  // ── 查詢危險標記 ───────────────────────────────────────────────
-  Future<List<Map<String, dynamic>>> getActiveHazards() async {
-    final db = await _db.database;
-    return await db.query('Hazards_State', orderBy: 'created_at DESC');
-  }
-
-  // ── 取得目前使用者的 reporter hex ─────────────────────────────
-  Future<String> getReporterHex() async {
-    final pubKeyBytes = await _identity.getPublicKeyBytes();
-    return pubKeyBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  }
-
-  // ── 搜尋附近同類型危險標記 ────────────────────────────────────
-  /// 回傳最近的同類型標記 (距離 < searchRadius 公尺)，或 null
+  // ── Hazard 查詢（委派至 HazardManager）───────────────────────
+  Future<List<Map<String, dynamic>>> getActiveHazards() => hazards.getActiveHazards();
+  Future<String> getReporterHex() => hazards.getReporterHex();
   Future<Map<String, dynamic>?> findNearbyHazard(
-    double lat,
-    double lng,
-    String type, {
-    double searchRadius = 500.0,
-  }) async {
-    final db = await _db.database;
-    final hazards = await db.query(
-      'Hazards_State',
-      where: 'type = ?',
-      whereArgs: [type],
-    );
-    Map<String, dynamic>? nearest;
-    double nearestDist = double.infinity;
-    for (final h in hazards) {
-      final hLat = (h['lat'] as num).toDouble();
-      final hLng = (h['lng'] as num).toDouble();
-      final dist = _haversineMeters(lat, lng, hLat, hLng);
-      if (dist < searchRadius && dist < nearestDist) {
-        nearest = Map<String, dynamic>.from(h);
-        nearest['_distance'] = dist;
-        nearestDist = dist;
-      }
-    }
-    return nearest;
-  }
+    double lat, double lng, String type, {double searchRadius = 500.0,
+  }) => hazards.findNearbyHazard(lat, lng, type, searchRadius: searchRadius);
 
-  // ── 確認（附議）他人危險標記（本地 + 廣播）─────────────────────
-  Future<void> confirmHazard(String hazardId) async {
-    final db = await _db.database;
-    final now = DateTime.now().millisecondsSinceEpoch;
-
-    // 本地 +1
-    await db.rawUpdate(
-      'UPDATE Hazards_State SET confirm_count = confirm_count + 1, '
-      'updated_at = ? WHERE hazard_id = ?',
-      [now, hazardId],
-    );
-
-    // 廣播確認事件到 Mesh
-    final hazard = await db.query('Hazards_State',
-        where: 'hazard_id = ?', whereArgs: [hazardId], limit: 1);
-    if (hazard.isNotEmpty) {
-      final h = hazard.first;
-      final hazardData = pb.HazardData()
-        ..hazardId = hazardId
-        ..hazardType = (h['type'] as String?) ?? ''
-        ..severity = (h['severity'] as int?) ?? 3
-        ..centerLat = (h['lat'] as num?)?.toDouble() ?? 0
-        ..centerLng = (h['lng'] as num?)?.toDouble() ?? 0
-        ..radiusMeters = (h['radius'] as num?)?.toDouble() ?? 200
-        ..isConfirmation = true; // 標記為附議事件
-      final payload = Uint8List.fromList(hazardData.writeToBuffer());
-      final eventId = _uuid.v4();
-      final hlc = HLC.now();
-      final pubKeyBytes = await _identity.getPublicKeyBytes();
-      final signature = await Signer.signPayload(payload);
-      await db.insert('Event_Logs', {
-        'event_id': eventId,
-        'sender_pub_key': Uint8List.fromList(pubKeyBytes),
-        'identity_level': _identity.getIdentityLevel(),
-        'event_type': EventType.hazardMarker,
-        'urgency': 2,
-        'hlc_timestamp': hlc.timestamp,
-        'hlc_counter': hlc.counter,
-        'ttl': 8,
-        'received_lat': h['lat'],
-        'received_lng': h['lng'],
-        'origin_lat': h['lat'],
-        'origin_lng': h['lng'],
-        'node_tier': 1,
-        'chunk_index': 0,
-        'total_chunks': 1,
-        'payload': payload,
-        'signature': Uint8List.fromList(signature),
-        'is_synced': 0,
-      });
-      _queue.enqueue(MeshTask(eventId, 2, payload, eventType: EventType.hazardMarker));
-    }
-  }
-
-  // ── 更新自己建立的危險標記（同時廣播至 Mesh）────────────────
-  Future<void> updateHazard(
-    String hazardId, {
-    String? type,
-    int? severity,
-    double? lat,
-    double? lng,
-    double? radiusMeters,
-    String? description,
-  }) async {
-    final db = await _db.database;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final updates = <String, dynamic>{
-      'updated_at': now,
-    };
-    if (type != null) updates['type'] = type;
-    if (severity != null) updates['severity'] = severity;
-    if (lat != null) updates['lat'] = lat;
-    if (lng != null) updates['lng'] = lng;
-    if (radiusMeters != null) updates['radius'] = radiusMeters;
-    if (description != null) updates['description'] = description;
-    await db.update(
-      'Hazards_State',
-      updates,
-      where: 'hazard_id = ?',
-      whereArgs: [hazardId],
-    );
-
-    // 廣播更新至 Mesh 網路
-    final updated = await db
-        .query('Hazards_State', where: 'hazard_id = ?', whereArgs: [hazardId]);
-    if (updated.isNotEmpty) {
-      final h = updated.first;
-      final hazardData = pb.HazardData()
-        ..hazardId = hazardId
-        ..hazardType = (h['type'] as String?) ?? ''
-        ..severity = (h['severity'] as int?) ?? 3
-        ..centerLat = (h['lat'] as num?)?.toDouble() ?? 0
-        ..centerLng = (h['lng'] as num?)?.toDouble() ?? 0
-        ..radiusMeters = (h['radius'] as num?)?.toDouble() ?? 200;
-      final payload = Uint8List.fromList(hazardData.writeToBuffer());
-      final eventId = _uuid.v4();
-      final hlc = HLC.now();
-      final pubKeyBytes = await _identity.getPublicKeyBytes();
-      final signature = await Signer.signPayload(payload);
-      await db.insert('Event_Logs', {
-        'event_id': eventId,
-        'sender_pub_key': Uint8List.fromList(pubKeyBytes),
-        'identity_level': _identity.getIdentityLevel(),
-        'event_type': EventType.hazardMarker,
-        'urgency': 2,
-        'hlc_timestamp': hlc.timestamp,
-        'hlc_counter': hlc.counter,
-        'ttl': 8,
-        'received_lat': h['lat'],
-        'received_lng': h['lng'],
-        'origin_lat': h['lat'],
-        'origin_lng': h['lng'],
-        'node_tier': 1,
-        'chunk_index': 0,
-        'total_chunks': 1,
-        'payload': payload,
-        'signature': Uint8List.fromList(signature),
-        'is_synced': 0,
-      });
-      _queue.enqueue(MeshTask(eventId, 2, payload, eventType: EventType.hazardMarker));
-    }
-  }
-
-  // ── 刪除（解除）自己的危險標記（同時廣播至 Mesh）────────────
-  Future<void> deleteHazard(String hazardId) async {
-    final db = await _db.database;
-
-    // 先讀取標記資訊用於廣播
-    final existing = await db
-        .query('Hazards_State', where: 'hazard_id = ?', whereArgs: [hazardId]);
-
-    await db
-        .delete('Hazards_State', where: 'hazard_id = ?', whereArgs: [hazardId]);
-
-    // 廣播刪除事件至 Mesh 網路（severity = 0 表示已解除）
-    if (existing.isNotEmpty) {
-      final h = existing.first;
-      final hazardData = pb.HazardData()
-        ..hazardId = hazardId
-        ..hazardType = (h['type'] as String?) ?? ''
-        ..severity = 0 // 0 = 已解除
-        ..centerLat = (h['lat'] as num?)?.toDouble() ?? 0
-        ..centerLng = (h['lng'] as num?)?.toDouble() ?? 0
-        ..radiusMeters = 0;
-      final payload = Uint8List.fromList(hazardData.writeToBuffer());
-      final eventId = _uuid.v4();
-      final hlc = HLC.now();
-      final pubKeyBytes = await _identity.getPublicKeyBytes();
-      final signature = await Signer.signPayload(payload);
-      await db.insert('Event_Logs', {
-        'event_id': eventId,
-        'sender_pub_key': Uint8List.fromList(pubKeyBytes),
-        'identity_level': _identity.getIdentityLevel(),
-        'event_type': EventType.hazardMarker,
-        'urgency': 0, // INFO level (解除通知)
-        'hlc_timestamp': hlc.timestamp,
-        'hlc_counter': hlc.counter,
-        'ttl': 8,
-        'received_lat': h['lat'],
-        'received_lng': h['lng'],
-        'origin_lat': h['lat'],
-        'origin_lng': h['lng'],
-        'node_tier': 1,
-        'chunk_index': 0,
-        'total_chunks': 1,
-        'payload': payload,
-        'signature': Uint8List.fromList(signature),
-        'is_synced': 0,
-      });
-      _queue.enqueue(MeshTask(eventId, 0, payload, eventType: EventType.hazardMarker));
-    }
-  }
-
-  // ── Haversine 距離計算 (公尺) ─────────────────────────────────
-  static double _haversineMeters(
-      double lat1, double lng1, double lat2, double lng2) {
-    const R = 6371000.0;
-    final dLat = (lat2 - lat1) * pi / 180;
-    final dLng = (lng2 - lng1) * pi / 180;
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * pi / 180) *
-            cos(lat2 * pi / 180) *
-            sin(dLng / 2) *
-            sin(dLng / 2);
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
-  }
+  // ── Hazard CRUD 委派 ──────────────────────────────────────────
+  Future<void> confirmHazard(String hazardId) => hazards.confirmHazard(hazardId);
+  Future<void> updateHazard(String hazardId, {
+    String? type, int? severity, double? lat, double? lng,
+    double? radiusMeters, String? description,
+  }) => hazards.updateHazard(hazardId, type: type, severity: severity,
+      lat: lat, lng: lng, radiusMeters: radiusMeters, description: description);
+  Future<void> deleteHazard(String hazardId) => hazards.deleteHazard(hazardId);
 
   // ── 查詢最近事件日誌 ──────────────────────────────────────────
   Future<List<Map<String, dynamic>>> getRecentEvents({int limit = 20}) async {

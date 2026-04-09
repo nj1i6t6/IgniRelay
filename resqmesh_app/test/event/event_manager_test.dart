@@ -125,6 +125,66 @@ void main() {
     });
   });
 
+  group('EventManager — publishRequest (物資需求)', () {
+    test('returns non-empty request ID', () async {
+      final id = await em.publishRequest(
+        resourceType: 'WATER',
+        quantity: 5,
+        note: 'urgent',
+        maxRangeMeters: 1000.0,
+      );
+      expect(id, isNotEmpty);
+    });
+
+    test('request persisted in Requests_State with correct fields', () async {
+      final id = await em.publishRequest(
+        resourceType: 'FOOD',
+        quantity: 3,
+        note: 'need rice',
+        maxRangeMeters: 500.0,
+        mobilityMode: 'IMMOBILE',
+      );
+      final db = await DatabaseHelper().database;
+      final rows = await db.query(
+        'Requests_State',
+        where: 'request_id = ?',
+        whereArgs: [id],
+      );
+      expect(rows.length, equals(1));
+      expect(rows[0]['status'], equals('OPEN'));
+      expect((rows[0]['quantity_needed'] as num).toDouble(), equals(3.0));
+      expect(rows[0]['mobility_mode'], equals('IMMOBILE'));
+      expect(rows[0]['note'], equals('need rice'));
+      expect(rows[0]['event_id'], equals(id));
+      expect(rows[0]['payload'], isNotNull);
+    });
+
+    test('publishRequest also writes to Event_Logs', () async {
+      final id = await em.publishRequest(
+        resourceType: 'MEDICINE',
+        quantity: 1,
+        note: 'first aid',
+        maxRangeMeters: 200.0,
+      );
+      final db = await DatabaseHelper().database;
+      final rows = await db.query(
+        'Event_Logs',
+        where: 'event_id = ?',
+        whereArgs: [id],
+      );
+      expect(rows.length, equals(1));
+      expect(rows[0]['event_type'], equals(EventType.requestBroadcast));
+    });
+
+    test('request ID is unique on repeated calls', () async {
+      final id1 = await em.publishRequest(
+        resourceType: 'WATER', quantity: 1, note: 'a', maxRangeMeters: 100.0);
+      final id2 = await em.publishRequest(
+        resourceType: 'WATER', quantity: 1, note: 'b', maxRangeMeters: 100.0);
+      expect(id1, isNot(equals(id2)));
+    });
+  });
+
   group('EventManager — publishHazard (危險標記)', () {
     test('returns non-empty hazard ID', () async {
       final id = await em.publishHazard(

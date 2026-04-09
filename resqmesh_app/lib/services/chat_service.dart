@@ -224,7 +224,9 @@ class ChatService {
       final village = villages.first;
       final villageCode = village.villcode;
 
-      // Bug 12 Fix: 直接使用 VillageInfo 的各欄位，避免 split(' ') 拆解失敗
+      // 先離開舊的地區聊天室，避免跨里/區重複顯示
+      await _leaveLocationRooms();
+
       await _joinAllLevelRooms(
         villageCode: villageCode,
         countyName: village.countyName,
@@ -287,6 +289,17 @@ class ChatService {
     );
   }
 
+  /// 離開所有地區聊天室（village / township / county），保留 nation 和自訂頻道
+  Future<void> _leaveLocationRooms() async {
+    final rooms = await getJoinedRooms();
+    for (final room in rooms) {
+      final type = room['room_type'] as String? ?? '';
+      if (type == 'village' || type == 'township' || type == 'county') {
+        await leaveRoom(room['room_id'] as String);
+      }
+    }
+  }
+
   /// 手動變更所在里（離開舊里相關頻道，加入新里相關頻道）
   Future<String?> changeVillageRoom({
     required String newVillageCode,
@@ -295,16 +308,8 @@ class ChatService {
     required String villName,
   }) async {
     try {
-      // 離開目前的 village / township / county 聊天室
-      final rooms = await getJoinedRooms();
-      for (final room in rooms) {
-        final type = room['room_type'] as String? ?? '';
-        if (type == 'village' || type == 'township' || type == 'county') {
-          await leaveRoom(room['room_id'] as String);
-        }
-      }
+      await _leaveLocationRooms();
 
-      // 加入新的全部層級
       await _joinAllLevelRooms(
         villageCode: newVillageCode,
         countyName: countyName,

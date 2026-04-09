@@ -73,7 +73,7 @@ class WirePayload {
 ///
 /// 從 BleManager._handleIncomingPayload 抽取而來。
 /// 負責：Protobuf 解碼、去重、HLC merge、DB 寫入、Hazard 特殊處理。
-/// 兩種 Transport（Bridgefy / NativeBLE）共用同一套處理邏輯。
+/// NativeBLE Transport 的事件處理邏輯。
 class MeshEventHandler {
   static final MeshEventHandler _instance = MeshEventHandler._internal();
   factory MeshEventHandler() => _instance;

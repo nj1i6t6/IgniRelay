@@ -33,11 +33,11 @@ enum TransportState { stopped, starting, running, error }
 /// MeshTransport 抽象介面
 ///
 /// 上層（EventManager、UI）只依賴此介面，
-/// 不感知底層是 Bridgefy SDK 或自研 flutter_blue_plus。
+/// 不感知底層實作細節。
 /// 這層抽象確保未來替換 transport 時，上層程式碼零修改。
 abstract class MeshTransport {
   // ── 生命週期 ─────────────────────────────────────────────
-  /// 初始化 transport（如 Bridgefy license 驗證）
+  /// 初始化 transport
   Future<void> initialize();
 
   /// 啟動 mesh 網路（開始掃描/廣播）

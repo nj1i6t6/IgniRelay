@@ -244,7 +244,7 @@ message ChatRoomConfig {
 // 據點物資擴充欄位（附加在 ResourceData 中）
 // 注意：ResourceData 新增 field 10-15 給據點使用
 
-// ── Bridgefy 廣播驅動 Mesh 封包 ──────────────────────────────────
+// ── BLE Mesh 廣播封包 ──────────────────────────────────
 
 // MeshEnvelope 封裝類型（區分 Bloom Filter 交換與事件傳輸）
 enum EnvelopeType {
@@ -252,11 +252,11 @@ enum EnvelopeType {
   ENVELOPE_BLOOM_FILTER = 1;  // 包含 Bloom Filter 資料（事件 ID 列表）
 }
 
-// MeshEnvelope — Bridgefy 廣播驅動的頂層封包
-// 所有透過 Bridgefy SDK 傳送的資料都先包裝為此格式，
+// MeshEnvelope — BLE Mesh 廣播頂層封包
+// 所有透過 BLE Transport 傳送的資料都先包裝為此格式，
 // 接收端根據 type 決定是進行 Bloom Filter 比對還是事件處理。
 message MeshEnvelope {
   EnvelopeType type = 1;   // 封包類型
   bytes payload = 2;        // 內容（EVENT: MeshEvent bytes / BLOOM_FILTER: 事件 ID 列表）
-  string sender_id = 3;     // 發送者 UUID（Bridgefy userId）
+  string sender_id = 3;     // 發送者 node UUID
 }
