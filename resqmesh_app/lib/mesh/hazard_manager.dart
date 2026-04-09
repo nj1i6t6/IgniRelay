@@ -19,7 +19,7 @@ class HazardManager {
   final _uuid = const Uuid();
   final _db = DatabaseHelper();
   final _identity = IdentityManager();
-  final _queue = EventManager().queue;
+  TriageQueue get _queue => EventManager().queue;
 
   // ── 發布危險標記 ──────────────────────────────────────────────
   Future<String> publishHazard({

@@ -128,31 +128,14 @@ class _StartupRouterState extends State<_StartupRouter> {
 
   Future<void> _init() async {
     try {
+      // ── 階段 1：核心基礎（失敗 = 無法啟動）──
       await DatabaseHelper().database;
       await IdentityManager().initialize();
       await VillageGeofence.init();
 
-      final locService = LocationService();
-      locService.onFirstFix = () {
-        ChatService().autoJoinVillageRoom().then((code) {
-          if (code != null) {
-            debugPrint('[Init] GPS 就緒，自動加入聊天室: $code');
-          }
-        }).catchError((e) {
-          debugPrint('[Init] 自動加入聊天室失敗: $e');
-        });
-      };
-      await locService.init();
-      if (locService.hasLocation && locService.onFirstFix != null) {
-        locService.onFirstFix!();
-        locService.onFirstFix = null;
-      }
-
-      EventManager().expireStaleMatches().catchError((_) {});
-
+      // ── 階段 2：先確定 onboarding 狀態（不依賴後續服務）──
       final prefs = await SharedPreferences.getInstance();
       final done = prefs.getBool('onboarding_done') ?? false;
-
       if (mounted) {
         setState(() {
           _showOnboarding = !done;
@@ -160,6 +143,35 @@ class _StartupRouterState extends State<_StartupRouter> {
         });
       }
 
+      // ── 階段 3：位置 & 聊天室（個別 try-catch 防止連鎖失敗）──
+      try {
+        final locService = LocationService();
+        locService.onFirstFix = () {
+          ChatService().autoJoinVillageRoom().then((code) {
+            if (code != null) {
+              debugPrint('[Init] GPS 就緒，自動加入聊天室: $code');
+            }
+          }).catchError((e) {
+            debugPrint('[Init] 自動加入聊天室失敗: $e');
+          });
+        };
+        await locService.init();
+        if (locService.hasLocation && locService.onFirstFix != null) {
+          locService.onFirstFix!();
+          locService.onFirstFix = null;
+        }
+      } catch (e) {
+        debugPrint('[Init] Location/Chat init failed: $e');
+      }
+
+      // ── 階段 4：Mesh 服務（失敗不影響 UI）──
+      try {
+        EventManager().expireStaleMatches().catchError((_) {});
+      } catch (e) {
+        debugPrint('[Init] EventManager init failed: $e');
+      }
+
+      // ── 階段 5：權限 & BLE ──
       await _requestPermissions();
 
       bool btOn = false;
@@ -198,7 +210,7 @@ class _StartupRouterState extends State<_StartupRouter> {
       }
     } catch (e) {
       debugPrint('[Init] Startup error: $e');
-      if (mounted) {
+      if (mounted && !_initialized) {
         setState(() {
           _initialized = true;
           _showOnboarding = true;

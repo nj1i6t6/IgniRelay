@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import '../mesh/mesh_transport.dart';
@@ -197,6 +198,26 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       setState(() => _isBleActive = false);
     } else {
       try {
+        // 確保 BLE 權限已授權，避免無權限啟動 crash
+        final statuses = await [
+          Permission.bluetoothScan,
+          Permission.bluetoothConnect,
+          Permission.bluetoothAdvertise,
+          Permission.locationWhenInUse,
+        ].request();
+        final allGranted = statuses.values.every(
+          (s) => s.isGranted || s.isLimited,
+        );
+        if (!allGranted && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(S.of(context)!.survivalBleFailSnack('Missing BLE permissions')),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
         // 確保前景服務啟動，防止背景被系統殺掉
         try {
           await NativeBridge.startMeshForegroundService();
