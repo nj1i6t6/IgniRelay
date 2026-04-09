@@ -1,0 +1,51 @@
+{{ define "content" }}
+<div>
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">下轄避難所</div>
+      <div class="stat-value">3</div>
+      <div class="stat-trend system">2 在線</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">總收容人數</div>
+      <div class="stat-value">229</div>
+      <div class="stat-trend up">▲ +15 今日</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Mesh 事件</div>
+      <div class="stat-value sos-active">2</div>
+      <div class="stat-trend down">緊急 SOS</div>
+    </div>
+  </div>
+
+  <div class="mt-xl">
+    <div class="section-header">
+      <div class="section-title">下轄避難所狀態</div>
+    </div>
+    <div class="card-list">
+      <!-- Shelter 1 -->
+      <div class="card-item">
+        <div class="status-dot online"></div>
+        <div class="card-body">
+          <div class="card-title">信義國小避難所</div>
+          <div class="card-subtitle">收容 142 人 | 物資: 充足</div>
+        </div>
+        <div class="card-right">
+          <div class="badge badge-done">同步正常</div>
+        </div>
+      </div>
+      <!-- Shelter 2 -->
+      <div class="card-item">
+        <div class="status-dot offline"></div>
+        <div class="card-body">
+          <div class="card-title">信義運動中心</div>
+          <div class="card-subtitle">收容 -- 人 | 物資: 未知</div>
+        </div>
+        <div class="card-right">
+          <div class="badge badge-offline">離線 2h</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{{ end }}

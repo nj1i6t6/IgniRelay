@@ -1,0 +1,62 @@
+{{ define "content" }}
+<div>
+  <div class="page-header">
+    <h2 class="page-title">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;"><path d="m12 14-4-4 4-4"/><path d="M8 10h12"/><path d="M12 18h8"/><path d="M22 22 2 2"/></svg>
+      警消任務看板
+    </h2>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-lg); overflow-x: auto; padding-bottom: var(--space-lg);">
+    
+    <!-- 待派遣 -->
+    <div style="background: var(--bg-secondary); padding: var(--space-md); border-radius: var(--radius-md); border: 1px solid var(--border-default);">
+      <h3 style="font-size: var(--text-base); color: var(--text-muted); margin-bottom: var(--space-md);">待派遣 (2)</h3>
+      
+      <div class="card-item sos-active" style="flex-direction: column; align-items: flex-start; gap: var(--space-xs); margin-bottom: var(--space-md);">
+        <div class="badge badge-critical mb-md">SOS RED</div>
+        <div class="card-title">大安路房屋倒塌</div>
+        <div class="card-subtitle">信義里 • 09:35</div>
+        <div class="mt-md" style="width: 100%;">
+          <button class="btn btn-primary btn-sm btn-block">派遣單位</button>
+        </div>
+      </div>
+      
+      <div class="card-item" style="flex-direction: column; align-items: flex-start; gap: var(--space-xs);">
+        <div class="badge badge-pending mb-md">MEDICAL</div>
+        <div class="card-title">需要緊急醫療物資</div>
+        <div class="card-subtitle">松仁里 • 09:28</div>
+        <div class="mt-md" style="width: 100%;">
+          <button class="btn btn-secondary btn-sm btn-block">派遣單位</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 執行中 -->
+    <div style="background: var(--bg-secondary); padding: var(--space-md); border-radius: var(--radius-md); border: 1px solid var(--border-default);">
+      <h3 style="font-size: var(--text-base); color: var(--text-muted); margin-bottom: var(--space-md);">執行中 (1)</h3>
+      
+      <div class="card-item" style="flex-direction: column; align-items: flex-start; gap: var(--space-xs); border-left: 3px solid var(--alert-info);">
+        <div class="badge badge-active mb-md">搜救中</div>
+        <div class="card-title">山區失聯民眾協尋</div>
+        <div class="card-subtitle">象山 • 信義分隊1車2人</div>
+        <div class="mt-md" style="width: 100%;">
+          <button class="btn btn-secondary btn-sm btn-block">標記完成</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 已結案 -->
+    <div style="background: var(--bg-secondary); padding: var(--space-md); border-radius: var(--radius-md); border: 1px solid var(--border-default); opacity: 0.8;">
+      <h3 style="font-size: var(--text-base); color: var(--text-muted); margin-bottom: var(--space-md);">已結案 (12)</h3>
+      
+      <div class="card-item" style="flex-direction: column; align-items: flex-start; gap: var(--space-xs); background: transparent;">
+        <div class="badge badge-done mb-md">已完成</div>
+        <div class="card-title" style="color: var(--text-muted);">火災撲滅</div>
+        <div class="card-subtitle">永吉里 • 昨天 22:15</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{{ end }}

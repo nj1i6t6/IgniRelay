@@ -1,0 +1,81 @@
+{{ define "content" }}
+<div>
+  <div class="page-header">
+    <h2 class="page-title">申領記錄</h2>
+  </div>
+
+  <!-- Tabs 篩選 -->
+  <div class="tabs">
+    <button class="tab active" onclick="this.parentElement.querySelector('.active')?.classList.remove('active'); this.classList.add('active')">全部</button>
+    <button class="tab" onclick="this.parentElement.querySelector('.active')?.classList.remove('active'); this.classList.add('active')">待審核</button>
+    <button class="tab" onclick="this.parentElement.querySelector('.active')?.classList.remove('active'); this.classList.add('active')">已核准</button>
+    <button class="tab" onclick="this.parentElement.querySelector('.active')?.classList.remove('active'); this.classList.add('active')">已拒絕</button>
+  </div>
+
+  <div class="card-list">
+    <!-- Claim 1: Pending -->
+    <div class="card-item">
+      <div class="card-icon" style="background: var(--alert-warning); background: rgba(217,119,6,0.15);">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <div class="card-body">
+        <div class="card-title">王OO — 飲用水 x4</div>
+        <div class="card-subtitle">申請時間 09:45 | 家庭 4 口</div>
+      </div>
+      <div class="card-right">
+        <div class="badge badge-pending">待審核</div>
+        <div class="flex gap-sm mt-md">
+          <button class="btn btn-primary btn-sm">核准</button>
+          <button class="btn btn-secondary btn-sm">拒絕</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Claim 2: Pending -->
+    <div class="card-item">
+      <div class="card-icon" style="background: rgba(217,119,6,0.15);">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <div class="card-body">
+        <div class="card-title">陳OO — 毛毯 x2</div>
+        <div class="card-subtitle">申請時間 09:30 | 年長者</div>
+      </div>
+      <div class="card-right">
+        <div class="badge badge-pending">待審核</div>
+        <div class="flex gap-sm mt-md">
+          <button class="btn btn-primary btn-sm">核准</button>
+          <button class="btn btn-secondary btn-sm">拒絕</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Claim 3: Approved -->
+    <div class="card-item">
+      <div class="card-icon" style="background: rgba(5,150,105,0.15);">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+      <div class="card-body">
+        <div class="card-title">林OO — 口糧 x1</div>
+        <div class="card-subtitle">申請時間 08:15 | 已於 08:20 發放</div>
+      </div>
+      <div class="card-right">
+        <div class="badge badge-done">已核准</div>
+      </div>
+    </div>
+
+    <!-- Claim 4: Rejected -->
+    <div class="card-item">
+      <div class="card-icon" style="background: rgba(220,38,38,0.15);">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+      </div>
+      <div class="card-body">
+        <div class="card-title">張OO — 急救包 x3</div>
+        <div class="card-subtitle">申請時間 昨日 16:00 | 超出配額</div>
+      </div>
+      <div class="card-right">
+        <div class="badge badge-rejected">已拒絕</div>
+      </div>
+    </div>
+  </div>
+</div>
+{{ end }}

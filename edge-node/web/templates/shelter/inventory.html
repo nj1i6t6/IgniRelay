@@ -1,0 +1,71 @@
+{{ define "content" }}
+<div>
+  <div class="page-header">
+    <h2 class="page-title">物資管理</h2>
+    <a href="/inventory/distribute" class="btn btn-primary btn-sm">發放物資</a>
+  </div>
+
+  <!-- Tabs 篩選 -->
+  <div class="tabs">
+    <button class="tab active">庫存列表</button>
+    <button class="tab">入庫記錄</button>
+    <button class="tab">申領記錄</button>
+  </div>
+
+  <div class="card-list">
+    <!-- Item 1 -->
+    <div class="card-item">
+      <div class="card-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>
+      </div>
+      <div class="card-body">
+        <div class="card-title">純淨飲用水 (瓶)</div>
+        <div class="card-subtitle">每人限 2 瓶 / 日</div>
+        <div class="stock-bar">
+          <div class="stock-bar-fill high" style="width: 85%;"></div>
+        </div>
+      </div>
+      <div class="card-right">
+        <div class="card-value">425</div>
+        <div class="card-meta">庫存充足</div>
+      </div>
+    </div>
+    
+    <!-- Item 2 -->
+    <div class="card-item">
+      <div class="card-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m20 16-8 4-8-4"/><path d="m20 8-8 4-8-4"/><path d="m20 12-8 4-8-4"/><path d="M12 12V4"/><path d="m12 4-8 4"/><path d="m12 4 8 4"/></svg>
+      </div>
+      <div class="card-body">
+        <div class="card-title">軍用野戰口糧</div>
+        <div class="card-subtitle">每人限 1 份 / 日</div>
+        <div class="stock-bar">
+          <div class="stock-bar-fill medium" style="width: 40%;"></div>
+        </div>
+      </div>
+      <div class="card-right">
+        <div class="card-value">120</div>
+        <div class="card-meta">注意水位</div>
+      </div>
+    </div>
+
+    <!-- Item 3 -->
+    <div class="card-item">
+      <div class="card-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6H6A2 2 0 0 0 4 8v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2Z"/><path d="M12 10v4"/><path d="M10 12h4"/><path d="M16 6V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+      </div>
+      <div class="card-body">
+        <div class="card-title">急救包 (基礎)</div>
+        <div class="card-subtitle">按需發放，管控</div>
+        <div class="stock-bar">
+          <div class="stock-bar-fill low" style="width: 15%;"></div>
+        </div>
+      </div>
+      <div class="card-right">
+        <div class="card-value">12</div>
+        <div class="card-meta" style="color: var(--alert-critical)">即將耗盡</div>
+      </div>
+    </div>
+  </div>
+</div>
+{{ end }}

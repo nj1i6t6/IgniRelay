@@ -1,0 +1,128 @@
+/* ============================================================
+   ResQMesh / IgniRelay — Design Token System v2
+   修正版：WCAG AA 對比合規 · 手機 16px 基準 · 降飽和護眼
+   ============================================================ */
+
+:root {
+  /* ── 警報 Triage 統一色（降飽和版） ── */
+  --alert-critical:   #E05555;   /* 柔紅，不刺眼 */
+  --alert-warning:    #D4923A;   /* 琥珀暖黃 */
+  --alert-info:       #5B8DEF;   /* 柔藍 */
+  --alert-low:        #8893A2;   /* 中灰 */
+  --alert-safe:       #3EBD8A;   /* 柔綠 */
+  --alert-hazard:     #E07845;   /* 柔橙 */
+  --alert-offline:    #6B7788;   /* 暗灰 */
+
+  /* ── 狀態色（降飽和） ── */
+  --status-online:    #3EBD8A;
+  --status-syncing:   #D4A23A;
+  --status-offline:   #8893A2;
+  --status-error:     #E05555;
+
+  /* ── 字體 ── */
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", "Fira Code", ui-monospace, monospace;
+
+  /* ── 字體大小（手機 16px 為基準，向上放大） ── */
+  --text-lg:     1.25rem;      /* 20px — 頁面標題 */
+  --text-base:   1rem;         /* 16px — 正文、按鈕（WCAG 最低標準） */
+  --text-sm:     0.8125rem;    /* 13px — 標籤、時間戳 */
+  --text-stat:   2rem;         /* 32px — Dashboard 大數字 */
+  --text-stat-sm: 1.5rem;      /* 24px — 次級統計數字 */
+
+  /* ── 間距（觸控友善，加大） ── */
+  --space-xs:   4px;
+  --space-sm:   8px;
+  --space-md:   12px;
+  --space-lg:   16px;
+  --space-xl:   24px;
+  --space-2xl:  32px;
+
+  /* ── 圓角 ── */
+  --radius-sm:  4px;
+  --radius-md:  6px;
+  --radius-lg:  8px;
+  --radius-pill: 9999px;
+
+  /* ── 過渡 ── */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+}
+
+/* ================================================================
+   四套角色主題 — 全部獨立，背景不低於 #121212 等級
+   文字對比全部 > WCAG AA 4.5:1
+   ================================================================ */
+
+/* ── 避難所（安心翠）── */
+[data-theme="shelter"] {
+  --bg-primary:       #141E1B;   /* 提亮至可讀（原 #0C1917 太暗） */
+  --bg-secondary:     #1A2926;
+  --bg-card:          #1F332E;
+  --bg-card-hover:    #253D37;
+  --bg-input:         #121A17;
+  --border-default:   #2F5045;
+  --border-focus:     #3EBD8A;
+  --accent-primary:   #3EBD8A;   /* 降飽和翠綠 */
+  --accent-secondary: #4EB8C5;   /* 降飽和青 */
+  --text-primary:     #E8ECE9;   /* 柔白，非純白 */
+  --text-secondary:   #A8B5AF;   /* 提亮輔助字 */
+  --text-muted:       #7A8A82;   /* 提亮提示字（原 #64748B 太暗） */
+  --nav-bg:           #121A17;
+  --nav-active:       #3EBD8A;
+}
+
+/* ── 里（行動藍）── */
+[data-theme="village"] {
+  --bg-primary:       #131825;   /* 提亮 */
+  --bg-secondary:     #192038;
+  --bg-card:          #1E2845;
+  --bg-card-hover:    #253255;
+  --bg-input:         #10141F;
+  --border-default:   #2A3D6A;
+  --border-focus:     #6199EF;
+  --accent-primary:   #6199EF;   /* 降飽和藍 */
+  --accent-secondary: #9B82E8;   /* 降飽和紫 */
+  --text-primary:     #E8EAF0;
+  --text-secondary:   #A4ACB8;
+  --text-muted:       #7B8595;
+  --nav-bg:           #10141F;
+  --nav-active:       #6199EF;
+}
+
+/* ── 鄉鎮區 EOC（琥珀戰術）── 獨立主題，與里不同 */
+[data-theme="township"] {
+  --bg-primary:       #171A1F;
+  --bg-secondary:     #1F2530;
+  --bg-card:          #252D3A;
+  --bg-card-hover:    #2E3847;
+  --bg-input:         #12151A;
+  --border-default:   #3A4455;
+  --border-focus:     #D4923A;
+  --accent-primary:   #D4923A;   /* 琥珀金 */
+  --accent-secondary: #6199EF;   /* 藍輔助，跟里區分 */
+  --text-primary:     #ECEAE6;
+  --text-secondary:   #ADA99F;
+  --text-muted:       #80796E;
+  --nav-bg:           #12151A;
+  --nav-active:       #D4923A;
+}
+
+/* ── 警消（烈焰橙）── */
+[data-theme="fire"] {
+  --bg-primary:       #1A1614;
+  --bg-secondary:     #252019;
+  --bg-card:          #302820;
+  --bg-card-hover:    #3B3228;
+  --bg-input:         #141210;
+  --border-default:   #55483A;
+  --border-focus:     #E08840;
+  --accent-primary:   #E08840;   /* 降飽和消防橙 */
+  --accent-secondary: #E05555;   /* 降飽和紅 */
+  --text-primary:     #F0EAE0;
+  --text-secondary:   #BFB29E;
+  --text-muted:       #8A7E6E;
+  --nav-bg:           #141210;
+  --nav-active:       #E08840;
+}

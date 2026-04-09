@@ -1,0 +1,73 @@
+{{ define "content" }}
+<div>
+  <div class="page-header">
+    <h2 class="page-title">SOS 警報列表</h2>
+    <div class="badge badge-critical">5 件待處理</div>
+  </div>
+
+  <div class="card-list">
+    <!-- SOS RED 1 -->
+    <div class="card-item sos-active" style="flex-direction: column; align-items: stretch; gap: var(--space-md);">
+      <div class="flex items-center justify-between">
+        <span class="badge badge-critical">SOS RED</span>
+        <span class="text-mono text-sm" style="color: var(--text-muted);">09:35</span>
+      </div>
+      <div>
+        <div class="card-title" style="font-size: var(--text-lg);">大安路三段房屋倒塌</div>
+        <div class="card-subtitle mt-md">信義里 | 設備: 8a1f... | 距離 EOC: 1.2km</div>
+        <div class="text-sm mt-md" style="color: var(--text-secondary);">
+          回報者描述: 五樓公寓部分坍塌，疑有人受困。現場可聽到呼救聲。
+        </div>
+      </div>
+      <div class="flex gap-sm">
+        <button class="btn btn-primary" style="flex: 1;">派遣搜救</button>
+        <button class="btn btn-secondary" style="flex: 1;">轉報上級</button>
+      </div>
+    </div>
+
+    <!-- SOS RED 2 -->
+    <div class="card-item sos-active" style="flex-direction: column; align-items: stretch; gap: var(--space-md);">
+      <div class="flex items-center justify-between">
+        <span class="badge badge-critical">SOS RED</span>
+        <span class="text-mono text-sm" style="color: var(--text-muted);">09:20</span>
+      </div>
+      <div>
+        <div class="card-title" style="font-size: var(--text-lg);">淹水受困求援</div>
+        <div class="card-subtitle mt-md">松仁里 | 吳興街 220 巷 | 地下室</div>
+      </div>
+      <div class="flex gap-sm">
+        <button class="btn btn-primary" style="flex: 1;">派遣救援</button>
+        <button class="btn btn-secondary" style="flex: 1;">轉報上級</button>
+      </div>
+    </div>
+
+    <!-- SOS YELLOW -->
+    <div class="card-item" style="flex-direction: column; align-items: stretch; gap: var(--space-md); border-left: 3px solid var(--alert-warning);">
+      <div class="flex items-center justify-between">
+        <span class="badge badge-pending">SOS YELLOW</span>
+        <span class="text-mono text-sm" style="color: var(--text-muted);">09:10</span>
+      </div>
+      <div>
+        <div class="card-title">需要緊急醫療物資</div>
+        <div class="card-subtitle mt-md">松仁里避難所 | 胰島素不足</div>
+      </div>
+      <div class="flex gap-sm">
+        <button class="btn btn-secondary" style="flex: 1;">調度物資</button>
+        <button class="btn btn-secondary" style="flex: 1;">標記處理中</button>
+      </div>
+    </div>
+
+    <!-- Resolved -->
+    <div class="card-item" style="flex-direction: column; align-items: stretch; gap: var(--space-md); opacity: 0.6;">
+      <div class="flex items-center justify-between">
+        <span class="badge badge-done">已結案</span>
+        <span class="text-mono text-sm" style="color: var(--text-muted);">昨日 22:15</span>
+      </div>
+      <div>
+        <div class="card-title" style="color: var(--text-muted);">瓦斯外洩通報</div>
+        <div class="card-subtitle">永吉里 | 信義分隊已處置完畢</div>
+      </div>
+    </div>
+  </div>
+</div>
+{{ end }}

@@ -1,0 +1,49 @@
+{{ define "content" }}
+<div>
+  <div class="page-header">
+    <h2 class="page-title">收容登記</h2>
+  </div>
+
+  <div class="card-item" style="margin-bottom: var(--space-xl); background: var(--bg-secondary);">
+    <form style="width: 100%;">
+      <div class="form-group">
+        <label class="form-label">登記對象類別 <span class="required">*</span></label>
+        <select class="form-select">
+          <option>家庭 (多名成員)</option>
+          <option>個人</option>
+          <option>特殊需求群體</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">代表人姓名 / 化名 <span class="required">*</span></label>
+        <input type="text" class="form-input" placeholder="請輸入姓名">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">本次收容總人數 <span class="required">*</span></label>
+        <input type="number" class="form-input" value="1">
+      </div>
+
+      <button type="button" class="btn btn-primary btn-block">新增登記入所</button>
+    </form>
+  </div>
+  
+  <div class="section-header">
+    <div class="section-title">最新登記紀錄</div>
+  </div>
+  
+  <ul class="timeline">
+    <li class="timeline-item">
+      <div class="timeline-dot info"></div>
+      <div class="timeline-time">10:45</div>
+      <div class="timeline-content">林OO (個人) 已安置</div>
+    </li>
+    <li class="timeline-item">
+      <div class="timeline-dot warning"></div>
+      <div class="timeline-time">10:12</div>
+      <div class="timeline-content">陳OO 一家4口 (需要嬰兒食品) 已安置</div>
+    </li>
+  </ul>
+</div>
+{{ end }}

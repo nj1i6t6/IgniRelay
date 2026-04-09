@@ -1,0 +1,87 @@
+{{ define "content" }}
+<div x-data="dashboardData">
+
+  <!-- Skeleton 載入畫面 -->
+  <template x-if="loading">
+    <div>
+      <div class="stat-grid">
+        <div class="stat-card skeleton" style="height: 100px;"></div>
+        <div class="stat-card skeleton" style="height: 100px;"></div>
+        <div class="stat-card skeleton" style="height: 100px;"></div>
+      </div>
+      <div class="skeleton mt-xl" style="height: 300px;"></div>
+    </div>
+  </template>
+
+  <!-- 實際內容 -->
+  <template x-if="!loading">
+    <div>
+      <!-- 統計大卡片 -->
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-label">收容人數</div>
+          <div class="stat-value" x-text="stats.headcount"></div>
+          <div class="stat-trend" :class="stats.headcountTrend >= 0 ? 'up' : 'down'">
+            ▲ +<span x-text="stats.headcountTrend"></span> 今日
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">發放物資</div>
+          <div class="stat-value" x-text="stats.materials"></div>
+          <div class="stat-trend system">本週</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">待處理 SOS</div>
+          <!-- SOS 如果大於 0 就加上閃爍特效類別 (例如 sos-active) -->
+          <div class="stat-value" :class="stats.active_sos > 0 ? 'sos-active' : ''" x-text="stats.active_sos"></div>
+          <div class="stat-trend down" x-show="stats.active_sos > 0">需立即處理</div>
+        </div>
+      </div>
+
+      <!-- 最新動態 -->
+      <div class="mt-xl">
+        <div class="section-header">
+          <div class="section-title">
+            <!-- Zap Icon -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            最新動態
+          </div>
+          <button class="section-action">查看全部 &rarr;</button>
+        </div>
+
+        <ul class="timeline">
+          <template x-for="event in events" :key="event.time">
+            <li class="timeline-item">
+              <div class="timeline-dot" :class="event.type"></div>
+              <div class="timeline-time" x-text="event.time"></div>
+              <div class="timeline-content" x-text="event.text"></div>
+            </li>
+          </template>
+        </ul>
+      </div>
+
+      <!-- 快捷操作格 -->
+      <div class="action-grid">
+        <a href="/register" class="action-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          新增收容
+        </a>
+        <a href="/inventory/distribute" class="action-btn">
+           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
+          發放物資
+        </a>
+        <a href="/announcements/new" class="action-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+          緊急公告
+        </a>
+        <button class="action-btn" @click="triggerSync">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg>
+          立即上報
+        </button>
+      </div>
+
+    </div>
+  </template>
+
+</div>
+{{ end }}

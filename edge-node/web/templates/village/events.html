@@ -1,0 +1,44 @@
+{{ define "content" }}
+<div>
+  <div class="page-header">
+    <h2 class="page-title">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;"><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/><polyline points="14 2 14 8 20 8"/><path d="m3 15 4 4 4-4"/><path d="M7 11v8"/></svg>
+      Mesh 事件流
+    </h2>
+    <div class="badge badge-active">接收中</div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active">全部事件</button>
+    <button class="tab">SOS 警報</button>
+    <button class="tab">物資請求</button>
+  </div>
+
+  <ul class="timeline" style="background: var(--bg-card); padding: var(--space-md); border-radius: var(--radius-md); border: 1px solid var(--border-default);">
+    <li class="timeline-item">
+      <div class="timeline-dot critical"></div>
+      <div class="timeline-time">11:05</div>
+      <div class="timeline-content">
+        <div class="card-title text-primary">SOS_RED: 發現淹水受困</div>
+        <div class="text-sm text-muted">設備: 8a1f... • 距離: 約 250m</div>
+      </div>
+    </li>
+    <li class="timeline-item">
+      <div class="timeline-dot info"></div>
+      <div class="timeline-time">10:48</div>
+      <div class="timeline-content">
+        <div class="card-title text-primary">INFO: 道路通行回報</div>
+        <div class="text-sm text-muted">吳興街 220 巷目前可通行</div>
+      </div>
+    </li>
+    <li class="timeline-item">
+      <div class="timeline-dot warning"></div>
+      <div class="timeline-time">10:15</div>
+      <div class="timeline-content">
+        <div class="card-title text-primary">RESOURCE: 請求電池/行動電源</div>
+        <div class="text-sm text-muted">設備: c4fe... • 距離: 約 800m</div>
+      </div>
+    </li>
+  </ul>
+</div>
+{{ end }}
