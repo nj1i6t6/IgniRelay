@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../crypto/identity_manager.dart';
+import '../l10n/generated/app_localizations.dart';
 
 class OnboardingScreen extends StatefulWidget {
   final VoidCallback onComplete;
@@ -23,7 +24,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     Color(0xFF9E9E9E), // L2 Silver
     Color(0xFFFFD700), // L3 Gold
   ];
-  static const _badgeNames = ['匿名 (L0)', '手機驗證 (L1)', '社群背書 (L2)', '政府身分 (L3)'];
+  List<String> _badgeNames(BuildContext context) => [
+    S.of(context)!.onboardingBadgeL0,
+    S.of(context)!.onboardingBadgeL1,
+    S.of(context)!.onboardingBadgeL2,
+    S.of(context)!.onboardingBadgeL3,
+  ];
 
   @override
   void initState() {
@@ -53,10 +59,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a2e),
-        title: const Text('手機驗證 (L1)', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          '後續版本將透過後端 SMS OTP 驗證。\n目前暫時允許手動升級至 L1。',
-          style: TextStyle(color: Colors.white70),
+        title: Text(S.of(ctx)!.onboardingUpgradeDialogTitle, style: const TextStyle(color: Colors.white)),
+        content: Text(
+          S.of(ctx)!.onboardingUpgradeDialogContent,
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
@@ -66,11 +72,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               setState(() => _level = 1);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已升級至 L1 (銅牌) - 手機驗證')),
+                  SnackBar(content: Text(S.of(context)!.onboardingUpgradeSnack)),
                 );
               }
             },
-            child: const Text('確認升級', style: TextStyle(color: Colors.amber)),
+            child: Text(S.of(ctx)!.onboardingUpgradeDialogConfirm, style: const TextStyle(color: Colors.amber)),
           ),
         ],
       ),
@@ -94,7 +100,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
 
     final color = _badgeColors[_level.clamp(0, 3)];
-    final badgeName = _badgeNames[_level.clamp(0, 3)];
+    final badgeName = _badgeNames(context)[_level.clamp(0, 3)];
 
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
@@ -125,28 +131,27 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       color: color, fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               Text(
-                '裝置 ID: $_pubKeyHex...',
+                S.of(context)!.onboardingDeviceId(_pubKeyHex),
                 style: const TextStyle(
                     color: Colors.grey, fontSize: 12, fontFamily: 'monospace'),
               ),
               const SizedBox(height: 32),
 
               // 標題
-              const Text(
-                '烽傳 IgniRelay\n離線 Mesh 災難應急系統',
+              Text(
+                S.of(context)!.onboardingTitle,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                     color: Colors.white,
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     height: 1.4),
               ),
               const SizedBox(height: 12),
-              const Text(
-                '無網路時仍可透過 BLE Mesh 組成自組織網路，\n即時傳遞求救與物資配對訊息。',
+              Text(
+                S.of(context)!.onboardingDesc,
                 textAlign: TextAlign.center,
-                style:
-                    TextStyle(color: Colors.white54, fontSize: 14, height: 1.6),
+                style: const TextStyle(color: Colors.white54, fontSize: 14, height: 1.6),
               ),
               const SizedBox(height: 32),
 
@@ -155,7 +160,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 controller: _nicknameCtrl,
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
-                  labelText: '設定你的暱稱（可選）',
+                  labelText: S.of(context)!.onboardingNicknameHint,
                   labelStyle: const TextStyle(color: Colors.white54),
                   prefixIcon: const Icon(Icons.person, color: Colors.white54),
                   enabledBorder: OutlineInputBorder(
@@ -176,8 +181,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   onPressed: _upgradeToL1,
                   icon:
                       const Icon(Icons.verified_user, color: Color(0xFFCD7F32)),
-                  label: const Text('升級至 L1（手機驗證）',
-                      style: TextStyle(color: Color(0xFFCD7F32))),
+                  label: Text(S.of(context)!.onboardingUpgradeButton,
+                      style: const TextStyle(color: Color(0xFFCD7F32))),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFFCD7F32)),
                     padding: const EdgeInsets.symmetric(
@@ -198,9 +203,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text(
-                    '開始使用烽傳',
-                    style: TextStyle(
+                  child: Text(
+                    S.of(context)!.onboardingStartButton,
+                    style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
                         fontWeight: FontWeight.bold),

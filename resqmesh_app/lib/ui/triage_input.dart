@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../crypto/identity_manager.dart';
 import '../db/database_helper.dart';
 
@@ -106,8 +107,8 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
                 color: Colors.white24, borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 16),
-          const Text(
-            '緊急求救廣播',
+          Text(
+            S.of(context)!.triageTitle,
             style: TextStyle(
                 fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
@@ -117,7 +118,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
             style: const TextStyle(color: Colors.white),
             maxLines: 2,
             decoration: InputDecoration(
-              hintText: '描述需求或物資 (如: 需要飲水、有急救箱)',
+              hintText: S.of(context)!.triageDescHint,
               hintStyle: const TextStyle(color: Colors.white38),
               enabledBorder: OutlineInputBorder(
                 borderSide: const BorderSide(color: Colors.white24),
@@ -160,7 +161,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '附帶醫療卡資訊',
+                        S.of(context)!.triageMedicalCardToggle,
                         style: TextStyle(
                           color: _attachMedicalCard
                               ? Colors.white
@@ -170,7 +171,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
                       ),
                     ),
                     Text(
-                      _attachMedicalCard ? '已開啟' : '已關閉',
+                      _attachMedicalCard ? S.of(context)!.triageMedicalCardOn : S.of(context)!.triageMedicalCardOff,
                       style: TextStyle(
                         color: _attachMedicalCard
                             ? Colors.redAccent
@@ -190,7 +191,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
             child: ElevatedButton.icon(
               onPressed: () => _submit(2),
               icon: const Icon(Icons.warning, color: Colors.black, size: 18),
-              label: const Text('求助 (SOS_YELLOW)',
+              label: Text(S.of(context)!.triageSosYellowButton,
                   style: TextStyle(
                       color: Colors.black,
                       fontSize: 15,
@@ -245,10 +246,10 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
                         Flexible(
                           child: Text(
                             _isSosRedUnlocked
-                                ? '立即發送 SOS_RED 緊急求救'
+                                ? S.of(context)!.triageSosRedButton
                                 : _isHolding
-                                    ? '長按中... 剩 $_sosCountdown 秒'
-                                    : '長按 3 秒解鎖致命求救 (SOS_RED)',
+                                    ? S.of(context)!.triageSosRedCountdown(_sosCountdown)
+                                    : S.of(context)!.triageSosRedHoldHint,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 15,

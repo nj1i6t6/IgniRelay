@@ -5,6 +5,7 @@ import 'package:health/health.dart';
 import '../crypto/identity_manager.dart';
 import '../db/database_helper.dart';
 import '../models/medical_card.dart';
+import '../l10n/generated/app_localizations.dart';
 
 class MedicalCardScreen extends StatefulWidget {
   const MedicalCardScreen({super.key});
@@ -121,8 +122,8 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
       await _db.saveMedicalCard(pubKey, _card.toJsonString());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('醫療卡已儲存'),
+          SnackBar(
+            content: Text(S.of(context)!.medicalSavedSnack),
             backgroundColor: Colors.green,
           ),
         );
@@ -132,7 +133,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('儲存失敗: $e'),
+            content: Text(S.of(context)!.medicalSaveFailSnack(e.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -146,7 +147,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
     setState(() => _card.applyPreset(preset));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('已套用「$presetName」預設'),
+        content: Text(S.of(context)!.medicalPresetApplied(presetName)),
         backgroundColor: const Color(0xFF1a1a2e),
         duration: const Duration(seconds: 1),
       ),
@@ -158,7 +159,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
       appBar: AppBar(
-        title: const Text('醫療卡', style: TextStyle(color: Colors.white)),
+        title: Text(S.of(context)!.medicalTitle, style: const TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -179,16 +180,16 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                       border: Border.all(
                           color: Colors.redAccent.withValues(alpha: 0.3)),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
-                        Icon(Icons.info_outline,
+                        const Icon(Icons.info_outline,
                             color: Colors.redAccent, size: 18),
-                        SizedBox(width: 8),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '帶有廣播圖標的欄位會在 SOS 求救時\n隨訊號一起透過 Mesh 網路傳送給附近救援者',
-                            style:
-                                TextStyle(color: Colors.white70, fontSize: 12),
+                            S.of(context)!.medicalSosInfo,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12),
                           ),
                         ),
                       ],
@@ -205,64 +206,71 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   const SizedBox(height: 20),
 
                   // ── 基本生理 ──
-                  _buildSectionHeader('基本生理', Icons.person_outline),
+                  _buildSectionHeader(S.of(context)!.medicalSectionBasic, Icons.person_outline),
                   _buildTextField(
                     field: MedicalField.name,
+                    label: S.of(context)!.medicalFieldName,
                     controller: _nameCtrl,
-                    hint: '你的姓名',
+                    hint: S.of(context)!.medicalHintName,
                     icon: Icons.badge_outlined,
                   ),
                   _buildNumberField(
                     field: MedicalField.age,
+                    label: S.of(context)!.medicalFieldAge,
                     controller: _ageCtrl,
-                    hint: '年齡',
+                    hint: S.of(context)!.medicalHintAge,
                     icon: Icons.cake_outlined,
-                    suffix: '歲',
+                    suffix: S.of(context)!.medicalSuffixAge,
                   ),
                   _buildNumberField(
                     field: MedicalField.heightCm,
+                    label: S.of(context)!.medicalFieldHeight,
                     controller: _heightCtrl,
-                    hint: '身高',
+                    hint: S.of(context)!.medicalHintHeight,
                     icon: Icons.height,
-                    suffix: 'cm',
+                    suffix: S.of(context)!.medicalSuffixHeight,
                   ),
                   _buildNumberField(
                     field: MedicalField.weightKg,
+                    label: S.of(context)!.medicalFieldWeight,
                     controller: _weightCtrl,
-                    hint: '體重',
+                    hint: S.of(context)!.medicalHintWeight,
                     icon: Icons.monitor_weight_outlined,
-                    suffix: 'kg',
+                    suffix: S.of(context)!.medicalSuffixWeight,
                   ),
                   _buildBloodTypeField(),
                   const SizedBox(height: 20),
 
                   // ── 醫療背景 ──
-                  _buildSectionHeader('醫療背景', Icons.medical_services_outlined),
+                  _buildSectionHeader(S.of(context)!.medicalSectionBackground, Icons.medical_services_outlined),
                   _buildTextField(
                     field: MedicalField.conditions,
+                    label: S.of(context)!.medicalFieldConditions,
                     controller: _conditionsCtrl,
-                    hint: '如：糖尿病、癲癇、氣喘（用頓號分隔）',
+                    hint: S.of(context)!.medicalHintConditions,
                     icon: Icons.healing_outlined,
                     maxLines: 2,
                   ),
                   _buildAllergySection(),
                   _buildTextField(
                     field: MedicalField.medications,
+                    label: S.of(context)!.medicalFieldMedications,
                     controller: _medicationsCtrl,
-                    hint: '如：胰島素、降血壓藥（用頓號分隔）',
+                    hint: S.of(context)!.medicalHintMedications,
                     icon: Icons.medication_outlined,
                     maxLines: 2,
                   ),
                   const SizedBox(height: 20),
 
                   // ── 急救資訊 ──
-                  _buildSectionHeader('急救資訊', Icons.emergency_outlined),
+                  _buildSectionHeader(S.of(context)!.medicalSectionEmergency, Icons.emergency_outlined),
                   _buildEmergencyContactSection(),
                   _buildOrganDonorField(),
                   _buildTextField(
                     field: MedicalField.primaryLanguage,
+                    label: S.of(context)!.medicalFieldPrimaryLanguage,
                     controller: _languageCtrl,
-                    hint: '如：繁體中文、English',
+                    hint: S.of(context)!.medicalHintLanguage,
                     icon: Icons.language,
                   ),
                 ],
@@ -295,7 +303,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                             ),
                           )
                         : const Icon(Icons.save, size: 18),
-                    label: Text(_saving ? '儲存中...' : '儲存醫療卡',
+                    label: Text(_saving ? S.of(context)!.medicalSaving : S.of(context)!.medicalSaveButton,
                         style: const TextStyle(
                             fontSize: 15, fontWeight: FontWeight.bold)),
                   ),
@@ -307,16 +315,17 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
 
   // ── 快速預設列 ──
   Widget _buildPresetRow() {
+    final s = S.of(context)!;
     return Row(
       children: [
-        const Text('快速預設',
-            style: TextStyle(color: Colors.white54, fontSize: 12)),
+        Text(s.medicalPresetLabel,
+            style: const TextStyle(color: Colors.white54, fontSize: 12)),
         const SizedBox(width: 12),
-        _presetChip('最小揭露', MedicalField.presetMinimal),
+        _presetChip(s.medicalPresetMinimal, MedicalField.presetMinimal),
         const SizedBox(width: 8),
-        _presetChip('建議設定', MedicalField.presetRecommended),
+        _presetChip(s.medicalPresetRecommended, MedicalField.presetRecommended),
         const SizedBox(width: 8),
-        _presetChip('全部分享', MedicalField.presetFull),
+        _presetChip(s.medicalPresetFull, MedicalField.presetFull),
       ],
     );
   }
@@ -332,7 +341,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
       ),
       onPressed: _importFromHealthConnect,
       icon: const Icon(Icons.download, size: 18),
-      label: const Text('從 Health Connect 匯入', style: TextStyle(fontSize: 13)),
+      label: Text(S.of(context)!.medicalHealthImportButton, style: const TextStyle(fontSize: 13)),
     );
   }
 
@@ -358,24 +367,19 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('需要 Health Connect'),
-            content: const Text(
-              '此功能需要 Google Health Connect 應用。\n\n'
-              '請前往 Google Play 商店安裝「Health Connect」後再試。\n\n'
-              '安裝後，請先在 Health Connect 中新增您的健康資料（身高、體重、血型），'
-              '然後回到此頁面匯入。',
-            ),
+            title: Text(S.of(context)!.medicalHealthConnectRequired),
+            content: Text(S.of(context)!.medicalHealthConnectInstallGuide),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('了解'),
+                child: Text(S.of(context)!.medicalHealthConnectDismiss),
               ),
               TextButton(
                 onPressed: () {
                   Navigator.pop(ctx);
                   health.installHealthConnect();
                 },
-                child: const Text('前往安裝'),
+                child: Text(S.of(context)!.medicalHealthConnectInstall),
               ),
             ],
           ),
@@ -394,18 +398,12 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
           showDialog(
             context: context,
             builder: (ctx) => AlertDialog(
-              title: const Text('授權失敗'),
-              content: const Text(
-                '未獲得 Health Connect 讀取權限。\n\n'
-                '請手動授權：\n'
-                '1. 開啟「Health Connect」應用\n'
-                '2. 點選「應用程式權限」\n'
-                '3. 找到「烽傳」並允許讀取身高、體重、血型',
-              ),
+              title: Text(S.of(context)!.medicalHealthConnectAuthFail),
+              content: Text(S.of(context)!.medicalHealthConnectAuthGuide),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('了解'),
+                  child: Text(S.of(context)!.medicalHealthConnectDismiss),
                 ),
               ],
             ),
@@ -426,8 +424,8 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
       if (healthData.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Health Connect 中沒有找到健康資料'),
+            SnackBar(
+              content: Text(S.of(context)!.medicalHealthConnectNoData),
               backgroundColor: Colors.orange,
             ),
           );
@@ -475,8 +473,8 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(imported > 0
-                ? '已從 Health Connect 匯入 $imported 項資料'
-                : '未匯入新資料（欄位已有值或無可用資料）'),
+                ? S.of(context)!.medicalHealthConnectImported(imported)
+                : S.of(context)!.medicalHealthConnectNoNewData),
             backgroundColor: imported > 0 ? Colors.green : Colors.orange,
           ),
         );
@@ -485,7 +483,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Health Connect 匯入失敗：$e\n請確認已安裝 Health Connect 應用'),
+            content: Text(S.of(context)!.medicalHealthConnectFailSnack(e.toString())),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),
@@ -611,6 +609,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
   // ── 通用文字欄位 ──
   Widget _buildTextField({
     required String field,
+    String? label,
     required TextEditingController controller,
     required String hint,
     required IconData icon,
@@ -627,7 +626,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
               maxLines: maxLines,
               style: const TextStyle(color: Colors.white, fontSize: 14),
               decoration: InputDecoration(
-                labelText: MedicalField.label(field),
+                labelText: label ?? MedicalField.label(field),
                 labelStyle:
                     const TextStyle(color: Colors.white38, fontSize: 13),
                 hintText: hint,
@@ -661,6 +660,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
   // ── 數字欄位 ──
   Widget _buildNumberField({
     required String field,
+    String? label,
     required TextEditingController controller,
     required String hint,
     required IconData icon,
@@ -677,7 +677,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               style: const TextStyle(color: Colors.white, fontSize: 14),
               decoration: InputDecoration(
-                labelText: MedicalField.label(field),
+                labelText: label ?? MedicalField.label(field),
                 labelStyle:
                     const TextStyle(color: Colors.white38, fontSize: 13),
                 hintText: hint,
@@ -721,7 +721,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
               dropdownColor: const Color(0xFF1a1a2e),
               style: const TextStyle(color: Colors.white, fontSize: 14),
               decoration: InputDecoration(
-                labelText: '血型',
+                labelText: S.of(context)!.medicalFieldBloodType,
                 labelStyle:
                     const TextStyle(color: Colors.white38, fontSize: 13),
                 prefixIcon: const Icon(Icons.bloodtype_outlined,
@@ -742,7 +742,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
               items: _bloodTypes.map((bt) {
                 return DropdownMenuItem(
                   value: bt,
-                  child: Text(bt.isEmpty ? '未選擇' : bt),
+                  child: Text(bt.isEmpty ? S.of(context)!.medicalBloodTypeNone : bt),
                 );
               }).toList(),
               onChanged: (v) => setState(() => _card.bloodType = v ?? ''),
@@ -767,8 +767,8 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
               const Icon(Icons.warning_amber_outlined,
                   color: Colors.white38, size: 18),
               const SizedBox(width: 8),
-              const Text('過敏原',
-                  style: TextStyle(color: Colors.white54, fontSize: 13)),
+              Text(S.of(context)!.medicalAllergenLabel,
+                  style: const TextStyle(color: Colors.white54, fontSize: 13)),
               const Spacer(),
               _buildSosToggle(MedicalField.allergies),
             ],
@@ -812,7 +812,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   controller: _allergenCtrl,
                   style: const TextStyle(color: Colors.white, fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: '過敏原',
+                    hintText: S.of(context)!.medicalAllergenHint,
                     hintStyle:
                         const TextStyle(color: Colors.white24, fontSize: 12),
                     enabledBorder: OutlineInputBorder(
@@ -837,7 +837,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   controller: _reactionCtrl,
                   style: const TextStyle(color: Colors.white, fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: '反應症狀',
+                    hintText: S.of(context)!.medicalReactionHint,
                     hintStyle:
                         const TextStyle(color: Colors.white24, fontSize: 12),
                     enabledBorder: OutlineInputBorder(
@@ -864,7 +864,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   setState(() {
                     _card.allergies.add(AllergyEntry(
                       allergen: allergen,
-                      reaction: reaction.isNotEmpty ? reaction : '未知反應',
+                      reaction: reaction.isNotEmpty ? reaction : S.of(context)!.medicalReactionUnknown,
                     ));
                     _allergenCtrl.clear();
                     _reactionCtrl.clear();
@@ -903,7 +903,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   keyboardType: TextInputType.phone,
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
-                    labelText: '緊急聯絡人電話',
+                    labelText: S.of(context)!.medicalEcPhoneLabel,
                     labelStyle:
                         const TextStyle(color: Colors.white38, fontSize: 13),
                     hintText: '0912-345-678',
@@ -938,10 +938,10 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   controller: _ecRelationCtrl,
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
-                    labelText: '與你的關係',
+                    labelText: S.of(context)!.medicalEcRelationLabel,
                     labelStyle:
                         const TextStyle(color: Colors.white38, fontSize: 13),
-                    hintText: '如：母親、配偶',
+                    hintText: S.of(context)!.medicalEcRelationHint,
                     hintStyle:
                         const TextStyle(color: Colors.white24, fontSize: 13),
                     prefixIcon: const Icon(Icons.people_outline,
@@ -990,18 +990,18 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   const Icon(Icons.volunteer_activism_outlined,
                       color: Colors.white38, size: 18),
                   const SizedBox(width: 12),
-                  const Text('器官捐贈意願',
-                      style: TextStyle(color: Colors.white54, fontSize: 13)),
+                  Text(S.of(context)!.medicalOrganDonorLabel,
+                      style: const TextStyle(color: Colors.white54, fontSize: 13)),
                   const Spacer(),
                   DropdownButton<bool?>(
                     value: _card.organDonor,
                     dropdownColor: const Color(0xFF1a1a2e),
                     underline: const SizedBox(),
                     style: const TextStyle(color: Colors.white, fontSize: 14),
-                    items: const [
-                      DropdownMenuItem(value: null, child: Text('未設定')),
-                      DropdownMenuItem(value: true, child: Text('願意')),
-                      DropdownMenuItem(value: false, child: Text('不願意')),
+                    items: [
+                      DropdownMenuItem(value: null, child: Text(S.of(context)!.medicalOrganDonorNone)),
+                      DropdownMenuItem(value: true, child: Text(S.of(context)!.medicalOrganDonorYes)),
+                      DropdownMenuItem(value: false, child: Text(S.of(context)!.medicalOrganDonorNo)),
                     ],
                     onChanged: (v) => setState(() => _card.organDonor = v),
                   ),

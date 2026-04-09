@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../mesh/event_manager.dart';
 import '../mesh/geo_context_resolver.dart';
 import 'supply_category_data.dart';
@@ -76,7 +77,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('物資已成功發布！'),
+            content: Text(S.of(context)!.supplyRegSuccessSnack),
             backgroundColor: Colors.green[700],
           ),
         );
@@ -92,7 +93,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('發布失敗: $e'), backgroundColor: Colors.red[700]),
+          SnackBar(content: Text(S.of(context)!.supplyRegFailSnack(e.toString())), backgroundColor: Colors.red[700]),
         );
       }
     } finally {
@@ -105,7 +106,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
       appBar: AppBar(
-        title: const Text('登記物資供給', style: TextStyle(color: Colors.white)),
+        title: Text(S.of(context)!.supplyRegTitle, style: const TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -115,8 +116,8 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
           padding: const EdgeInsets.all(20),
           children: [
             // ── 第一層：物資大類 ──
-            const Text('物資大類',
-                style: TextStyle(color: Colors.white70, fontSize: 14)),
+            Text(S.of(context)!.supplyRegCategoryLabel,
+                style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -150,7 +151,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                             color: selected ? cat.color : Colors.white54,
                             size: 18),
                         const SizedBox(width: 6),
-                        Text(cat.label,
+                        Text(SupplyCategoryLocalizer.categoryLabel(context, cat.code),
                             style: TextStyle(
                               color: selected ? cat.color : Colors.white54,
                               fontWeight: selected
@@ -167,7 +168,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
 
             // ── 第二層：物資子類 ──
             if (_selectedCategory != null) ...[
-              Text('${_selectedCategory!.label} → 子類別',
+              Text(S.of(context)!.supplyRegSubCategoryLabel(SupplyCategoryLocalizer.categoryLabel(context, _selectedCategory!.code)),
                   style: const TextStyle(color: Colors.white70, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
@@ -176,7 +177,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                 children: _selectedCategory!.subCategories.map((sub) {
                   final selected = _selectedSubCategory?.code == sub.code;
                   return ChoiceChip(
-                    label: Text(sub.label),
+                    label: Text(SupplyCategoryLocalizer.subCategoryLabel(context, sub.code)),
                     selected: selected,
                     selectedColor:
                         _selectedCategory!.color.withValues(alpha: 0.3),
@@ -204,8 +205,8 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
             // ── 第三層：具體品項（若有） ──
             if (_selectedSubCategory != null &&
                 _selectedSubCategory!.items.isNotEmpty) ...[
-              const Text('具體品項 (可選)',
-                  style: TextStyle(color: Colors.white70, fontSize: 14)),
+              Text(S.of(context)!.supplyRegItemLabel,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 6,
@@ -213,7 +214,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                 children: _selectedSubCategory!.items.map((item) {
                   final selected = _selectedItem == item.code;
                   return FilterChip(
-                    label: Text(item.label,
+                    label: Text(SupplyCategoryLocalizer.itemLabel(context, item.code),
                         style: TextStyle(
                           color: selected ? Colors.white : Colors.white54,
                           fontSize: 12,
@@ -260,8 +261,8 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
 
             // ── 有效期限（hasExpiry 子分類才顯示）──
             if (_selectedSubCategory?.hasExpiry == true) ...[
-              const Text('有效期限',
-                  style: TextStyle(color: Colors.white70, fontSize: 14)),
+              Text(S.of(context)!.supplyRegExpiryLabel,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
               const SizedBox(height: 8),
               GestureDetector(
                 onTap: () async {
@@ -299,7 +300,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                         child: Text(
                           _expiryDate != null
                               ? '${_expiryDate!.year}/${_expiryDate!.month.toString().padLeft(2, '0')}/${_expiryDate!.day.toString().padLeft(2, '0')}'
-                              : '點擊選擇有效期限 (選填)',
+                              : S.of(context)!.supplyRegExpiryHint,
                           style: TextStyle(
                             color: _expiryDate != null
                                 ? Colors.white
@@ -323,8 +324,8 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
 
             // ── 物品狀態（trackCondition 子分類才顯示）──
             if (_selectedSubCategory?.trackCondition == true) ...[
-              const Text('物品狀態',
-                  style: TextStyle(color: Colors.white70, fontSize: 14)),
+              Text(S.of(context)!.supplyRegConditionLabel,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -332,7 +333,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                 children: ItemCondition.values.map((cond) {
                   final selected = _itemCondition == cond;
                   return ChoiceChip(
-                    label: Text(cond.label),
+                    label: Text(cond.localLabel(context)),
                     selected: selected,
                     selectedColor: (_selectedCategory?.color ?? Colors.grey)
                         .withValues(alpha: 0.3),
@@ -361,37 +362,37 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
               style: const TextStyle(color: Colors.white),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: _inputDecoration('數量', Icons.numbers),
-              validator: (v) => (v == null || v.isEmpty) ? '請輸入數量' : null,
+              decoration: _inputDecoration(S.of(context)!.supplyRegQtyLabel, Icons.numbers),
+              validator: (v) => (v == null || v.isEmpty) ? S.of(context)!.supplyRegQtyValidator : null,
             ),
             const SizedBox(height: 20),
 
             // ── 交接方式（可複選）──
-            const Text('交接方式（可複選）',
-                style: TextStyle(color: Colors.white70, fontSize: 14)),
+            Text(S.of(context)!.supplyRegDeliverySection,
+                style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             ...[
               _buildDeliveryModeCheckbox(
                 mode: 'DELIVER',
                 icon: Icons.delivery_dining,
-                label: '我送過去',
-                subtitle: '主動將物資送到對方位置',
+                label: S.of(context)!.supplyRegDeliveryDeliver,
+                subtitle: S.of(context)!.supplyRegDeliveryDeliverDesc,
                 activeColor: Colors.greenAccent,
               ),
               const SizedBox(height: 8),
               _buildDeliveryModeCheckbox(
                 mode: 'PICKUP',
                 icon: Icons.storefront,
-                label: '對方來取',
-                subtitle: '對方來我這裡取物資',
+                label: S.of(context)!.supplyRegDeliveryPickup,
+                subtitle: S.of(context)!.supplyRegDeliveryPickupDesc,
                 activeColor: Colors.blueAccent,
               ),
               const SizedBox(height: 8),
               _buildDeliveryModeCheckbox(
                 mode: 'DROP_OFF',
                 icon: Icons.inventory_2,
-                label: '放置物資',
-                subtitle: '無接觸交接 — 放置後通知對方自取',
+                label: S.of(context)!.supplyRegDeliveryDropoff,
+                subtitle: S.of(context)!.supplyRegDeliveryDropoffDesc,
                 activeColor: Colors.amber,
               ),
             ],
@@ -402,7 +403,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
               controller: _descCtrl,
               style: const TextStyle(color: Colors.white),
               maxLines: 2,
-              decoration: _inputDecoration('備註描述 (選填)', Icons.notes),
+              decoration: _inputDecoration(S.of(context)!.supplyRegNoteHint, Icons.notes),
             ),
             const SizedBox(height: 20),
 
@@ -412,7 +413,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                 const Icon(Icons.radar, color: Colors.white54, size: 18),
                 const SizedBox(width: 8),
                 Text(
-                  '覆蓋半徑: ${(_maxRange / 1000).toStringAsFixed(1)} km',
+                  S.of(context)!.supplyRegRange((_maxRange / 1000).toStringAsFixed(1)),
                   style: const TextStyle(color: Colors.white70),
                 ),
               ],
@@ -427,9 +428,9 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
               label: '${(_maxRange / 1000).toStringAsFixed(1)} km',
               onChanged: (v) => setState(() => _maxRange = v),
             ),
-            const Text(
-              '* 由地理環境自動建議，可手動調整',
-              style: TextStyle(color: Colors.white30, fontSize: 11),
+            Text(
+              S.of(context)!.supplyRegRangeNote,
+              style: const TextStyle(color: Colors.white30, fontSize: 11),
             ),
             const SizedBox(height: 24),
 
@@ -448,7 +449,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                     : const Icon(Icons.broadcast_on_personal,
                         color: Colors.white),
                 label: Text(
-                  _publishing ? '發布中...' : '發布至 Mesh 網路',
+                  _publishing ? S.of(context)!.supplyRegPublishing : S.of(context)!.supplyRegPublishButton,
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
                 style: ElevatedButton.styleFrom(

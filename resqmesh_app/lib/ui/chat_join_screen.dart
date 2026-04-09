@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart' as crypto_lib;
+import '../l10n/generated/app_localizations.dart';
 import '../services/chat_service.dart';
 import '../services/location_service.dart';
 import '../geo/village_geofence.dart';
@@ -28,7 +29,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
   Future<void> _autoJoinVillage() async {
     setState(() {
       _joining = true;
-      _statusMessage = '正在取得 GPS 位置...';
+      _statusMessage = S.of(context)!.chatJoinGpsLocating;
     });
 
     try {
@@ -40,7 +41,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
           await Future.delayed(const Duration(milliseconds: 500));
           if (locService.hasLocation) break;
           if (!mounted) return;
-          setState(() => _statusMessage = '等待 GPS 定位中... (${(i + 1) ~/ 2}s)');
+          setState(() => _statusMessage = S.of(context)!.chatJoinGpsWaiting((i + 1) ~/ 2));
         }
       }
 
@@ -49,7 +50,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
           setState(() => _statusMessage = null);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(locService.unavailableReason ?? 'GPS 定位失敗，請確認 GPS 已開啟，或使用下方手動設定'),
+              content: Text(locService.unavailableReason ?? S.of(context)!.chatJoinGpsFail),
               duration: const Duration(seconds: 4),
             ),
           );
@@ -57,17 +58,17 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
         return;
       }
 
-      setState(() => _statusMessage = '正在查詢所在行政區...');
+      setState(() => _statusMessage = S.of(context)!.chatJoinGpsQuerying);
 
       final roomId = await _chatService.autoJoinVillageRoom();
       if (roomId != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已加入所在里聊天室及公告頻道')),
+          SnackBar(content: Text(S.of(context)!.chatJoinAutoSuccess)),
         );
         Navigator.pop(context, true);
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('無法識別所在行政區，請使用手動設定')),
+          SnackBar(content: Text(S.of(context)!.chatJoinAutoFailRegion)),
         );
       }
     } finally {
@@ -91,7 +92,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
         setState(() => _searchResults = results);
         if (results.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('找不到符合的村里，請嘗試其他關鍵字')),
+            SnackBar(content: Text(S.of(context)!.chatJoinSearchNoResults)),
           );
         }
       }
@@ -142,14 +143,14 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已加入 ${village.fullName} 聊天室及公告頻道')),
+          SnackBar(content: Text(S.of(context)!.chatJoinSuccess(village.fullName))),
         );
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加入失敗: $e')),
+          SnackBar(content: Text(S.of(context)!.chatJoinFail(e.toString()))),
         );
       }
     } finally {
@@ -185,14 +186,14 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已加入聊天室')),
+          SnackBar(content: Text(S.of(context)!.chatJoinInviteSuccess)),
         );
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加入失敗: $e')),
+          SnackBar(content: Text(S.of(context)!.chatJoinFail(e.toString()))),
         );
       }
     } finally {
@@ -210,7 +211,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('加入聊天室')),
+      appBar: AppBar(title: Text(S.of(context)!.chatJoinTitle)),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -223,11 +224,11 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('自動加入',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(S.of(context)!.chatJoinAutoSection,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    const Text('根據 GPS 位置自動加入所在里聊天室及行政區公告頻道',
-                        style: TextStyle(color: Colors.grey)),
+                    Text(S.of(context)!.chatJoinAutoDesc,
+                        style: const TextStyle(color: Colors.grey)),
                     if (_statusMessage != null) ...[
                       const SizedBox(height: 8),
                       Row(
@@ -251,7 +252,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
                             ? const SizedBox(
                                 width: 16, height: 16,
                                 child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('偵測並加入里聊天室'),
+                            : Text(S.of(context)!.chatJoinAutoButton),
                       ),
                     ),
                   ],
@@ -267,21 +268,21 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('手動設定所在區域',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(S.of(context)!.chatJoinManualSection,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    const Text('輸入縣市、鄉鎮區或里名稱搜尋，選擇後加入對應聊天室',
-                        style: TextStyle(color: Colors.grey)),
+                    Text(S.of(context)!.chatJoinManualDesc,
+                        style: const TextStyle(color: Colors.grey)),
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
                           child: TextField(
                             controller: _searchController,
-                            decoration: const InputDecoration(
-                              hintText: '例：新興區、安康里、高雄市',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.search),
+                            decoration: InputDecoration(
+                              hintText: S.of(context)!.chatJoinSearchHint,
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.search),
                               isDense: true,
                             ),
                             onSubmitted: (_) => _searchVillage(),
@@ -294,13 +295,13 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
                               ? const SizedBox(
                                   width: 16, height: 16,
                                   child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Text('搜尋'),
+                              : Text(S.of(context)!.chatJoinSearchButton),
                         ),
                       ],
                     ),
                     if (_searchResults.isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      Text('搜尋結果（${_searchResults.length} 筆）',
+                      Text(S.of(context)!.chatJoinSearchResults(_searchResults.length),
                           style: const TextStyle(fontSize: 13, color: Colors.grey)),
                       const SizedBox(height: 8),
                       ConstrainedBox(
@@ -313,7 +314,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
                             return ListTile(
                               dense: true,
                               title: Text(v.fullName),
-                              subtitle: Text('代碼: ${v.villcode}', style: const TextStyle(fontSize: 11)),
+                              subtitle: Text(S.of(context)!.chatJoinSearchVillcode(v.villcode), style: const TextStyle(fontSize: 11)),
                               trailing: const Icon(Icons.add_circle_outline, size: 20),
                               onTap: _joining ? null : () => _joinWithVillage(v),
                             );
@@ -334,18 +335,18 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('輸入邀請碼',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(S.of(context)!.chatJoinInviteSection,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    const Text('輸入聊天室 ID 或邀請碼加入自訂頻道',
-                        style: TextStyle(color: Colors.grey)),
+                    Text(S.of(context)!.chatJoinInviteDesc,
+                        style: const TextStyle(color: Colors.grey)),
                     const SizedBox(height: 12),
                     TextField(
                       controller: _codeController,
-                      decoration: const InputDecoration(
-                        hintText: '聊天室 ID 或 ID:密碼',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.vpn_key),
+                      decoration: InputDecoration(
+                        hintText: S.of(context)!.chatJoinInviteHint,
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.vpn_key),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -354,7 +355,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
                       child: ElevatedButton.icon(
                         onPressed: _joining ? null : _joinByCode,
                         icon: const Icon(Icons.login),
-                        label: const Text('加入'),
+                        label: Text(S.of(context)!.chatJoinInviteButton),
                       ),
                     ),
                   ],
@@ -366,18 +367,18 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
             // ── 說明 ──
             Card(
               color: Colors.blue.withOpacity(0.1),
-              child: const Padding(
-                padding: EdgeInsets.all(16),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('聊天室說明', style: TextStyle(fontWeight: FontWeight.bold)),
-                    SizedBox(height: 8),
-                    Text('- 里聊天室：所有人皆可發言，每 3 分鐘可發一則'),
-                    Text('- 鄉鎮區/縣市/全國：僅管理員（L3）可發布公告'),
-                    Text('- 自訂頻道：需掃碼或輸入邀請碼加入'),
-                    Text('- 所有訊息透過 BLE Mesh 傳播，48 小時後自動清除'),
-                    Text('- 切換區域後，舊區域的聊天室會被移除'),
+                    Text(S.of(context)!.chatJoinInfoSection, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text(S.of(context)!.chatJoinInfoVillage),
+                    Text(S.of(context)!.chatJoinInfoAdmin),
+                    Text(S.of(context)!.chatJoinInfoCustom),
+                    Text(S.of(context)!.chatJoinInfoMesh),
+                    Text(S.of(context)!.chatJoinInfoSwitch),
                   ],
                 ),
               ),

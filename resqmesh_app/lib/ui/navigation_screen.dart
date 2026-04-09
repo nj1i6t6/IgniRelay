@@ -20,6 +20,7 @@ import '../services/match_service.dart';
 import 'physical_handoff.dart';
 import 'ignirelay_theme.dart';
 import 'supply_category_data.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// 導航引導畫面
 /// 顯示供給/需求兩方座標、直線距離、方位、BLE 近接偵測
@@ -99,12 +100,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
             barrierDismissible: false,
             builder: (_) => AlertDialog(
               backgroundColor: const Color(0xFF1a1a2e),
-              title: const Text('媒合已取消', style: TextStyle(color: Colors.white)),
-              content: const Text('對方已取消此次媒合。', style: TextStyle(color: Colors.white70)),
+              title: Text(S.of(context)!.navCancelDialogTitle, style: const TextStyle(color: Colors.white)),
+              content: Text(S.of(context)!.navCancelDialogContent, style: const TextStyle(color: Colors.white70)),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
-                  child: const Text('返回首頁', style: TextStyle(color: Colors.redAccent)),
+                  child: Text(S.of(context)!.navCancelDialogBack, style: const TextStyle(color: Colors.redAccent)),
                 ),
               ],
             ),
@@ -114,7 +115,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
         _locationRefresh?.cancel();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('交接完成！'), backgroundColor: Colors.green),
+            SnackBar(content: Text(S.of(context)!.navCompleteSnack), backgroundColor: Colors.green),
           );
           Navigator.popUntil(context, (r) => r.isFirst);
         }
@@ -320,15 +321,15 @@ class _NavigationScreenState extends State<NavigationScreen> {
     // 配送方向描述
     String whoMoves;
     if (m.deliveryMode == 'DELIVER') {
-      whoMoves = '供給者前往需求者';
+      whoMoves = S.of(context)!.navDirectionProviderToReq;
     } else {
-      whoMoves = '需求者前往供給者';
+      whoMoves = S.of(context)!.navDirectionReqToProvider;
     }
 
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
       appBar: AppBar(
-        title: const Text('導航指引', style: TextStyle(color: Colors.white)),
+        title: Text(S.of(context)!.navTitle, style: const TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -427,20 +428,20 @@ class _NavigationScreenState extends State<NavigationScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '供給: ${m.supplyQty.toInt()} 份 ←→ 需求: ${m.requestQty.toInt()} 份 (滿足率 ${(m.fulfillmentRatio * 100).toInt()}%)',
+                        S.of(context)!.navSupplyInfo(m.supplyQty.toInt(), m.requestQty.toInt(), (m.fulfillmentRatio * 100).toInt()),
                         style: const TextStyle(
                             color: Colors.white38, fontSize: 12),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ] else ...[
-                      const Text('GPS 定位中...',
+                      Text(S.of(context)!.navGpsLocating,
                           style:
-                              TextStyle(color: Colors.white38, fontSize: 16)),
+                              const TextStyle(color: Colors.white38, fontSize: 16)),
                     ],
                     const SizedBox(height: 16),
 
                     // BLE 狀態
-                    _buildBleStatus(),
+                    _buildBleStatus(context),
 
                     const SizedBox(height: 16),
 
@@ -456,7 +457,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                           color: _peerDetected ? Colors.white : Colors.white38,
                         ),
                         label: Text(
-                          _peerDetected ? '開始交接' : '等待偵測到對方藍牙...',
+                          _peerDetected ? S.of(context)!.navHandoffButton : S.of(context)!.navHandoffWaiting,
                           style: TextStyle(
                             color:
                                 _peerDetected ? Colors.white : Colors.white38,
@@ -569,19 +570,19 @@ class _NavigationScreenState extends State<NavigationScreen> {
     );
   }
 
-  Widget _buildBleStatus() {
+  Widget _buildBleStatus(BuildContext context) {
     if (_peerDetected) {
       // RSSI 轉信號強度
       String strength;
       Color strengthColor;
       if (_peerRssi > -60) {
-        strength = '強 (很近)';
+        strength = S.of(context)!.navBleSignalStrong;
         strengthColor = Colors.greenAccent;
       } else if (_peerRssi > -80) {
-        strength = '中 (附近)';
+        strength = S.of(context)!.navBleSignalMedium;
         strengthColor = Colors.amber;
       } else {
-        strength = '弱 (較遠)';
+        strength = S.of(context)!.navBleSignalWeak;
         strengthColor = Colors.orange;
       }
 
@@ -597,7 +598,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
             const Icon(Icons.bluetooth_connected,
                 color: Colors.greenAccent, size: 20),
             const SizedBox(width: 8),
-            Text('偵測到 Mesh 節點',
+            Text(S.of(context)!.navBleDetected,
                 style:
                     const TextStyle(color: Colors.greenAccent, fontSize: 13)),
             const Spacer(),
@@ -607,7 +608,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 color: strengthColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Text('信號 $strength',
+              child: Text(S.of(context)!.navBleSignal(strength),
                   style: TextStyle(color: strengthColor, fontSize: 11)),
             ),
           ],
@@ -631,10 +632,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 strokeWidth: 2, color: Colors.white38),
           ),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Text(
-              '掃描藍牙中... 接近對方時會自動偵測',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
+              S.of(context)!.navBleScanning,
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
             ),
           ),
         ],

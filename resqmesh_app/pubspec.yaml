@@ -2,7 +2,7 @@ name: ignirelay_app
 description: 烽傳 IgniRelay - Offline Mesh Emergency Rescue System
 publish_to: 'none'
 
-version: 0.1.25+26
+version: 0.1.26+27
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -10,6 +10,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any
 
   # ── UI & Maps ─────────────────────────────────────────────
   flutter_map: ^7.0.2
@@ -23,10 +26,8 @@ dependencies:
   path_provider: ^2.1.4
 
   # ── BLE Mesh Networking ────────────────────────────────────
-  # flutter_blue_plus 已移除（私有授權不可商用）
   # Android: Nordic BLE Library via MethodChannel
   # iOS: CoreBluetooth via MethodChannel
-  # bridgefy: ^1.1.8  # 暫時停用 — Bridgefy maven repo 500 error，待恢復後啟用
 
   # ── State Management & Utils ───────────────────────────────
   provider: ^6.1.2
@@ -50,7 +51,7 @@ dependencies:
   fixnum: ^1.1.0
 
   # ── Health Connect (醫療卡匯入) ──────────────────────────────
-  health: ^11.0.0
+  health: ^13.1.4
 
   # ── GPS Location ──────────────────────────────────────────
   geolocator: ^11.1.0
@@ -66,6 +67,7 @@ dev_dependencies:
   sqflite_common_ffi: ^2.3.3
 
 flutter:
+  generate: true
   uses-material-design: true
   assets:
     - assets/maps/

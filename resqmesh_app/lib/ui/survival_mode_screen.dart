@@ -9,6 +9,7 @@ import '../mesh/native_bridge.dart';
 import '../mesh/event_manager.dart';
 import '../mesh/tier_manager.dart';
 import '../db/database_helper.dart';
+import '../l10n/generated/app_localizations.dart';
 
 class SurvivalModeScreen extends StatefulWidget {
   const SurvivalModeScreen({super.key});
@@ -107,7 +108,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       if (!mounted) return;
       setState(() {
         _bleConnectedCount++;
-        _recentEvents.insert(0, '[Mesh] 收到 ${event.data.length} bytes');
+        _recentEvents.insert(0, S.of(context)!.survivalMeshReceived(event.data.length));
         if (_recentEvents.length > 5) _recentEvents.removeLast();
       });
     });
@@ -178,8 +179,8 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Data Mule 服務啟動失敗\nBLE Mesh 層仍持續運作中'),
+            SnackBar(
+              content: Text(S.of(context)!.survivalDataMuleFailSnack),
               backgroundColor: Colors.orange,
             ),
           );
@@ -208,7 +209,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('BLE 啟動失敗：$e\n請確認藍牙已開啟且已授予權限'),
+              content: Text(S.of(context)!.survivalBleFailSnack(e.toString())),
               backgroundColor: Colors.red,
               duration: const Duration(seconds: 5),
             ),
@@ -300,7 +301,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('日誌已存到「下載」：${file.path.split('/').last}'),
+            content: Text(S.of(context)!.survivalExportSuccess(file.path.split('/').last)),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 5),
           ),
@@ -310,7 +311,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('匯出失敗：$e'),
+            content: Text(S.of(context)!.survivalExportFail(e.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -376,7 +377,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
-                        '電量: $_batteryLevel%',
+                        S.of(context)!.survivalBattery(_batteryLevel),
                         style: TextStyle(color: batteryColor, fontSize: 13),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -394,9 +395,9 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                '正在監聽周遭求救與物資訊號...',
-                style: TextStyle(color: Colors.grey, fontSize: 13),
+              Text(
+                S.of(context)!.survivalListening,
+                style: const TextStyle(color: Colors.grey, fontSize: 13),
               ),
 
               const SizedBox(height: 24),
@@ -408,7 +409,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                   Expanded(
                     child: _ControlButton(
                       icon: Icons.router,
-                      label: _isDataMule ? '停用 Data Mule' : '啟用 Data Mule',
+                      label: _isDataMule ? S.of(context)!.survivalDataMuleDisable : S.of(context)!.survivalDataMuleEnable,
                       color: _isDataMule ? Colors.cyan : Colors.white24,
                       onTap: _toggleDataMule,
                       onInfoTap: () => _showDataMuleExplanation(),
@@ -418,7 +419,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                   Expanded(
                     child: _ControlButton(
                       icon: Icons.bluetooth,
-                      label: _isBleActive ? '暫停 BLE' : '恢復 BLE',
+                      label: _isBleActive ? S.of(context)!.survivalBlePause : S.of(context)!.survivalBleResume,
                       color: _isBleActive ? Colors.blueAccent : Colors.white24,
                       onTap: _toggleBle,
                     ),
@@ -431,9 +432,9 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
               // 統計
               Row(
                 children: [
-                  _StatChip(label: '本機事件', value: '$_totalEventCount'),
+                  _StatChip(label: S.of(context)!.survivalStatsLocalEvents, value: '$_totalEventCount'),
                   const SizedBox(width: 8),
-                  _StatChip(label: 'BLE 連線', value: '$_bleConnectedCount'),
+                  _StatChip(label: S.of(context)!.survivalStatsBleConnections, value: '$_bleConnectedCount'),
                 ],
               ),
 
@@ -442,11 +443,11 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
 
               // 最近事件
               if (_recentEvents.isNotEmpty) ...[
-                const Align(
+                Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    '最近 Mesh 事件',
-                    style: TextStyle(color: Colors.white38, fontSize: 12),
+                    S.of(context)!.survivalRecentEvents,
+                    style: const TextStyle(color: Colors.white38, fontSize: 12),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -533,7 +534,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
               ),
               onPressed: _exportLogs,
               icon: const Icon(Icons.download, size: 16),
-              label: const Text('匯出完整日誌', style: TextStyle(fontSize: 12)),
+              label: Text(S.of(context)!.survivalExportButton, style: const TextStyle(fontSize: 12)),
             ),
           ),
           const SizedBox(height: 10),
@@ -631,29 +632,24 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a2e),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.router, color: Colors.cyanAccent, size: 22),
-            SizedBox(width: 8),
+            const Icon(Icons.router, color: Colors.cyanAccent, size: 22),
+            const SizedBox(width: 8),
             Expanded(
-              child: Text('什麼是 Data Mule？',
-                  style: TextStyle(color: Colors.white, fontSize: 16)),
+              child: Text(S.of(context)!.survivalDataMuleDialogTitle,
+                  style: const TextStyle(color: Colors.white, fontSize: 16)),
             ),
           ],
         ),
-        content: const Text(
-          'Data Mule（資料騾）是一種離線中繼模式：\n\n'
-          '• 你的手機會持續接收周圍裝置的求救與物資訊號\n'
-          '• 即使你移動到不同區域，攜帶的資料會自動轉發給新遇到的裝置\n'
-          '• 適合在災區移動的志工或救難人員，幫助訊息跨越斷網區域\n\n'
-          '啟用後會以 Android 前景服務保持運作，即使螢幕關閉也不會被系統終止。\n\n'
-          '耗電量：中等（持續 BLE 掃描+廣播）',
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
+        content: Text(
+          S.of(context)!.survivalDataMuleDialogContent,
+          style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('了解', style: TextStyle(color: Colors.cyanAccent)),
+            child: Text(S.of(context)!.survivalDataMuleDialogDismiss, style: const TextStyle(color: Colors.cyanAccent)),
           ),
         ],
       ),

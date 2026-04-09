@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../mesh/event_manager.dart';
 import '../mesh/geo_context_resolver.dart';
 import 'supply_category_data.dart';
@@ -73,7 +74,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('需求已廣播至 Mesh 網路！'),
+            content: Text(S.of(context)!.reqSheetSuccessSnack),
             backgroundColor: Colors.green[700],
           ),
         );
@@ -89,7 +90,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('發布失敗: $e'), backgroundColor: Colors.red[700]),
+          SnackBar(content: Text(S.of(context)!.reqSheetFailSnack(e.toString())), backgroundColor: Colors.red[700]),
         );
       }
     } finally {
@@ -102,7 +103,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
       appBar: AppBar(
-        title: const Text('發佈物資需求', style: TextStyle(color: Colors.white)),
+        title: Text(S.of(context)!.reqSheetTitle, style: const TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -112,8 +113,8 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
           padding: const EdgeInsets.all(20),
           children: [
             // ── 第一層：物資大類 ──
-            const Text('需要什麼物資？',
-                style: TextStyle(color: Colors.white70, fontSize: 14)),
+            Text(S.of(context)!.reqSheetCategoryLabel,
+                style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -145,7 +146,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                             color: selected ? cat.color : Colors.white54,
                             size: 18),
                         const SizedBox(width: 6),
-                        Text(cat.label,
+                        Text(SupplyCategoryLocalizer.categoryLabel(context, cat.code),
                             style: TextStyle(
                               color: selected ? cat.color : Colors.white54,
                               fontWeight: selected
@@ -162,7 +163,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
 
             // ── 第二層：子類別 ──
             if (_selectedCategory != null) ...[
-              Text('${_selectedCategory!.label} → 子類別',
+              Text('${SupplyCategoryLocalizer.categoryLabel(context, _selectedCategory!.code)} ${S.of(context)!.reqSheetSubCategoryLabel}',
                   style: const TextStyle(color: Colors.white70, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
@@ -171,7 +172,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                 children: _selectedCategory!.subCategories.map((sub) {
                   final selected = _selectedSubCategory?.code == sub.code;
                   return ChoiceChip(
-                    label: Text(sub.label),
+                    label: Text(SupplyCategoryLocalizer.subCategoryLabel(context, sub.code)),
                     selected: selected,
                     selectedColor:
                         _selectedCategory!.color.withValues(alpha: 0.3),
@@ -197,8 +198,8 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
             // ── 第三層：具體品項 ──
             if (_selectedSubCategory != null &&
                 _selectedSubCategory!.items.isNotEmpty) ...[
-              const Text('具體品項 (可選)',
-                  style: TextStyle(color: Colors.white70, fontSize: 14)),
+              Text(S.of(context)!.reqSheetItemLabel,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 6,
@@ -206,7 +207,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                 children: _selectedSubCategory!.items.map((item) {
                   final selected = _selectedItem == item.code;
                   return FilterChip(
-                    label: Text(item.label,
+                    label: Text(SupplyCategoryLocalizer.itemLabel(context, item.code),
                         style: TextStyle(
                           color: selected ? Colors.white : Colors.white54,
                           fontSize: 12,
@@ -257,36 +258,36 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
               style: const TextStyle(color: Colors.white),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: _inputDecoration('需求數量', Icons.numbers),
-              validator: (v) => (v == null || v.isEmpty) ? '請輸入數量' : null,
+              decoration: _inputDecoration(S.of(context)!.reqSheetQtyLabel, Icons.numbers),
+              validator: (v) => (v == null || v.isEmpty) ? S.of(context)!.supplyRegQtyValidator : null,
             ),
             const SizedBox(height: 20),
 
             // ── 交接方式 ──
-            const Text('交接方式',
-                style: TextStyle(color: Colors.white70, fontSize: 14)),
+            Text(S.of(context)!.reqSheetMobilitySection,
+                style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             _buildMobilityOption(
               mode: 'CAN_GO',
               icon: Icons.directions_walk,
-              label: '我可以過去拿',
-              subtitle: '我可以移動去取物資',
+              label: S.of(context)!.reqSheetMobilityPickup,
+              subtitle: S.of(context)!.reqSheetMobilityPickupDesc,
               activeColor: Colors.greenAccent,
             ),
             const SizedBox(height: 8),
             _buildMobilityOption(
               mode: 'NEED_DELIVER',
               icon: Icons.accessibility_new,
-              label: '需要送過來',
-              subtitle: '無法移動，需要人送來',
+              label: S.of(context)!.reqSheetMobilityDelivery,
+              subtitle: S.of(context)!.reqSheetMobilityDeliveryDesc,
               activeColor: Colors.orange,
             ),
             const SizedBox(height: 8),
             _buildMobilityOption(
               mode: 'DROP_OFF',
               icon: Icons.inventory_2,
-              label: '無接觸交接',
-              subtitle: '供給方放置物資，我自行取回',
+              label: S.of(context)!.reqSheetMobilityDropoff,
+              subtitle: S.of(context)!.reqSheetMobilityDropoffDesc,
               activeColor: Colors.amber,
             ),
             const SizedBox(height: 20),
@@ -298,7 +299,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '搜尋半徑: ${(_maxRange / 1000).toStringAsFixed(1)} km',
+                    S.of(context)!.reqSheetRange((_maxRange / 1000).toStringAsFixed(1)),
                     style: const TextStyle(color: Colors.white70),
                   ),
                 ),
@@ -314,9 +315,9 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
               label: '${(_maxRange / 1000).toStringAsFixed(1)} km',
               onChanged: (v) => setState(() => _maxRange = v),
             ),
-            const Text(
-              '* 由地理環境自動建議，可手動調整',
-              style: TextStyle(color: Colors.white30, fontSize: 11),
+            Text(
+              S.of(context)!.supplyRegRangeNote,
+              style: const TextStyle(color: Colors.white30, fontSize: 11),
             ),
             const SizedBox(height: 16),
 
@@ -325,7 +326,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
               controller: _descCtrl,
               style: const TextStyle(color: Colors.white),
               maxLines: 2,
-              decoration: _inputDecoration('備註描述 (選填)', Icons.notes),
+              decoration: _inputDecoration(S.of(context)!.supplyRegNoteHint, Icons.notes),
             ),
             const SizedBox(height: 24),
 
@@ -344,7 +345,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                     : const Icon(Icons.broadcast_on_personal,
                         color: Colors.white),
                 label: Text(
-                  _publishing ? '廣播中...' : '發布需求至 Mesh 網路',
+                  _publishing ? S.of(context)!.reqSheetPublishing : S.of(context)!.reqSheetPublishButton,
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
                 style: ElevatedButton.styleFrom(

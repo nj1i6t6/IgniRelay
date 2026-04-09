@@ -9,6 +9,7 @@ import '../db/database_helper.dart';
 import '../geo/village_geofence.dart';
 import '../mesh/event_manager.dart';
 import '../proto/mesh_protocol.pb.dart' as pb;
+import '../l10n/generated/app_localizations.dart';
 import 'supply_category_data.dart';
 
 // =============================================================================
@@ -127,8 +128,7 @@ class _StationSupplyScreenState extends State<StationSupplyScreen>
       return Scaffold(
         backgroundColor: const Color(0xFF0d0d1a),
         appBar: AppBar(
-          title:
-              const Text('據點物資管理', style: TextStyle(color: Colors.white)),
+          title: Text(S.of(context)!.stationTitle, style: const TextStyle(color: Colors.white)),
           backgroundColor: const Color(0xFF1a1a2e),
           iconTheme: const IconThemeData(color: Colors.white),
         ),
@@ -140,20 +140,20 @@ class _StationSupplyScreenState extends State<StationSupplyScreen>
               children: [
                 const Icon(Icons.lock_outline, color: Colors.white38, size: 64),
                 const SizedBox(height: 16),
-                const Text(
-                  '需要 L2 以上身分等級',
-                  style: TextStyle(color: Colors.white70, fontSize: 18),
+                Text(
+                  S.of(context)!.stationAuthRequired,
+                  style: const TextStyle(color: Colors.white70, fontSize: 18),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '目前等級: L${_identity.getIdentityLevel()}',
+                  S.of(context)!.stationAuthCurrentLevel(_identity.getIdentityLevel()),
                   style: const TextStyle(color: Colors.white38, fontSize: 14),
                 ),
                 const SizedBox(height: 24),
-                const Text(
-                  '據點物資管理功能僅限經過驗證的用戶使用。\n請透過實體交叉驗證提升身分等級。',
+                Text(
+                  S.of(context)!.stationAuthDesc,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white30, fontSize: 13),
+                  style: const TextStyle(color: Colors.white30, fontSize: 13),
                 ),
               ],
             ),
@@ -165,7 +165,7 @@ class _StationSupplyScreenState extends State<StationSupplyScreen>
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
       appBar: AppBar(
-        title: const Text('據點物資管理', style: TextStyle(color: Colors.white)),
+        title: Text(S.of(context)!.stationTitle, style: const TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
         bottom: TabBar(
@@ -173,9 +173,9 @@ class _StationSupplyScreenState extends State<StationSupplyScreen>
           indicatorColor: Colors.orangeAccent,
           labelColor: Colors.orangeAccent,
           unselectedLabelColor: Colors.white54,
-          tabs: const [
-            Tab(icon: Icon(Icons.add_business), text: '新增據點物資'),
-            Tab(icon: Icon(Icons.inventory_2), text: '管理已註冊'),
+          tabs: [
+            Tab(icon: const Icon(Icons.add_business), text: S.of(context)!.stationTabAdd),
+            Tab(icon: const Icon(Icons.inventory_2), text: S.of(context)!.stationTabManage),
           ],
         ),
       ),
@@ -297,7 +297,7 @@ class _RegisterTabState extends State<_RegisterTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('據點物資已成功發布！'),
+            content: Text(S.of(context)!.stationPublishSuccess),
             backgroundColor: Colors.green[700],
           ),
         );
@@ -314,7 +314,7 @@ class _RegisterTabState extends State<_RegisterTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('發布失敗: $e'), backgroundColor: Colors.red[700]),
+              content: Text(S.of(context)!.stationRemoveFailSnack(e.toString())), backgroundColor: Colors.red[700]),
         );
       }
     } finally {
@@ -330,8 +330,8 @@ class _RegisterTabState extends State<_RegisterTab> {
         padding: const EdgeInsets.all(20),
         children: [
           // ── 物資大類 ──
-          const Text('物資大類',
-              style: TextStyle(color: Colors.white70, fontSize: 14)),
+          Text(S.of(context)!.stationCategoryLabel,
+              style: const TextStyle(color: Colors.white70, fontSize: 14)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -379,7 +379,7 @@ class _RegisterTabState extends State<_RegisterTab> {
 
           // ── 物資子類 ──
           if (_selectedCategory != null) ...[
-            Text('${_selectedCategory!.label} → 子類別',
+            Text('${SupplyCategoryLocalizer.categoryLabel(context, _selectedCategory!.code)} ${S.of(context)!.stationSubCategoryLabel}',
                 style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             Wrap(
@@ -388,7 +388,7 @@ class _RegisterTabState extends State<_RegisterTab> {
               children: _selectedCategory!.subCategories.map((sub) {
                 final selected = _selectedSubCategory?.code == sub.code;
                 return ChoiceChip(
-                  label: Text(sub.label),
+                  label: Text(SupplyCategoryLocalizer.subCategoryLabel(context, sub.code)),
                   selected: selected,
                   selectedColor:
                       _selectedCategory!.color.withValues(alpha: 0.3),
@@ -414,8 +414,8 @@ class _RegisterTabState extends State<_RegisterTab> {
           // ── 具體品項 ──
           if (_selectedSubCategory != null &&
               _selectedSubCategory!.items.isNotEmpty) ...[
-            const Text('具體品項 (可選)',
-                style: TextStyle(color: Colors.white70, fontSize: 14)),
+            Text(S.of(context)!.stationItemLabel,
+                style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             Wrap(
               spacing: 6,
@@ -423,7 +423,7 @@ class _RegisterTabState extends State<_RegisterTab> {
               children: _selectedSubCategory!.items.map((item) {
                 final selected = _selectedItem == item.code;
                 return FilterChip(
-                  label: Text(item.label,
+                  label: Text(SupplyCategoryLocalizer.itemLabel(context, item.code),
                       style: TextStyle(
                         color: selected ? Colors.white : Colors.white54,
                         fontSize: 12,
@@ -469,23 +469,23 @@ class _RegisterTabState extends State<_RegisterTab> {
           const SizedBox(height: 24),
 
           // ── 總庫存數量 ──
-          _sectionTitle('庫存數量'),
+          _sectionTitle(S.of(context)!.stationQtyLabel),
           const SizedBox(height: 8),
           TextFormField(
             controller: _quantityCtrl,
             style: const TextStyle(color: Colors.white),
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: _inputDecoration('總庫存數量', Icons.inventory),
+            decoration: _inputDecoration(S.of(context)!.stationTotalQtyLabel, Icons.inventory),
             validator: (v) =>
                 (v == null || v.isEmpty || int.tryParse(v) == null)
-                    ? '請輸入有效數量'
+                    ? S.of(context)!.stationQtyValidator
                     : null,
           ),
           const SizedBox(height: 24),
 
           // ── 配額設定 ──
-          _sectionTitle('個人配額設定'),
+          _sectionTitle(S.of(context)!.stationQuotaSection),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -495,10 +495,10 @@ class _RegisterTabState extends State<_RegisterTab> {
                   style: const TextStyle(color: Colors.white),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: _inputDecoration('每人每類上限', Icons.category),
+                  decoration: _inputDecoration(S.of(context)!.stationQuotaCategoryLimit, Icons.category),
                   validator: (v) =>
                       (v == null || v.isEmpty || int.tryParse(v) == null)
-                          ? '必填'
+                          ? S.of(context)!.stationFieldRequired
                           : null,
                 ),
               ),
@@ -509,10 +509,10 @@ class _RegisterTabState extends State<_RegisterTab> {
                   style: const TextStyle(color: Colors.white),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: _inputDecoration('每人總量上限', Icons.equalizer),
+                  decoration: _inputDecoration(S.of(context)!.stationQuotaTotalLimit, Icons.equalizer),
                   validator: (v) =>
                       (v == null || v.isEmpty || int.tryParse(v) == null)
-                          ? '必填'
+                          ? S.of(context)!.stationFieldRequired
                           : null,
                 ),
               ),
@@ -521,41 +521,41 @@ class _RegisterTabState extends State<_RegisterTab> {
           const SizedBox(height: 16),
 
           // ── 重設週期 ──
-          const Text('配額重設週期',
-              style: TextStyle(color: Colors.white70, fontSize: 14)),
+          Text(S.of(context)!.stationResetCycleLabel,
+              style: const TextStyle(color: Colors.white70, fontSize: 14)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              _resetChip('6 小時', 6),
-              _resetChip('12 小時', 12),
-              _resetChip('24 小時', 24),
-              _resetChip('48 小時', 48),
-              _resetChip('72 小時', 72),
-              _resetChip('不重設', 0),
+              _resetChip(S.of(context)!.stationResetChip6h, 6),
+              _resetChip(S.of(context)!.stationResetChip12h, 12),
+              _resetChip(S.of(context)!.stationResetChip24h, 24),
+              _resetChip(S.of(context)!.stationResetChip48h, 48),
+              _resetChip(S.of(context)!.stationResetChip72h, 72),
+              _resetChip(S.of(context)!.stationResetChipNone, 0),
             ],
           ),
           if (_resetIntervalHours > 0)
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                '每 $_resetIntervalHours 小時自動重設個人已領取額度',
+                S.of(context)!.stationResetNoteInterval(_resetIntervalHours),
                 style: const TextStyle(color: Colors.white30, fontSize: 11),
               ),
             ),
           if (_resetIntervalHours == 0)
-            const Padding(
-              padding: EdgeInsets.only(top: 6),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
               child: Text(
-                '配額用完即止，不會自動重設',
-                style: TextStyle(color: Colors.orangeAccent, fontSize: 11),
+                S.of(context)!.stationResetNoteNone,
+                style: const TextStyle(color: Colors.orangeAccent, fontSize: 11),
               ),
             ),
           const SizedBox(height: 24),
 
           // ── 可見區域 ──
-          _sectionTitle('物資可見範圍'),
+          _sectionTitle(S.of(context)!.stationVisibilityLabel),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -583,7 +583,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                                 : Colors.white54,
                             size: 28),
                         const SizedBox(height: 6),
-                        Text('指定村里',
+                        Text(S.of(context)!.stationVisibilityVillage,
                             style: TextStyle(
                               color: _visibilityMode == 'village'
                                   ? Colors.blueAccent
@@ -592,7 +592,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                               fontSize: 13,
                             )),
                         const SizedBox(height: 2),
-                        Text('可多選鄰近村里',
+                        Text(S.of(context)!.stationVisibilityVillageDesc,
                             style: TextStyle(
                               color: _visibilityMode == 'village'
                                   ? Colors.white54
@@ -629,7 +629,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                                 : Colors.white54,
                             size: 28),
                         const SizedBox(height: 6),
-                        Text('整個鄉鎮區',
+                        Text(S.of(context)!.stationVisibilityTownship,
                             style: TextStyle(
                               color: _visibilityMode == 'township'
                                   ? Colors.greenAccent
@@ -638,7 +638,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                               fontSize: 13,
                             )),
                         const SizedBox(height: 2),
-                        Text('該行政區全部可見',
+                        Text(S.of(context)!.stationVisibilityTownshipDesc,
                             style: TextStyle(
                               color: _visibilityMode == 'township'
                                   ? Colors.white54
@@ -664,8 +664,8 @@ class _RegisterTabState extends State<_RegisterTab> {
             )
           else if (_visibilityMode == 'village') ...[
             if (_nearbyVillages.isEmpty)
-              const Text('無法取得附近村里資訊',
-                  style: TextStyle(color: Colors.white38, fontSize: 13))
+              Text(S.of(context)!.stationVisibilityNoVillages,
+                  style: const TextStyle(color: Colors.white38, fontSize: 13))
             else
               ..._nearbyVillages.map((v) {
                 final selected = _selectedVillcodes.contains(v.villcode);
@@ -692,9 +692,9 @@ class _RegisterTabState extends State<_RegisterTab> {
                 );
               }),
             const SizedBox(height: 4),
-            const Text(
-              '* 已根據目前位置列出鄰近村里，可勾選多個',
-              style: TextStyle(color: Colors.white30, fontSize: 11),
+            Text(
+              S.of(context)!.stationVisibilityVillageNote,
+              style: const TextStyle(color: Colors.white30, fontSize: 11),
             ),
           ] else ...[
             // township mode
@@ -711,7 +711,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _townDisplayName ?? '尚未定位',
+                      _townDisplayName ?? S.of(context)!.stationVisibilityTownNotLocated,
                       style:
                           const TextStyle(color: Colors.white, fontSize: 14),
                     ),
@@ -726,9 +726,9 @@ class _RegisterTabState extends State<_RegisterTab> {
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
-              '* 將以目前定位的鄉鎮市區為可見範圍',
-              style: TextStyle(color: Colors.white30, fontSize: 11),
+            Text(
+              S.of(context)!.stationVisibilityTownNote,
+              style: const TextStyle(color: Colors.white30, fontSize: 11),
             ),
           ],
           const SizedBox(height: 32),
@@ -747,7 +747,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                     )
                   : const Icon(Icons.add_business, color: Colors.white),
               label: Text(
-                _publishing ? '發布中...' : '發布據點物資',
+                _publishing ? S.of(context)!.stationPublishing : S.of(context)!.stationPublishButton,
                 style: const TextStyle(color: Colors.white, fontSize: 16),
               ),
               style: ElevatedButton.styleFrom(
@@ -850,11 +850,11 @@ class _ManageTab extends StatelessWidget {
             const Icon(Icons.store_mall_directory,
                 color: Colors.white24, size: 64),
             const SizedBox(height: 16),
-            const Text('尚無據點物資',
-                style: TextStyle(color: Colors.white38, fontSize: 16)),
+            Text(S.of(context)!.stationManageEmptyTitle,
+                style: const TextStyle(color: Colors.white38, fontSize: 16)),
             const SizedBox(height: 8),
-            const Text('切換到「新增據點物資」頁面開始註冊',
-                style: TextStyle(color: Colors.white24, fontSize: 13)),
+            Text(S.of(context)!.stationManageEmptySubtitle,
+                style: const TextStyle(color: Colors.white24, fontSize: 13)),
           ],
         ),
       );
@@ -924,47 +924,47 @@ class _StationItemCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                _statusBadge(remaining, item.quantity.toInt()),
+                _statusBadge(context, remaining, item.quantity.toInt()),
               ],
             ),
             const Divider(color: Colors.white12, height: 20),
 
             // ── 庫存資訊 ──
-            _infoRow(Icons.inventory_2, '總庫存',
-                '${item.quantity.toInt()} 份'),
-            _infoRow(Icons.shopping_cart, '已領取', '$totalUsedByAll 份'),
-            _infoRow(Icons.check_circle_outline, '剩餘',
-                '${remaining.toInt()} 份'),
-            _infoRow(Icons.people, '領取人數', '$uniqueUsers 人'),
+            _infoRow(Icons.inventory_2, S.of(context)!.stationInfoTotalQty,
+                S.of(context)!.stationInfoQtyUnit(item.quantity.toInt())),
+            _infoRow(Icons.shopping_cart, S.of(context)!.stationInfoUsed, S.of(context)!.stationInfoQtyUnit(totalUsedByAll)),
+            _infoRow(Icons.check_circle_outline, S.of(context)!.stationInfoRemaining,
+                S.of(context)!.stationInfoQtyUnit(remaining.toInt())),
+            _infoRow(Icons.people, S.of(context)!.stationInfoUsers, S.of(context)!.stationInfoUsersUnit(uniqueUsers)),
             const SizedBox(height: 8),
 
             // ── 配額資訊 ──
-            const Text('配額規則',
-                style: TextStyle(
+            Text(S.of(context)!.stationQuotaRulesLabel,
+                style: const TextStyle(
                     color: Colors.orangeAccent,
                     fontSize: 12,
                     fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            _infoRow(Icons.category, '每人每類上限',
-                '${meta.perUserCategoryLimit} 份'),
+            _infoRow(Icons.category, S.of(context)!.stationQuotaCategoryLimitInfo,
+                S.of(context)!.stationInfoQtyUnit(meta.perUserCategoryLimit)),
             _infoRow(
-                Icons.equalizer, '每人總量上限', '${meta.perUserTotalLimit} 份'),
+                Icons.equalizer, S.of(context)!.stationQuotaTotalLimitInfo, S.of(context)!.stationInfoQtyUnit(meta.perUserTotalLimit)),
             _infoRow(
               Icons.timer,
-              '重設週期',
+              S.of(context)!.stationQuotaResetCycleInfo,
               meta.resetIntervalMs > 0
-                  ? '${(meta.resetIntervalMs / 3600000).round()} 小時'
-                  : '不重設',
+                  ? S.of(context)!.stationQuotaResetHours((meta.resetIntervalMs / 3600000).round())
+                  : S.of(context)!.stationQuotaResetNone,
             ),
 
             // ── 可見範圍 ──
             const SizedBox(height: 4),
             if (meta.visibleZones != null && meta.visibleZones!.isNotEmpty)
-              _infoRow(Icons.location_on, '可見範圍',
-                  '${meta.visibleZones!.length} 個村里'),
+              _infoRow(Icons.location_on, S.of(context)!.stationVisibleZones,
+                  S.of(context)!.stationVisibleZonesCount(meta.visibleZones!.length)),
             if (meta.visibleTownship != null)
-              _infoRow(Icons.map, '可見範圍',
-                  '鄉鎮區 ${meta.visibleTownship}'),
+              _infoRow(Icons.map, S.of(context)!.stationVisibleZones,
+                  S.of(context)!.stationVisibleTownship(meta.visibleTownship!)),
             const Divider(color: Colors.white12, height: 20),
 
             // ── 操作按鈕 ──
@@ -976,9 +976,9 @@ class _StationItemCard extends StatelessWidget {
                   onPressed: () => _showQuotaDetails(context),
                   icon: const Icon(Icons.list_alt,
                       color: Colors.blueAccent, size: 16),
-                  label: const Text('額度明細',
+                  label: Text(S.of(context)!.stationQuotaDetailButton,
                       style:
-                          TextStyle(color: Colors.blueAccent, fontSize: 12)),
+                          const TextStyle(color: Colors.blueAccent, fontSize: 12)),
                 ),
                 const SizedBox(width: 8),
                 // 重設額度
@@ -986,8 +986,8 @@ class _StationItemCard extends StatelessWidget {
                   onPressed: () => _confirmResetQuotas(context),
                   icon: const Icon(Icons.refresh,
                       color: Colors.orangeAccent, size: 16),
-                  label: const Text('重設額度',
-                      style: TextStyle(
+                  label: Text(S.of(context)!.stationQuotaResetButton,
+                      style: const TextStyle(
                           color: Colors.orangeAccent, fontSize: 12)),
                 ),
                 const SizedBox(width: 8),
@@ -996,9 +996,9 @@ class _StationItemCard extends StatelessWidget {
                   onPressed: () => _confirmRemove(context),
                   icon: const Icon(Icons.delete_outline,
                       color: Colors.redAccent, size: 16),
-                  label: const Text('下架',
+                  label: Text(S.of(context)!.stationRemoveButton,
                       style:
-                          TextStyle(color: Colors.redAccent, fontSize: 12)),
+                          const TextStyle(color: Colors.redAccent, fontSize: 12)),
                 ),
               ],
             ),
@@ -1008,22 +1008,22 @@ class _StationItemCard extends StatelessWidget {
     );
   }
 
-  Widget _statusBadge(num remaining, int total) {
+  Widget _statusBadge(BuildContext context, num remaining, int total) {
     final ratio = total > 0 ? remaining / total : 0;
     Color color;
     String label;
     if (ratio > 0.5) {
       color = Colors.green;
-      label = '充足';
+      label = S.of(context)!.stationStatusSufficient;
     } else if (ratio > 0.1) {
       color = Colors.orange;
-      label = '低庫存';
+      label = S.of(context)!.stationStatusLow;
     } else if (remaining > 0) {
       color = Colors.red;
-      label = '即將用盡';
+      label = S.of(context)!.stationStatusCritical;
     } else {
       color = Colors.grey;
-      label = '已用盡';
+      label = S.of(context)!.stationStatusDepleted;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1062,11 +1062,11 @@ class _StationItemCard extends StatelessWidget {
       ),
       builder: (ctx) {
         if (item.quotaRows.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.all(32),
+          return Padding(
+            padding: const EdgeInsets.all(32),
             child: Center(
-              child: Text('尚無領取紀錄',
-                  style: TextStyle(color: Colors.white38, fontSize: 16)),
+              child: Text(S.of(ctx)!.stationQuotaDetailEmpty,
+                  style: const TextStyle(color: Colors.white38, fontSize: 16)),
             ),
           );
         }
@@ -1080,7 +1080,7 @@ class _StationItemCard extends StatelessWidget {
                     color: Colors.orangeAccent, size: 20),
                 const SizedBox(width: 8),
                 Text(
-                  '額度明細 — ${getReadableName(item.resourceType)}',
+                  S.of(ctx)!.stationQuotaDetailTitle(getReadableName(item.resourceType)),
                   style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -1118,7 +1118,7 @@ class _StationItemCard extends StatelessWidget {
                         const Icon(Icons.person,
                             color: Colors.white54, size: 14),
                         const SizedBox(width: 4),
-                        Text('用戶 $keyHex...',
+                        Text(S.of(ctx)!.stationQuotaUserLabel(keyHex),
                             style: const TextStyle(
                                 color: Colors.white70, fontSize: 13)),
                         const Spacer(),
@@ -1128,12 +1128,12 @@ class _StationItemCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text('本期已領: $used / 總計: $total',
+                    Text(S.of(ctx)!.stationQuotaUsedTotal(used, total),
                         style: const TextStyle(
                             color: Colors.white54, fontSize: 12)),
                     if (resetTime != null)
                       Text(
-                        '上次重設: ${resetTime.month}/${resetTime.day} ${resetTime.hour}:${resetTime.minute.toString().padLeft(2, '0')}',
+                        S.of(ctx)!.stationQuotaLastReset('${resetTime.month}/${resetTime.day} ${resetTime.hour}:${resetTime.minute.toString().padLeft(2, '0')}'),
                         style: const TextStyle(
                             color: Colors.white30, fontSize: 11),
                       ),
@@ -1152,22 +1152,22 @@ class _StationItemCard extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a2e),
-        title: const Text('重設所有額度',
-            style: TextStyle(color: Colors.white)),
-        content: const Text(
-          '確定要重設此物資的所有用戶額度嗎？\n重設後所有人的已領取數量將歸零。',
-          style: TextStyle(color: Colors.white70),
+        title: Text(S.of(ctx)!.stationResetAllDialogTitle,
+            style: const TextStyle(color: Colors.white)),
+        content: Text(
+          S.of(ctx)!.stationResetAllDialogContent,
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消',
-                style: TextStyle(color: Colors.white54)),
+            child: Text(S.of(ctx)!.stationResetAllDialogCancel,
+                style: const TextStyle(color: Colors.white54)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('確認重設',
-                style: TextStyle(color: Colors.orangeAccent)),
+            child: Text(S.of(ctx)!.stationResetAllDialogConfirm,
+                style: const TextStyle(color: Colors.orangeAccent)),
           ),
         ],
       ),
@@ -1192,7 +1192,7 @@ class _StationItemCard extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('額度已重設'),
+            content: Text(S.of(context)!.stationResetSuccessSnack),
             backgroundColor: Colors.green[700],
           ),
         );
@@ -1201,7 +1201,7 @@ class _StationItemCard extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('重設失敗: $e'),
+            content: Text(S.of(context)!.stationResetFailSnack(e.toString())),
             backgroundColor: Colors.red[700],
           ),
         );
@@ -1214,22 +1214,22 @@ class _StationItemCard extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a2e),
-        title: const Text('下架據點物資',
-            style: TextStyle(color: Colors.white)),
+        title: Text(S.of(ctx)!.stationRemoveDialogTitle,
+            style: const TextStyle(color: Colors.white)),
         content: Text(
-          '確定要下架「${getReadableName(item.resourceType)}」嗎？\n此操作會將該物資標記為已消耗。',
+          S.of(ctx)!.stationRemoveDialogContent(getReadableName(item.resourceType)),
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消',
-                style: TextStyle(color: Colors.white54)),
+            child: Text(S.of(ctx)!.stationRemoveDialogCancel,
+                style: const TextStyle(color: Colors.white54)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('確認下架',
-                style: TextStyle(color: Colors.redAccent)),
+            child: Text(S.of(ctx)!.stationRemoveDialogConfirm,
+                style: const TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
@@ -1244,7 +1244,7 @@ class _StationItemCard extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('物資已下架'),
+            content: Text(S.of(context)!.stationRemoveSuccessSnack),
             backgroundColor: Colors.green[700],
           ),
         );
@@ -1253,7 +1253,7 @@ class _StationItemCard extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('下架失敗: $e'),
+            content: Text(S.of(context)!.stationRemoveFailSnack(e.toString())),
             backgroundColor: Colors.red[700],
           ),
         );

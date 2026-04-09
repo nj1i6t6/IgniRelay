@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../mesh/event_manager.dart';
 import '../mesh/native_bridge.dart';
+import '../l10n/generated/app_localizations.dart';
 
 enum HandoffRole { provider, requester }
 
@@ -242,7 +243,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
       appBar: AppBar(
-        title: const Text('實體交接確認', style: TextStyle(color: Colors.white)),
+        title: Text(S.of(context)!.handoffTitle, style: const TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -257,7 +258,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
   }
 
   Widget _buildProviderView() {
-    final timeout = widget.urgency >= 2 ? '30 分鐘' : '4 小時';
+    final timeout = widget.urgency >= 2 ? S.of(context)!.handoffTimeout30min : S.of(context)!.handoffTimeout4hr;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -266,13 +267,13 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
           const Icon(Icons.qr_code_2, color: Colors.white, size: 64),
           const SizedBox(height: 16),
           Text(
-            '物資：${widget.resourceType}',
+            S.of(context)!.handoffProviderResource(widget.resourceType),
             style: const TextStyle(color: Colors.white70, fontSize: 16),
           ),
           const SizedBox(height: 32),
-          const Text(
-            '告訴對方以下 PIN 碼',
-            style: TextStyle(color: Colors.white54, fontSize: 14),
+          Text(
+            S.of(context)!.handoffProviderPinLabel,
+            style: const TextStyle(color: Colors.white54, fontSize: 14),
           ),
           const SizedBox(height: 12),
           // PIN 大字顯示
@@ -311,7 +312,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '若 $timeout 內未完成，物資將自動歸還',
+                    S.of(context)!.handoffProviderTimeout(timeout),
                     style: const TextStyle(color: Colors.orange, fontSize: 13),
                   ),
                 ),
@@ -319,14 +320,14 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
-            '等待對方透過 BLE 輸入 PIN 確認收到物資...',
-            style: TextStyle(color: Colors.white30, fontSize: 13),
+          Text(
+            S.of(context)!.handoffProviderWaiting,
+            style: const TextStyle(color: Colors.white30, fontSize: 13),
           ),
           const SizedBox(height: 8),
-          const Text(
-            '(本裝置已開啟 GATT 交接廣播)',
-            style: TextStyle(color: Colors.cyan, fontSize: 11),
+          Text(
+            S.of(context)!.handoffProviderGattNote,
+            style: const TextStyle(color: Colors.cyan, fontSize: 11),
           ),
           const SizedBox(height: 16),
           const CircularProgressIndicator(color: Colors.amber, strokeWidth: 2),
@@ -345,13 +346,13 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
           const Icon(Icons.pin, color: Colors.white, size: 64),
           const SizedBox(height: 16),
           Text(
-            '物資：${widget.resourceType}',
+            S.of(context)!.handoffProviderResource(widget.resourceType),
             style: const TextStyle(color: Colors.white70, fontSize: 16),
           ),
           const SizedBox(height: 8),
-          const Text(
-            '請輸入供給方顯示的 4 位 PIN',
-            style: TextStyle(color: Colors.white54, fontSize: 14),
+          Text(
+            S.of(context)!.handoffRequesterPinPrompt,
+            style: const TextStyle(color: Colors.white54, fontSize: 14),
           ),
           const SizedBox(height: 32),
 
@@ -394,12 +395,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
 
           if (_isLockedOut)
             Text(
-              '輸入錯誤次數過多，請等待 $_lockoutSeconds 秒...',
+              S.of(context)!.handoffRequesterLockout(_lockoutSeconds),
               style: const TextStyle(color: Colors.redAccent, fontSize: 13),
             )
           else if (_wrongAttempts > 0)
             Text(
-              '錯誤！剩餘嘗試次數: $remaining / 6',
+              S.of(context)!.handoffRequesterWrong(remaining),
               style: const TextStyle(color: Colors.orange, fontSize: 13),
             ),
 
@@ -418,9 +419,9 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
                     borderRadius: BorderRadius.circular(12)),
                 disabledBackgroundColor: Colors.white12,
               ),
-              child: const Text(
-                '確認收到物資',
-                style: TextStyle(
+              child: Text(
+                S.of(context)!.handoffRequesterConfirmButton,
+                style: const TextStyle(
                     color: Colors.black,
                     fontSize: 16,
                     fontWeight: FontWeight.bold),
@@ -457,13 +458,13 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
           const Icon(Icons.inventory_2, color: Colors.amber, size: 64),
           const SizedBox(height: 16),
           Text(
-            '物資：${widget.resourceType}',
+            S.of(context)!.handoffProviderResource(widget.resourceType),
             style: const TextStyle(color: Colors.white70, fontSize: 16),
           ),
           const SizedBox(height: 24),
-          const Text(
-            '無接觸交接 — 放置物資',
-            style: TextStyle(
+          Text(
+            S.of(context)!.handoffDropoffProviderTitle,
+            style: const TextStyle(
                 color: Colors.amber, fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 24),
@@ -479,8 +480,8 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('放置位置',
-                    style: TextStyle(color: Colors.white70, fontSize: 14)),
+                Text(S.of(context)!.handoffDropoffLocationLabel,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14)),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -491,7 +492,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
                       child: Text(
                         _dropOffLat != null
                             ? '${_dropOffLat!.toStringAsFixed(5)}, ${_dropOffLng!.toStringAsFixed(5)}'
-                            : '點擊使用目前位置',
+                            : S.of(context)!.handoffDropoffUseCurrentLocation,
                         style: TextStyle(
                           color: _dropOffLat != null
                               ? Colors.white
@@ -508,8 +509,8 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
                           _dropOffLng = 121.543;
                         });
                       },
-                      child: const Text('定位',
-                          style: TextStyle(color: Colors.cyan, fontSize: 13)),
+                      child: Text(S.of(context)!.handoffDropoffLocateButton,
+                          style: const TextStyle(color: Colors.cyan, fontSize: 13)),
                     ),
                   ],
                 ),
@@ -524,9 +525,9 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
             style: const TextStyle(color: Colors.white),
             maxLines: 2,
             decoration: InputDecoration(
-              labelText: '放置描述 / 照片備註（選填）',
+              labelText: S.of(context)!.handoffDropoffDescLabel,
               labelStyle: const TextStyle(color: Colors.white54),
-              hintText: '例如：放在大門左側紙箱旁',
+              hintText: S.of(context)!.handoffDropoffDescHint,
               hintStyle: const TextStyle(color: Colors.white24, fontSize: 12),
               prefixIcon:
                   const Icon(Icons.photo_camera, color: Colors.white54),
@@ -556,7 +557,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
                   ? const Icon(Icons.check, color: Colors.white)
                   : const Icon(Icons.place, color: Colors.white),
               label: Text(
-                _dropOffPlaced ? '已放置，等待對方取回' : '確認放置物資',
+                _dropOffPlaced ? S.of(context)!.handoffDropoffWaitingButton : S.of(context)!.handoffDropoffConfirmButton,
                 style: const TextStyle(color: Colors.white, fontSize: 16),
               ),
               style: ElevatedButton.styleFrom(
@@ -583,13 +584,13 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
           const Icon(Icons.inventory_2, color: Colors.amber, size: 64),
           const SizedBox(height: 16),
           Text(
-            '物資：${widget.resourceType}',
+            S.of(context)!.handoffProviderResource(widget.resourceType),
             style: const TextStyle(color: Colors.white70, fontSize: 16),
           ),
           const SizedBox(height: 24),
-          const Text(
-            '無接觸交接',
-            style: TextStyle(
+          Text(
+            S.of(context)!.handoffDropoffRequesterTitle,
+            style: const TextStyle(
                 color: Colors.amber, fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
@@ -600,14 +601,14 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
               border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Column(
+            child: Column(
               children: [
-                Icon(Icons.info_outline, color: Colors.amber, size: 24),
-                SizedBox(height: 8),
+                const Icon(Icons.info_outline, color: Colors.amber, size: 24),
+                const SizedBox(height: 8),
                 Text(
-                  '供給方已將物資放置於指定位置，\n請前往取回後確認。',
+                  S.of(context)!.handoffDropoffRequesterContent,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
                 ),
               ],
             ),
@@ -620,9 +621,9 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
             child: ElevatedButton.icon(
               onPressed: _completeDropOff,
               icon: const Icon(Icons.check_circle, color: Colors.white),
-              label: const Text(
-                '已取得物資',
-                style: TextStyle(
+              label: Text(
+                S.of(context)!.handoffDropoffRequesterConfirm,
+                style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.bold),
@@ -650,16 +651,16 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
             const Icon(Icons.check_circle,
                 color: Colors.greenAccent, size: 100),
             const SizedBox(height: 24),
-            const Text(
-              '交接完成！',
-              style: TextStyle(
+            Text(
+              S.of(context)!.handoffSuccessTitle,
+              style: const TextStyle(
                   color: Colors.greenAccent,
                   fontSize: 28,
                   fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Text(
-              '${widget.resourceType} 已成功轉交',
+              S.of(context)!.handoffSuccessContent(widget.resourceType),
               style: const TextStyle(color: Colors.white54, fontSize: 16),
             ),
             const SizedBox(height: 40),
@@ -667,7 +668,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
               onPressed: () => Navigator.of(context).pop(true),
               style:
                   ElevatedButton.styleFrom(backgroundColor: Colors.greenAccent),
-              child: const Text('返回', style: TextStyle(color: Colors.black)),
+              child: Text(S.of(context)!.handoffSuccessBack, style: const TextStyle(color: Colors.black)),
             ),
           ],
         ),
@@ -684,24 +685,24 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
           children: [
             const Icon(Icons.cancel, color: Colors.redAccent, size: 100),
             const SizedBox(height: 24),
-            const Text(
-              '交接已取消',
-              style: TextStyle(
+            Text(
+              S.of(context)!.handoffCancelledTitle,
+              style: const TextStyle(
                   color: Colors.redAccent,
                   fontSize: 24,
                   fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            const Text(
-              '物資已歸還至可用狀態',
-              style: TextStyle(color: Colors.white54, fontSize: 14),
+            Text(
+              S.of(context)!.handoffCancelledContent,
+              style: const TextStyle(color: Colors.white54, fontSize: 14),
             ),
             const SizedBox(height: 40),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(false),
               style:
                   ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-              child: const Text('返回', style: TextStyle(color: Colors.white)),
+              child: Text(S.of(context)!.handoffCancelledBack, style: const TextStyle(color: Colors.white)),
             ),
           ],
         ),

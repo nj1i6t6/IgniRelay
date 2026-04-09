@@ -24,6 +24,7 @@ import '../mesh/mesh_event_handler.dart' hide EventType;
 import '../proto/mesh_protocol.pb.dart' as pb;
 import '../services/location_service.dart';
 import 'supply_category_data.dart';
+import '../l10n/generated/app_localizations.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -50,7 +51,8 @@ class _MapScreenState extends State<MapScreen>
   // ── 地圖底圖 ──
   bool _mbtilesLoading = true;
   bool _mbtilesAvailable = false;
-  String? _mbtilesError;
+  String? _mbtilesError; // stores ARB key: 'mapMbtilesNotFound' | 'mapMbtilesLoadFail'
+  String? _mbtilesErrorArg; // dynamic arg for mapMbtilesLoadFail
   MbTiles? _mbTiles;
   MbTilesVectorTileProvider? _tileProvider;
   TileProviders? _tileProviders;
@@ -98,14 +100,18 @@ class _MapScreenState extends State<MapScreen>
   int _activeSosUrgency = 0;
   String _activeSosDesc = '';
 
-  static const _hazardTypes = {
-    'ROADBLOCK': ('道路封閉', Icons.block, Colors.orange),
-    'FIRE': ('火災', Icons.local_fire_department, Colors.red),
-    'CHEMICAL': ('化學/毒氣', Icons.warning_amber, Colors.yellow),
-    'FLOOD': ('水災/淹水', Icons.water, Colors.blue),
-    'BUILDING': ('建物倒塌', Icons.domain_disabled, Colors.brown),
-    'LANDSLIDE': ('土石流', Icons.landscape, Colors.grey),
-  };
+  static (String, IconData, Color) _hazardInfo(BuildContext context, String type) {
+    final l = S.of(context)!;
+    switch (type) {
+      case 'ROADBLOCK': return (l.mapHazardRoadblock, Icons.block, Colors.orange);
+      case 'FIRE': return (l.mapHazardFire, Icons.local_fire_department, Colors.red);
+      case 'CHEMICAL': return (l.mapHazardChemical, Icons.warning_amber, Colors.yellow);
+      case 'FLOOD': return (l.mapHazardFlood, Icons.water, Colors.blue);
+      case 'BUILDING': return (l.mapHazardCollapse, Icons.domain_disabled, Colors.brown);
+      case 'LANDSLIDE': return (l.mapHazardLandslide, Icons.landscape, Colors.grey);
+      default: return (type, Icons.help, Colors.grey);
+    }
+  }
 
   @override
   void initState() {
@@ -187,7 +193,7 @@ class _MapScreenState extends State<MapScreen>
         if (mounted) {
           setState(() {
             _mbtilesLoading = false;
-            _mbtilesError = '找不到離線地圖檔案 (taiwan_ignirelay.mbtiles)';
+            _mbtilesError = 'mapMbtilesNotFound';
           });
         }
         return;
@@ -262,7 +268,10 @@ class _MapScreenState extends State<MapScreen>
     } catch (e, stack) {
       debugPrint('[Map] MBTiles init error: $e\n$stack');
       if (mounted) {
-        setState(() => _mbtilesError = '地圖載入失敗: $e');
+        setState(() {
+        _mbtilesError = 'mapMbtilesLoadFail';
+        _mbtilesErrorArg = e.toString();
+      });
       }
     } finally {
       if (mounted) setState(() => _mbtilesLoading = false);
@@ -449,8 +458,7 @@ class _MapScreenState extends State<MapScreen>
       filteredData.add(h);
 
       // 中心標記（含確認人數 badge）
-      final (typeLabel, typeIcon, _) =
-          _hazardTypes[type] ?? ('未知', Icons.help, Colors.grey);
+      final (typeLabel, typeIcon, _) = _hazardInfo(context, type);
       centerMarkers.add(Marker(
         point: LatLng(lat, lng),
         width: 44,
@@ -540,6 +548,8 @@ class _MapScreenState extends State<MapScreen>
     );
 
     final markers = <Marker>[];
+    if (!mounted) return;
+    final _evtL = S.of(context)!;
     for (final evt in events) {
       final lat = (evt['received_lat'] as num?)?.toDouble();
       final lng = (evt['received_lng'] as num?)?.toDouble();
@@ -555,31 +565,32 @@ class _MapScreenState extends State<MapScreen>
       double markerSize;
       String tooltip;
 
+      final _l = _evtL;
       switch (urgency) {
         case 3: // SOS_RED
           markerColor = Colors.red;
           markerIcon = Icons.sos;
           markerSize = 36;
-          tooltip = 'SOS 緊急求救';
+          tooltip = _l.mapEventSosRed;
           break;
         case 2: // SOS_YELLOW
           markerColor = Colors.amber;
           markerIcon = Icons.warning_amber;
           markerSize = 32;
-          tooltip = '求助';
+          tooltip = _l.mapEventSosYellow;
           break;
         case 1: // RESOURCE
           markerColor = Colors.green;
           markerIcon =
               eventType == 0 ? Icons.inventory_2 : Icons.volunteer_activism;
           markerSize = 28;
-          tooltip = '物資';
+          tooltip = _l.mapEventSupply;
           break;
         default: // INFO
           markerColor = Colors.cyan;
           markerIcon = Icons.info_outline;
           markerSize = 24;
-          tooltip = '資訊';
+          tooltip = _l.mapEventInfo;
       }
 
       // 解讀 payload 取得描述
@@ -661,7 +672,7 @@ class _MapScreenState extends State<MapScreen>
     }
 
     // 類別名稱映射
-    String category = _poiCategoryLabel(cls, sub);
+    String category = _poiCategoryLabel(context, cls, sub);
 
     // 類別顏色
     Color categoryColor = _poiCategoryColor(cls, sub);
@@ -721,15 +732,15 @@ class _MapScreenState extends State<MapScreen>
             const SizedBox(height: 12),
             // 資訊列表
             if (address.isNotEmpty)
-              _poiInfoRow(Icons.location_on, '地址', address),
-            if (phone.isNotEmpty) _poiInfoRow(Icons.phone, '電話', phone),
-            if (hours.isNotEmpty) _poiHoursWidget(hours),
+              _poiInfoRow(Icons.location_on, S.of(ctx)!.mapPoiInfoAddress, address),
+            if (phone.isNotEmpty) _poiInfoRow(Icons.phone, S.of(ctx)!.mapPoiInfoPhone, phone),
+            if (hours.isNotEmpty) _poiHoursWidget(ctx, hours),
             // 如果三項都空，顯示提示
             if (address.isEmpty && phone.isEmpty && hours.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('（此地點未提供詳細資訊）',
-                    style: TextStyle(color: Colors.white38, fontSize: 13)),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(S.of(ctx)!.mapPoiInfoNoDetail,
+                    style: const TextStyle(color: Colors.white38, fontSize: 13)),
               ),
           ],
         ),
@@ -759,8 +770,8 @@ class _MapScreenState extends State<MapScreen>
   }
 
   /// 營業時間 widget：解析 OSM opening_hours 格式，每行一組，星期英轉中
-  Widget _poiHoursWidget(String raw) {
-    final lines = _formatOpeningHours(raw);
+  Widget _poiHoursWidget(BuildContext context, String raw) {
+    final lines = _formatOpeningHours(context, raw);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -768,8 +779,8 @@ class _MapScreenState extends State<MapScreen>
         children: [
           const Icon(Icons.access_time, color: Colors.white54, size: 18),
           const SizedBox(width: 10),
-          const Text('營業  ',
-              style: TextStyle(color: Colors.white54, fontSize: 13)),
+          Text('${S.of(context)!.mapPoiInfoOpen}  ',
+              style: const TextStyle(color: Colors.white54, fontSize: 13)),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -793,18 +804,20 @@ class _MapScreenState extends State<MapScreen>
   /// →  ["週一～週二  09:00-12:00, 15:30-17:30",
   ///     "週三        09:00-12:00",
   ///     "週日        公休"]
-  static List<String> _formatOpeningHours(String raw) {
+  static List<String> _formatOpeningHours(BuildContext context, String raw) {
+    final l = S.of(context)!;
     // 星期英轉中對照
-    const dayMap = {
-      'Mo': '週一',
-      'Tu': '週二',
-      'We': '週三',
-      'Th': '週四',
-      'Fr': '週五',
-      'Sa': '週六',
-      'Su': '週日',
-      'PH': '國定假日',
+    final dayMap = {
+      'Mo': l.mapDayMonday,
+      'Tu': l.mapDayTuesday,
+      'We': l.mapDayWednesday,
+      'Th': l.mapDayThursday,
+      'Fr': l.mapDayFriday,
+      'Sa': l.mapDaySaturday,
+      'Su': l.mapDaySunday,
     };
+    final holidayLabel = l.mapDayHoliday;
+    final closedLabel = l.mapDayClosed;
 
     String translateDays(String s) {
       var result = s;
@@ -818,7 +831,7 @@ class _MapScreenState extends State<MapScreen>
         RegExp(r'\b(Mo|Tu|We|Th|Fr|Sa|Su)\b'),
         (m) => dayMap[m[0]] ?? m[0]!,
       );
-      result = result.replaceAll(RegExp(r'PH\b'), '國定假日');
+      result = result.replaceAll(RegExp(r'PH\b'), holidayLabel);
       return result;
     }
 
@@ -830,7 +843,7 @@ class _MapScreenState extends State<MapScreen>
     for (final rule in rules) {
       // "off" 轉 "公休"
       var formatted =
-          rule.replaceAll(RegExp(r'\boff\b', caseSensitive: false), '公休');
+          rule.replaceAll(RegExp(r'\boff\b', caseSensitive: false), closedLabel);
       formatted = translateDays(formatted);
       // 美化: 在日期與時間之間統一為兩個空格，逗號後加空格
       formatted = formatted.replaceAll(',', ', ');
@@ -840,26 +853,27 @@ class _MapScreenState extends State<MapScreen>
     return lines.isEmpty ? [raw] : lines;
   }
 
-  String _poiCategoryLabel(String cls, String sub) {
-    if (cls == 'hospital' || sub == 'hospital') return '醫院';
-    if (sub == 'clinic' || sub == 'doctors') return '診所';
-    if (sub == 'nursing_home') return '護理之家';
-    if (cls == 'pharmacy' || sub == 'pharmacy') return '藥局';
-    if (sub == 'police') return '警察局';
-    if (sub == 'fire_station') return '消防隊';
-    if (sub == 'school' || sub == 'kindergarten') return '學校';
-    if (sub == 'college' || sub == 'university') return '大學';
-    if (sub == 'supermarket') return '超市';
-    if (sub == 'convenience') return '便利商店';
-    if (sub == 'mall' || sub == 'department_store') return '商場';
-    if (sub == 'fuel') return '加油站';
-    if (sub == 'restaurant') return '餐廳';
-    if (sub == 'cafe') return '咖啡廳';
-    if (sub == 'bank') return '銀行';
-    if (sub == 'post_office') return '郵局';
-    if (sub == 'place_of_worship') return '宗教場所';
-    if (sub == 'parking') return '停車場';
-    if (cls == 'shop') return '商店';
+  String _poiCategoryLabel(BuildContext context, String cls, String sub) {
+    final l = S.of(context)!;
+    if (cls == 'hospital' || sub == 'hospital') return l.mapPoiHospital;
+    if (sub == 'clinic' || sub == 'doctors') return l.mapPoiClinic;
+    if (sub == 'nursing_home') return l.mapPoiNursingHome;
+    if (cls == 'pharmacy' || sub == 'pharmacy') return l.mapPoiPharmacy;
+    if (sub == 'police') return l.mapPoiPolice;
+    if (sub == 'fire_station') return l.mapPoiFireStation;
+    if (sub == 'school' || sub == 'kindergarten') return l.mapPoiSchool;
+    if (sub == 'college' || sub == 'university') return l.mapPoiUniversity;
+    if (sub == 'supermarket') return l.mapPoiSupermarket;
+    if (sub == 'convenience') return l.mapPoiConvenience;
+    if (sub == 'mall' || sub == 'department_store') return l.mapPoiMall;
+    if (sub == 'fuel') return l.mapPoiGasStation;
+    if (sub == 'restaurant') return l.mapPoiRestaurant;
+    if (sub == 'cafe') return l.mapPoiCafe;
+    if (sub == 'bank') return l.mapPoiBank;
+    if (sub == 'post_office') return l.mapPoiPostOffice;
+    if (sub == 'place_of_worship') return l.mapPoiReligious;
+    if (sub == 'parking') return l.mapPoiParking;
+    if (cls == 'shop') return l.mapPoiShop;
     return sub.isNotEmpty ? sub : cls;
   }
 
@@ -1021,8 +1035,8 @@ class _MapScreenState extends State<MapScreen>
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('危險標記已更新'), backgroundColor: Colors.green),
+            SnackBar(
+                content: Text(S.of(context)!.mapHazardUpdatedSnack), backgroundColor: Colors.green),
           );
         }
         _exitMarkingMode();
@@ -1041,8 +1055,7 @@ class _MapScreenState extends State<MapScreen>
       if (nearby != null && mounted) {
         final dist = (nearby['_distance'] as double).round();
         final cnt = (nearby['confirm_count'] as int?) ?? 1;
-        final (typeLabel, _, _) =
-            _hazardTypes[_markType] ?? ('未知', Icons.help, Colors.grey);
+        final (typeLabel, _, _) = _hazardInfo(context, _markType);
         final action = await showDialog<String>(
           context: context,
           builder: (_) => AlertDialog(
@@ -1050,8 +1063,8 @@ class _MapScreenState extends State<MapScreen>
             title: Row(children: [
               const Icon(Icons.people, color: Colors.orange),
               const SizedBox(width: 8),
-              const Text('附近已有回報',
-                  style: TextStyle(color: Colors.white, fontSize: 16)),
+              Text(S.of(context)!.mapMarkingNearbyExists,
+                  style: const TextStyle(color: Colors.white, fontSize: 16)),
             ]),
             content: Text(
               '距離 ${dist}m 處已有「$typeLabel」回報\n'
@@ -1062,15 +1075,15 @@ class _MapScreenState extends State<MapScreen>
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, 'new'),
-                child: const Text('建立新標記',
-                    style: TextStyle(color: Colors.white54)),
+                child: Text(S.of(context)!.mapMarkingCreateNew,
+                    style: const TextStyle(color: Colors.white54)),
               ),
               ElevatedButton.icon(
                 onPressed: () => Navigator.pop(context, 'confirm'),
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
                 icon: const Icon(Icons.check, color: Colors.white, size: 18),
                 label:
-                    const Text('確認回報', style: TextStyle(color: Colors.white)),
+                    Text(S.of(context)!.mapMarkingConfirmReport, style: const TextStyle(color: Colors.white)),
               ),
             ],
           ),
@@ -1079,10 +1092,10 @@ class _MapScreenState extends State<MapScreen>
         if (action == 'confirm') {
           await _eventManager.confirmHazard(nearby['hazard_id'] as String);
           if (mounted) {
+            final (tl, _, _) = _hazardInfo(context, _markType);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(
-                    '已確認「${_hazardTypes[_markType]?.$1 ?? _markType}」回報 (+1)'),
+                content: Text(S.of(context)!.mapHazardConfirmSnack(tl, 1)),
                 backgroundColor: Colors.green,
               ),
             );
@@ -1109,8 +1122,8 @@ class _MapScreenState extends State<MapScreen>
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('危險標記已發布至 Mesh'), backgroundColor: Colors.orange),
+          SnackBar(
+              content: Text(S.of(context)!.mapHazardPublishedSnack), backgroundColor: Colors.orange),
         );
       }
       _exitMarkingMode();
@@ -1118,7 +1131,7 @@ class _MapScreenState extends State<MapScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('發布失敗: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text(S.of(context)!.mapMbtilesLoadFail(e.toString())), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -1139,20 +1152,20 @@ class _MapScreenState extends State<MapScreen>
     final hazardId = h['hazard_id'] as String? ?? '';
     final isMine = reportedBy == _myReporterHex;
 
-    final (typeLabel, typeIcon, typeColor) =
-        _hazardTypes[type] ?? ('未知', Icons.help, Colors.grey);
+    final (typeLabel, typeIcon, typeColor) = _hazardInfo(context, type);
 
+    final l = S.of(context)!;
     // 時間顯示
     String timeAgo = '';
     if (createdAt > 0) {
       final diff = DateTime.now().millisecondsSinceEpoch - createdAt;
       final mins = diff ~/ 60000;
       if (mins < 60) {
-        timeAgo = '$mins 分鐘前';
+        timeAgo = l.mapTimeAgoMinutes(mins);
       } else if (mins < 1440) {
-        timeAgo = '${mins ~/ 60} 小時前';
+        timeAgo = l.mapTimeAgoHours(mins ~/ 60);
       } else {
-        timeAgo = '${mins ~/ 1440} 天前';
+        timeAgo = l.mapTimeAgoDays(mins ~/ 1440);
       }
     }
 
@@ -1160,16 +1173,16 @@ class _MapScreenState extends State<MapScreen>
     String credLabel;
     Color credColor;
     if (confirmCount >= 5) {
-      credLabel = '確信';
+      credLabel = l.mapCredibilityConfirmed;
       credColor = Colors.greenAccent;
     } else if (confirmCount >= 3) {
-      credLabel = '可信';
+      credLabel = l.mapCredibilityCredible;
       credColor = Colors.lightGreen;
     } else if (confirmCount >= 2) {
-      credLabel = '有附議';
+      credLabel = l.mapCredibilityEndorsed;
       credColor = Colors.orange;
     } else {
-      credLabel = '未驗證';
+      credLabel = l.mapCredibilityUnverified;
       credColor = Colors.white38;
     }
 
@@ -1221,8 +1234,8 @@ class _MapScreenState extends State<MapScreen>
             const SizedBox(height: 12),
             // 嚴重度條
             Row(children: [
-              const Text('嚴重度  ',
-                  style: TextStyle(color: Colors.white54, fontSize: 13)),
+              Text('${l.mapHazardInfoSeverity}  ',
+                  style: const TextStyle(color: Colors.white54, fontSize: 13)),
               ...List.generate(
                 5,
                 (i) => Icon(
@@ -1237,22 +1250,22 @@ class _MapScreenState extends State<MapScreen>
                   style: const TextStyle(color: Colors.white38, fontSize: 12)),
             ]),
             const SizedBox(height: 6),
-            Text('影響範圍: ${radius.round()}m',
+            Text(l.mapHazardInfoRadius(radius.round()),
                 style: const TextStyle(color: Colors.white54, fontSize: 13)),
             if (desc.isNotEmpty) ...[
               const SizedBox(height: 6),
-              Text('描述: $desc',
+              Text(l.mapHazardInfoDesc(desc),
                   style: const TextStyle(color: Colors.white70, fontSize: 13)),
             ],
             if (timeAgo.isNotEmpty) ...[
               const SizedBox(height: 6),
-              Text('回報時間: $timeAgo',
+              Text(l.mapHazardInfoTime(timeAgo),
                   style: const TextStyle(color: Colors.white38, fontSize: 12)),
             ],
             if (isMine)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text('👤 你的回報',
+                child: Text('👤 ${l.mapHazardInfoMine}',
                     style: TextStyle(
                         color: Colors.greenAccent[400], fontSize: 12)),
               ),
@@ -1267,7 +1280,7 @@ class _MapScreenState extends State<MapScreen>
                       _enterEditMode(h);
                     },
                     icon: const Icon(Icons.edit, size: 16),
-                    label: const Text('編輯'),
+                    label: Text(l.mapHazardInfoEditButton),
                     style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.orange,
                         side: const BorderSide(color: Colors.orange)),
@@ -1281,7 +1294,7 @@ class _MapScreenState extends State<MapScreen>
                       await _deleteHazardConfirm(hazardId);
                     },
                     icon: const Icon(Icons.delete, size: 16),
-                    label: const Text('解除'),
+                    label: Text(l.mapHazardDeleteConfirm),
                     style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.red,
                         side: const BorderSide(color: Colors.red)),
@@ -1298,7 +1311,7 @@ class _MapScreenState extends State<MapScreen>
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                                '已確認「$typeLabel」回報 (${confirmCount + 1}人)'),
+                                l.mapHazardConfirmSnack(typeLabel, confirmCount + 1)),
                             backgroundColor: Colors.green,
                           ),
                         );
@@ -1306,8 +1319,8 @@ class _MapScreenState extends State<MapScreen>
                     },
                     icon:
                         const Icon(Icons.check, color: Colors.white, size: 18),
-                    label: const Text('確認此回報',
-                        style: TextStyle(color: Colors.white)),
+                    label: Text(l.mapHazardInfoConfirmButton,
+                        style: const TextStyle(color: Colors.white)),
                     style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange),
                   ),
@@ -1330,23 +1343,24 @@ class _MapScreenState extends State<MapScreen>
     final lng = (evt['received_lng'] as num?)?.toDouble() ?? 0;
     final eventId = (evt['event_id'] as String?) ?? '';
 
+    final lEvt = S.of(context)!;
     // 事件類型名稱
     String typeName;
     IconData typeIcon;
     Color typeColor;
     switch (eventType) {
       case 0:
-        typeName = '物資供給';
+        typeName = lEvt.mapEventTypeSupply;
         typeIcon = Icons.inventory_2;
         typeColor = Colors.greenAccent;
         break;
       case 1:
-        typeName = '物資需求';
+        typeName = lEvt.mapEventTypeRequest;
         typeIcon = Icons.volunteer_activism;
         typeColor = Colors.amber;
         break;
       default:
-        typeName = '事件 (type=$eventType)';
+        typeName = lEvt.mapEventTypeUnknown(eventType);
         typeIcon = Icons.info_outline;
         typeColor = Colors.cyanAccent;
     }
@@ -1356,19 +1370,19 @@ class _MapScreenState extends State<MapScreen>
     Color urgencyColor;
     switch (urgency) {
       case 3:
-        urgencyLabel = 'SOS 緊急求救';
+        urgencyLabel = lEvt.mapEventSosRed;
         urgencyColor = Colors.red;
         break;
       case 2:
-        urgencyLabel = '求助';
+        urgencyLabel = lEvt.mapEventSosYellow;
         urgencyColor = Colors.amber;
         break;
       case 1:
-        urgencyLabel = '物資';
+        urgencyLabel = lEvt.mapEventSupply;
         urgencyColor = Colors.green;
         break;
       default:
-        urgencyLabel = '資訊';
+        urgencyLabel = lEvt.mapEventInfo;
         urgencyColor = Colors.cyan;
     }
 
@@ -1378,11 +1392,11 @@ class _MapScreenState extends State<MapScreen>
       final diff = DateTime.now().millisecondsSinceEpoch - hlcTs;
       final mins = diff ~/ 60000;
       if (mins < 60) {
-        timeAgo = '$mins 分鐘前';
+        timeAgo = lEvt.mapTimeAgoMinutes(mins);
       } else if (mins < 1440) {
-        timeAgo = '${mins ~/ 60} 小時前';
+        timeAgo = lEvt.mapTimeAgoHours(mins ~/ 60);
       } else {
-        timeAgo = '${mins ~/ 1440} 天前';
+        timeAgo = lEvt.mapTimeAgoDays(mins ~/ 1440);
       }
     }
 
@@ -1393,10 +1407,10 @@ class _MapScreenState extends State<MapScreen>
       try {
         if (eventType == 0) {
           final rd = pb.ResourceData.fromBuffer(payload);
-          payloadDesc = '${getReadableName(rd.resourceType)} ${rd.quantity.toInt()} ${rd.unit}';
+          payloadDesc = lEvt.mapPayloadQtyUnit(getReadableName(rd.resourceType), rd.quantity.toInt(), rd.unit);
         } else if (eventType == 1) {
           final rd = pb.RequestData.fromBuffer(payload);
-          payloadDesc = '${getReadableName(rd.resourceType)} ${rd.quantityNeeded.toInt()} 份';
+          payloadDesc = lEvt.mapPayloadQtyPcs(getReadableName(rd.resourceType), rd.quantityNeeded.toInt());
         } else {
           payloadDesc = String.fromCharCodes(payload);
           if (payloadDesc.length > 100) payloadDesc = '${payloadDesc.substring(0, 100)}...';
@@ -1458,11 +1472,11 @@ class _MapScreenState extends State<MapScreen>
               Row(children: [
                 const Icon(Icons.place, size: 14, color: Colors.white38),
                 const SizedBox(width: 4),
-                Text('距離: $distStr', style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                Text(lEvt.mapEventInfoDistance(distStr), style: const TextStyle(color: Colors.white54, fontSize: 13)),
               ]),
             if (timeAgo.isNotEmpty) ...[
               const SizedBox(height: 4),
-              Text('時間: $timeAgo', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+              Text(lEvt.mapEventInfoTime(timeAgo), style: const TextStyle(color: Colors.white38, fontSize: 12)),
             ],
             const SizedBox(height: 4),
             Text('ID: ${eventId.length > 8 ? eventId.substring(0, 8) : eventId}...',
@@ -1490,23 +1504,24 @@ class _MapScreenState extends State<MapScreen>
   }
 
   Future<void> _deleteHazardConfirm(String hazardId) async {
+    final lDel = S.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a2e),
-        title: const Text('解除危險標記？',
-            style: TextStyle(color: Colors.white, fontSize: 16)),
-        content: const Text('解除後此標記將從地圖上移除。',
-            style: TextStyle(color: Colors.white70, fontSize: 14)),
+        title: Text(lDel.mapHazardDeleteTitle,
+            style: const TextStyle(color: Colors.white, fontSize: 16)),
+        content: Text(lDel.mapHazardDeleteContent,
+            style: const TextStyle(color: Colors.white70, fontSize: 14)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消', style: TextStyle(color: Colors.white54)),
+            child: Text(lDel.mapHazardDeleteCancel, style: const TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('解除', style: TextStyle(color: Colors.white)),
+            child: Text(lDel.mapHazardDeleteConfirm, style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -1516,8 +1531,8 @@ class _MapScreenState extends State<MapScreen>
       _loadOverlays();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('危險標記已解除'), backgroundColor: Colors.green),
+          SnackBar(
+              content: Text(S.of(context)!.mapHazardDeletedSnack), backgroundColor: Colors.green),
         );
       }
     }
@@ -1555,7 +1570,13 @@ class _MapScreenState extends State<MapScreen>
             _activeSosDesc = desc;
           });
         }
-        final labels = ['資訊', '物資需求', '求助 (黃)', '緊急求救 (紅)'];
+        final lTriage = S.of(context)!;
+        final labels = [
+          lTriage.mapTriageBroadcastLabel0,
+          lTriage.mapTriageBroadcastLabel1,
+          lTriage.mapTriageBroadcastLabel2,
+          lTriage.mapTriageBroadcastLabel3,
+        ];
         final colors = [
           Colors.blue[700],
           Colors.green[700],
@@ -1564,7 +1585,7 @@ class _MapScreenState extends State<MapScreen>
         ];
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('已廣播 ${labels[urgency]}：$desc'),
+            content: Text(lTriage.mapTriageBroadcastSnack(labels[urgency], desc)),
             backgroundColor: colors[urgency],
           ),
         );
@@ -1581,23 +1602,24 @@ class _MapScreenState extends State<MapScreen>
 
   /// 取消 SOS 求救
   Future<void> _cancelSos() async {
+    final lSos = S.of(context)!;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a2e),
-        title: const Text('取消求救', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          '確定要取消 SOS 求救訊號嗎？\n取消後其他裝置會收到通知。',
-          style: TextStyle(color: Colors.white70),
+        title: Text(lSos.mapCancelSosTitle, style: const TextStyle(color: Colors.white)),
+        content: Text(
+          lSos.mapCancelSosContent,
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('返回'),
+            child: Text(lSos.mapCancelSosBack),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('確定取消', style: TextStyle(color: Colors.red)),
+            child: Text(lSos.mapCancelSosConfirm, style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -1608,7 +1630,7 @@ class _MapScreenState extends State<MapScreen>
       // 發布取消事件到 Mesh 網路
       await _eventManager.publishEvent(
         urgency: 0, // INFO level
-        description: '【SOS 已取消】$_activeSosDesc',
+        description: '${S.of(context)!.mapSosCancelledPrefix}$_activeSosDesc',
         lat: _userLocation?.latitude,
         lng: _userLocation?.longitude,
       );
@@ -1620,7 +1642,7 @@ class _MapScreenState extends State<MapScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('SOS 已取消'),
+            content: Text(S.of(context)!.mapSosCancelledSnack),
             backgroundColor: Colors.grey[700],
           ),
         );
@@ -1629,7 +1651,7 @@ class _MapScreenState extends State<MapScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('取消失敗: $e'), backgroundColor: Colors.red[700]),
+          SnackBar(content: Text(S.of(context)!.mapSosCancelFailSnack(e.toString())), backgroundColor: Colors.red[700]),
         );
       }
     }
@@ -1640,8 +1662,8 @@ class _MapScreenState extends State<MapScreen>
       _mapController.moveAndRotate(_userLocation!, 15.0, 0.0);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('GPS 尚未定位，請確認已開啟位置服務'),
+        SnackBar(
+            content: Text(S.of(context)!.mapGpsNotReady),
             backgroundColor: Colors.orange),
       );
     }
@@ -1652,19 +1674,19 @@ class _MapScreenState extends State<MapScreen>
     super.build(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('離線戰術地圖',
-            style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: Text(S.of(context)!.mapTitle,
+            style: const TextStyle(color: Colors.white, fontSize: 16)),
         backgroundColor: Colors.black87,
         actions: [
           IconButton(
             icon: const Icon(Icons.layers, color: Colors.white),
             onPressed: _showLayerControlSheet,
-            tooltip: '圖層控制',
+            tooltip: S.of(context)!.mapLayerControlTooltip,
           ),
           IconButton(
             icon: const Icon(Icons.legend_toggle, color: Colors.white),
             onPressed: () => setState(() => _showLegend = !_showLegend),
-            tooltip: '圖例',
+            tooltip: S.of(context)!.mapLegendTooltip,
           ),
           IconButton(
             icon: AnimatedBuilder(
@@ -1676,7 +1698,7 @@ class _MapScreenState extends State<MapScreen>
               child: const Icon(Icons.refresh, color: Colors.white),
             ),
             onPressed: _refreshWithSpin,
-            tooltip: '重新整理',
+            tooltip: S.of(context)!.mapRefreshTooltip,
           ),
         ],
       ),
@@ -1717,7 +1739,7 @@ class _MapScreenState extends State<MapScreen>
                         icon:
                             const Icon(Icons.check_circle, color: Colors.white),
                         label: Text(
-                          'SOS 已發送  ✕ 取消',
+                          S.of(context)!.mapSosSentLabel,
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.95),
                             fontSize: 13,
@@ -1741,8 +1763,8 @@ class _MapScreenState extends State<MapScreen>
                           );
                         },
                         icon: const Icon(Icons.sos, color: Colors.white),
-                        label: const Text('求救 SOS',
-                            style: TextStyle(color: Colors.white)),
+                        label: Text(S.of(context)!.mapSosButton,
+                            style: const TextStyle(color: Colors.white)),
                       ),
               ],
             ),
@@ -1790,8 +1812,7 @@ class _MapScreenState extends State<MapScreen>
     // 預覽多邊形（標記模式）
     final List<Polygon> previewPolygons = [];
     if (_isMarkingMode && _markCenter != null) {
-      final (_, _, previewColor) =
-          _hazardTypes[_markType] ?? ('', Icons.help, Colors.orange);
+      final (_, _, previewColor) = _hazardInfo(context, _markType);
       previewPolygons.add(Polygon(
         points: _circlePolygonPoints(
           _markCenter!.latitude,
@@ -1883,9 +1904,9 @@ class _MapScreenState extends State<MapScreen>
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Text(
-                  '長按地圖 → 標記危險區域',
-                  style: TextStyle(color: Colors.white, fontSize: 12),
+                child: Text(
+                  S.of(context)!.mapLongPressHint,
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
                 ),
               ),
             ),
@@ -1901,8 +1922,8 @@ class _MapScreenState extends State<MapScreen>
   // ── 標記模式控制面板 ─────────────────────────────────────────────
 
   Widget _buildMarkingPanel() {
-    final (typeLabel, _, typeColor) =
-        _hazardTypes[_markType] ?? ('未知', Icons.help, Colors.grey);
+    final lPanel = S.of(context)!;
+    final (typeLabel, _, typeColor) = _hazardInfo(context, _markType);
     return Positioned(
       bottom: 0,
       left: 0,
@@ -1929,7 +1950,7 @@ class _MapScreenState extends State<MapScreen>
               const Icon(Icons.warning_amber, color: Colors.orange, size: 22),
               const SizedBox(width: 8),
               Text(
-                _editingHazardId != null ? '編輯危險標記' : '標記危險區域',
+                _editingHazardId != null ? lPanel.mapMarkingEditTitle : lPanel.mapMarkingNewTitle,
                 style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -1943,8 +1964,8 @@ class _MapScreenState extends State<MapScreen>
                 constraints: const BoxConstraints(),
               ),
             ]),
-            const Text('  點擊地圖可移動標記位置',
-                style: TextStyle(color: Colors.white38, fontSize: 11)),
+            Text(lPanel.mapMarkingTapHint,
+                style: const TextStyle(color: Colors.white38, fontSize: 11)),
             const SizedBox(height: 10),
 
             // ── 危險類型選擇 ──
@@ -1952,9 +1973,9 @@ class _MapScreenState extends State<MapScreen>
               height: 38,
               child: ListView(
                 scrollDirection: Axis.horizontal,
-                children: _hazardTypes.entries.map((entry) {
-                  final (label, icon, color) = entry.value;
-                  final selected = _markType == entry.key;
+                children: ['ROADBLOCK', 'FIRE', 'CHEMICAL', 'FLOOD', 'BUILDING', 'LANDSLIDE'].map((key) {
+                  final (label, icon, color) = _hazardInfo(context, key);
+                  final selected = _markType == key;
                   return Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: ChoiceChip(
@@ -1969,7 +1990,7 @@ class _MapScreenState extends State<MapScreen>
                       ),
                       side:
                           BorderSide(color: selected ? color : Colors.white24),
-                      onSelected: (_) => setState(() => _markType = entry.key),
+                      onSelected: (_) => setState(() => _markType = key),
                     ),
                   );
                 }).toList(),
@@ -1979,8 +2000,8 @@ class _MapScreenState extends State<MapScreen>
 
             // ── 嚴重程度 ──
             Row(children: [
-              const Text(' 嚴重度',
-                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+              Text(lPanel.mapMarkingSeverityLabel,
+                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
               Expanded(
                 child: Slider(
                   value: _markSeverity,
@@ -1999,8 +2020,8 @@ class _MapScreenState extends State<MapScreen>
 
             // ── 影響半徑 ──
             Row(children: [
-              const Text(' 半徑',
-                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+              Text(lPanel.mapMarkingRadiusLabel,
+                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
               Expanded(
                 child: Slider(
                   value: _markRadius,
@@ -2024,7 +2045,7 @@ class _MapScreenState extends State<MapScreen>
                 controller: _markDescCtrl,
                 style: const TextStyle(color: Colors.white, fontSize: 13),
                 decoration: InputDecoration(
-                  hintText: '簡述狀況 (選填)',
+                  hintText: lPanel.mapMarkingDescHint,
                   hintStyle:
                       const TextStyle(color: Colors.white24, fontSize: 13),
                   enabledBorder: OutlineInputBorder(
@@ -2066,7 +2087,7 @@ class _MapScreenState extends State<MapScreen>
                         color: Colors.white,
                         size: 20),
                 label: Text(
-                  _editingHazardId != null ? '更新標記' : '發布至 Mesh',
+                  _editingHazardId != null ? lPanel.mapMarkingUpdateButton : lPanel.mapMarkingPublishButton,
                   style: const TextStyle(
                       color: Colors.white,
                       fontSize: 15,
@@ -2081,6 +2102,7 @@ class _MapScreenState extends State<MapScreen>
   }
 
   Widget _buildLoadingScreen() {
+    final lLoad = S.of(context)!;
     return Container(
       color: const Color(0xFFF2EFE9),
       child: Center(
@@ -2089,11 +2111,11 @@ class _MapScreenState extends State<MapScreen>
           children: [
             const CircularProgressIndicator(color: Colors.redAccent),
             const SizedBox(height: 16),
-            const Text('正在載入離線地圖...', style: TextStyle(color: Colors.black54)),
+            Text(lLoad.mapLoading, style: const TextStyle(color: Colors.black54)),
             const SizedBox(height: 8),
-            const Text(
-              '(首次啟動解壓 201MB 地圖需要一點時間)',
-              style: TextStyle(color: Colors.black38, fontSize: 12),
+            Text(
+              lLoad.mapLoadingNote,
+              style: const TextStyle(color: Colors.black38, fontSize: 12),
             ),
           ],
         ),
@@ -2102,6 +2124,15 @@ class _MapScreenState extends State<MapScreen>
   }
 
   Widget _buildErrorScreen() {
+    final l = S.of(context)!;
+    String errorMsg;
+    if (_mbtilesError == 'mapMbtilesLoadFail') {
+      errorMsg = l.mapMbtilesLoadFail(_mbtilesErrorArg ?? '');
+    } else if (_mbtilesError == 'mapMbtilesNotFound') {
+      errorMsg = l.mapMbtilesNotFound;
+    } else {
+      errorMsg = l.mapErrorUnknown;
+    }
     return Container(
       color: const Color(0xFFF2EFE9),
       child: Center(
@@ -2110,18 +2141,18 @@ class _MapScreenState extends State<MapScreen>
           children: [
             const Icon(Icons.map_outlined, color: Colors.black26, size: 64),
             const SizedBox(height: 16),
-            const Text('離線地圖不可用',
-                style: TextStyle(color: Colors.black54, fontSize: 18)),
+            Text(l.mapErrorTitle,
+                style: const TextStyle(color: Colors.black54, fontSize: 18)),
             const SizedBox(height: 8),
             Text(
-              _mbtilesError ?? '未知錯誤',
+              errorMsg,
               style: const TextStyle(color: Colors.black38, fontSize: 13),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            const Text(
-              '請確認 assets/maps/taiwan_ignirelay.mbtiles 已正確打包',
-              style: TextStyle(color: Colors.black26, fontSize: 12),
+            Text(
+              l.mapErrorAssetNote,
+              style: const TextStyle(color: Colors.black26, fontSize: 12),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -2130,11 +2161,12 @@ class _MapScreenState extends State<MapScreen>
                 setState(() {
                   _mbtilesLoading = true;
                   _mbtilesError = null;
+                  _mbtilesErrorArg = null;
                 });
                 _initMBTiles();
               },
               icon: const Icon(Icons.refresh, color: Colors.white),
-              label: const Text('重試', style: TextStyle(color: Colors.white)),
+              label: Text(l.mapRetryButton, style: const TextStyle(color: Colors.white)),
               style:
                   ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             ),
@@ -2159,36 +2191,39 @@ class _MapScreenState extends State<MapScreen>
                 color: Colors.black.withValues(alpha: 0.15), blurRadius: 8)
           ],
         ),
-        child: Column(
+        child: Builder(builder: (ctx) {
+          final lLeg = S.of(ctx)!;
+          return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('🚨 救災地標 (離線圖磚)',
-                style: TextStyle(
+            Text('🚨 ${lLeg.mapLegendTitle}',
+                style: const TextStyle(
                     color: Colors.black87,
                     fontWeight: FontWeight.bold,
                     fontSize: 13)),
             const SizedBox(height: 4),
-            const Text('放大至街道層級可載入點位',
-                style: TextStyle(color: Colors.red, fontSize: 10)),
+            Text(lLeg.mapLegendZoomHint,
+                style: const TextStyle(color: Colors.red, fontSize: 10)),
             const Divider(color: Colors.black12, height: 16),
-            _legendItem(Colors.red, '醫院/診所'),
-            _legendItem(const Color(0xFF3366ff), '警消單位'),
-            _legendItem(Colors.orange, '學校 (避難所)'),
-            _legendItem(Colors.purple, '藥局 (醫療物資)'),
-            _legendItem(Colors.green, '超市/便利商店'),
+            _legendItem(Colors.red, lLeg.mapLegendHospital),
+            _legendItem(const Color(0xFF3366ff), lLeg.mapLegendPolice),
+            _legendItem(Colors.orange, lLeg.mapLegendSchool),
+            _legendItem(Colors.purple, lLeg.mapLegendPharmacy),
+            _legendItem(Colors.green, lLeg.mapLegendSupermarket),
             const Divider(color: Colors.black12, height: 16),
-            const Text('Mesh 事件',
-                style: TextStyle(
+            Text(lLeg.mapLegendMeshEvents,
+                style: const TextStyle(
                     color: Colors.black54,
                     fontWeight: FontWeight.bold,
                     fontSize: 11)),
-            _legendItem(Colors.red, 'SOS 緊急求救', icon: Icons.sos),
-            _legendItem(Colors.amber, '求助', icon: Icons.warning_amber),
-            _legendItem(Colors.green, '物資', icon: Icons.inventory_2),
-            _legendItem(Colors.cyan, '資訊', icon: Icons.info_outline),
+            _legendItem(Colors.red, lLeg.mapEventSosRed, icon: Icons.sos),
+            _legendItem(Colors.amber, lLeg.mapEventSosYellow, icon: Icons.warning_amber),
+            _legendItem(Colors.green, lLeg.mapEventSupply, icon: Icons.inventory_2),
+            _legendItem(Colors.cyan, lLeg.mapEventInfo, icon: Icons.info_outline),
           ],
-        ),
+          );
+        }),
       ),
     );
   }

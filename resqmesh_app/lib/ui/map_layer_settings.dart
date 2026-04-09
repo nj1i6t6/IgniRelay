@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/generated/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POI 類別定義
@@ -69,19 +70,19 @@ class MapLayerSettings extends ChangeNotifier {
   }
 
   // ── 常量 ──
-  static const poiCategories = [
-    PoiCategory('resq_hospital', '醫院/診所', Icons.local_hospital, Colors.red),
-    PoiCategory('resq_pharmacy', '藥局', Icons.local_pharmacy, Colors.purple),
-    PoiCategory('resq_police', '警消單位', Icons.local_police, Color(0xFF3366ff)),
-    PoiCategory('resq_school', '學校（避難所）', Icons.school, Colors.orange),
-    PoiCategory('resq_grocery', '超市/商店', Icons.store, Colors.green),
+  static List<PoiCategory> getPoiCategories(BuildContext context) => [
+    PoiCategory('resq_hospital', S.of(context)!.mapLayerPoiHospital, Icons.local_hospital, Colors.red),
+    PoiCategory('resq_pharmacy', S.of(context)!.mapLayerPoiPharmacy, Icons.local_pharmacy, Colors.purple),
+    PoiCategory('resq_police', S.of(context)!.mapLayerPoiPolice, Icons.local_police, const Color(0xFF3366ff)),
+    PoiCategory('resq_school', S.of(context)!.mapLayerPoiSchool, Icons.school, Colors.orange),
+    PoiCategory('resq_grocery', S.of(context)!.mapLayerPoiSupermarket, Icons.store, Colors.green),
   ];
 
-  static const credibilityLevels = [
-    (label: '全部顯示', desc: '包含未驗證', min: 1),
-    (label: '2 人以上', desc: '有人附議', min: 2),
-    (label: '3 人以上', desc: '多人回報', min: 3),
-    (label: '確信 (5+)', desc: '高度可信', min: 5),
+  static List<({String label, String desc, int min})> getCredibilityLevels(BuildContext context) => [
+    (label: S.of(context)!.mapLayerCredAll, desc: S.of(context)!.mapLayerCredAllDesc, min: 1),
+    (label: S.of(context)!.mapLayerCred2, desc: S.of(context)!.mapLayerCred2Desc, min: 2),
+    (label: S.of(context)!.mapLayerCred3, desc: S.of(context)!.mapLayerCred3Desc, min: 3),
+    (label: S.of(context)!.mapLayerCred5, desc: S.of(context)!.mapLayerCred5Desc, min: 5),
   ];
 }
 
@@ -119,12 +120,12 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
               ),
             ),
           ),
-          const Row(
+          Row(
             children: [
-              Icon(Icons.layers, color: Colors.white, size: 22),
-              SizedBox(width: 8),
-              Text('圖層控制',
-                  style: TextStyle(
+              const Icon(Icons.layers, color: Colors.white, size: 22),
+              const SizedBox(width: 8),
+              Text(S.of(context)!.mapLayerTitle,
+                  style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.bold)),
@@ -134,20 +135,20 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
 
           // ═══════════ POI 區段 ═══════════
           _sectionHeader(
-            '地點圖標',
+            S.of(context)!.mapLayerPoiSection,
             Icons.place,
             s.showPoi,
             (v) => setState(() => s.showPoi = v),
           ),
           if (s.showPoi) ...[
             const SizedBox(height: 4),
-            ...MapLayerSettings.poiCategories.map((cat) => _poiToggle(cat, s)),
+            ...MapLayerSettings.getPoiCategories(context).map((cat) => _poiToggle(cat, s)),
           ],
           const Divider(color: Colors.white12, height: 24),
 
           // ═══════════ 危險區域區段 ═══════════
           _sectionHeader(
-            '危險區域',
+            S.of(context)!.mapLayerHazardSection,
             Icons.warning_amber,
             s.showHazards,
             (v) => setState(() => s.showHazards = v),
@@ -155,16 +156,16 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
           if (s.showHazards) ...[
             const SizedBox(height: 4),
             _subToggle(
-              '顯示他人回報',
+              S.of(context)!.mapLayerHazardShowOthers,
               s.showOtherHazards,
               (v) => setState(() => s.showOtherHazards = v),
             ),
             if (s.showOtherHazards) ...[
               const SizedBox(height: 8),
-              const Padding(
-                padding: EdgeInsets.only(left: 20),
-                child: Text('最低可信度',
-                    style: TextStyle(color: Colors.white54, fontSize: 12)),
+              Padding(
+                padding: const EdgeInsets.only(left: 20),
+                child: Text(S.of(context)!.mapLayerHazardMinCredibility,
+                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
               ),
               const SizedBox(height: 6),
               Padding(
@@ -172,7 +173,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
                 child: Wrap(
                   spacing: 8,
                   runSpacing: 4,
-                  children: MapLayerSettings.credibilityLevels.map((level) {
+                  children: MapLayerSettings.getCredibilityLevels(context).map((level) {
                     final selected = s.minConfirmCount == level.min;
                     return ChoiceChip(
                       label: Text(level.label),

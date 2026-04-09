@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/generated/app_localizations.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // IgniRelay 烽傳物資類型三級分類資料
@@ -725,4 +726,221 @@ SupplySubCategory? findSubCategoryByItemCode(String code) {
     }
   }
   return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Localized label helpers (BuildContext-aware)
+// ─────────────────────────────────────────────────────────────────────────────
+
+extension ItemConditionL10n on ItemCondition {
+  String localLabel(BuildContext context) {
+    final l = S.of(context)!;
+    switch (this) {
+      case ItemCondition.brandNew: return l.itemConditionNew;
+      case ItemCondition.openedUnused: return l.itemConditionOpenedUnused;
+      case ItemCondition.usedGood: return l.itemConditionUsedFunctional;
+    }
+  }
+}
+
+class SupplyCategoryLocalizer {
+  static String categoryLabel(BuildContext ctx, String code) {
+    final l = S.of(ctx)!;
+    switch (code) {
+      case 'WATER': return l.supplyCategory_WATER;
+      case 'FOOD': return l.supplyCategory_FOOD;
+      case 'MEDICAL': return l.supplyCategory_MEDICAL;
+      case 'HYGIENE': return l.supplyCategory_HYGIENE;
+      case 'PROTECTION': return l.supplyCategory_PROTECTION;
+      case 'SHELTER': return l.supplyCategory_SHELTER;
+      case 'TOOL': return l.supplyCategory_TOOL;
+      case 'PETS': return l.supplyCategory_PETS;
+      case 'SKILL': return l.supplyCategory_SKILL;
+      default: return code;
+    }
+  }
+
+  static String subCategoryLabel(BuildContext ctx, String code) {
+    final l = S.of(ctx)!;
+    switch (code) {
+      case 'WATER_BOTTLE': return l.supplySubCategory_WATER_BOTTLE;
+      case 'WATER_PURIFY': return l.supplySubCategory_WATER_PURIFY;
+      case 'WATER_CONTAINER': return l.supplySubCategory_WATER_CONTAINER;
+      case 'FOOD_READY': return l.supplySubCategory_FOOD_READY;
+      case 'FOOD_STAPLE': return l.supplySubCategory_FOOD_STAPLE;
+      case 'FOOD_BABY': return l.supplySubCategory_FOOD_BABY;
+      case 'FOOD_SUPPLEMENT': return l.supplySubCategory_FOOD_SUPPLEMENT;
+      case 'FOOD_COOKING': return l.supplySubCategory_FOOD_COOKING;
+      case 'MED_PAIN': return l.supplySubCategory_MED_PAIN;
+      case 'MED_WOUND': return l.supplySubCategory_MED_WOUND;
+      case 'MED_CHRONIC': return l.supplySubCategory_MED_CHRONIC;
+      case 'MED_RESPIRATORY': return l.supplySubCategory_MED_RESPIRATORY;
+      case 'MED_GI': return l.supplySubCategory_MED_GI;
+      case 'MED_FIRSTAID_KIT': return l.supplySubCategory_MED_FIRSTAID_KIT;
+      case 'HYG_FEMININE': return l.supplySubCategory_HYG_FEMININE;
+      case 'HYG_BABY': return l.supplySubCategory_HYG_BABY;
+      case 'HYG_PERSONAL': return l.supplySubCategory_HYG_PERSONAL;
+      case 'HYG_SANITATION': return l.supplySubCategory_HYG_SANITATION;
+      case 'PROT_RESPIRATORY': return l.supplySubCategory_PROT_RESPIRATORY;
+      case 'PROT_BODY': return l.supplySubCategory_PROT_BODY;
+      case 'PROT_LIGHT': return l.supplySubCategory_PROT_LIGHT;
+      case 'SHELTER_TEMP': return l.supplySubCategory_SHELTER_TEMP;
+      case 'SHELTER_BEDDING': return l.supplySubCategory_SHELTER_BEDDING;
+      case 'SHELTER_CLOTHING': return l.supplySubCategory_SHELTER_CLOTHING;
+      case 'TOOL_COMM': return l.supplySubCategory_TOOL_COMM;
+      case 'TOOL_RESCUE': return l.supplySubCategory_TOOL_RESCUE;
+      case 'TOOL_POWER': return l.supplySubCategory_TOOL_POWER;
+      case 'TOOL_TRANSPORT': return l.supplySubCategory_TOOL_TRANSPORT;
+      case 'PET_FOOD': return l.supplySubCategory_PET_FOOD;
+      case 'PET_CARE': return l.supplySubCategory_PET_CARE;
+      case 'SKILL_MEDICAL': return l.supplySubCategory_SKILL_MEDICAL;
+      case 'SKILL_RESCUE': return l.supplySubCategory_SKILL_RESCUE;
+      case 'SKILL_LANG': return l.supplySubCategory_SKILL_LANG;
+      case 'SKILL_PSYCH': return l.supplySubCategory_SKILL_PSYCH;
+      case 'SKILL_CARE': return l.supplySubCategory_SKILL_CARE;
+      case 'SKILL_TECH': return l.supplySubCategory_SKILL_TECH;
+      case 'SKILL_LOGISTICS': return l.supplySubCategory_SKILL_LOGISTICS;
+      default: return code;
+    }
+  }
+
+  static String itemLabel(BuildContext ctx, String code) {
+    final l = S.of(ctx)!;
+    switch (code) {
+      case 'WATER_BOTTLE_500': return l.supplyItem_WATER_BOTTLE_500;
+      case 'WATER_BOTTLE_1500': return l.supplyItem_WATER_BOTTLE_1500;
+      case 'WATER_BOTTLE_5000': return l.supplyItem_WATER_BOTTLE_5000;
+      case 'WATER_PURIFY_TABLET': return l.supplyItem_WATER_PURIFY_TABLET;
+      case 'WATER_PURIFY_STRAW': return l.supplyItem_WATER_PURIFY_STRAW;
+      case 'WATER_PURIFY_PUMP': return l.supplyItem_WATER_PURIFY_PUMP;
+      case 'WATER_CONTAINER_FOLD': return l.supplyItem_WATER_CONTAINER_FOLD;
+      case 'WATER_CONTAINER_JERRY': return l.supplyItem_WATER_CONTAINER_JERRY;
+      case 'FOOD_READY_CRACKER': return l.supplyItem_FOOD_READY_CRACKER;
+      case 'FOOD_READY_CAN': return l.supplyItem_FOOD_READY_CAN;
+      case 'FOOD_READY_RETORT': return l.supplyItem_FOOD_READY_RETORT;
+      case 'FOOD_READY_MRE': return l.supplyItem_FOOD_READY_MRE;
+      case 'FOOD_STAPLE_RICE': return l.supplyItem_FOOD_STAPLE_RICE;
+      case 'FOOD_STAPLE_NOODLE': return l.supplyItem_FOOD_STAPLE_NOODLE;
+      case 'FOOD_STAPLE_OATS': return l.supplyItem_FOOD_STAPLE_OATS;
+      case 'FOOD_BABY_FORMULA': return l.supplyItem_FOOD_BABY_FORMULA;
+      case 'FOOD_BABY_PUREE': return l.supplyItem_FOOD_BABY_PUREE;
+      case 'FOOD_BABY_BOTTLE': return l.supplyItem_FOOD_BABY_BOTTLE;
+      case 'FOOD_SUPP_ELECTROLYTE': return l.supplyItem_FOOD_SUPP_ELECTROLYTE;
+      case 'FOOD_SUPP_VITAMIN': return l.supplyItem_FOOD_SUPP_VITAMIN;
+      case 'FOOD_SUPP_PROTEIN': return l.supplyItem_FOOD_SUPP_PROTEIN;
+      case 'FOOD_COOK_STOVE': return l.supplyItem_FOOD_COOK_STOVE;
+      case 'FOOD_COOK_FUEL': return l.supplyItem_FOOD_COOK_FUEL;
+      case 'FOOD_COOK_UTENSIL': return l.supplyItem_FOOD_COOK_UTENSIL;
+      case 'MED_PAIN_ACETAMINOPHEN': return l.supplyItem_MED_PAIN_ACETAMINOPHEN;
+      case 'MED_PAIN_IBUPROFEN': return l.supplyItem_MED_PAIN_IBUPROFEN;
+      case 'MED_PAIN_PATCH': return l.supplyItem_MED_PAIN_PATCH;
+      case 'MED_WOUND_BANDAGE': return l.supplyItem_MED_WOUND_BANDAGE;
+      case 'MED_WOUND_GAUZE': return l.supplyItem_MED_WOUND_GAUZE;
+      case 'MED_WOUND_ANTISEPTIC': return l.supplyItem_MED_WOUND_ANTISEPTIC;
+      case 'MED_WOUND_TAPE': return l.supplyItem_MED_WOUND_TAPE;
+      case 'MED_WOUND_TOURNIQUET': return l.supplyItem_MED_WOUND_TOURNIQUET;
+      case 'MED_CHRONIC_BP': return l.supplyItem_MED_CHRONIC_BP;
+      case 'MED_CHRONIC_DIABETES': return l.supplyItem_MED_CHRONIC_DIABETES;
+      case 'MED_CHRONIC_HEART': return l.supplyItem_MED_CHRONIC_HEART;
+      case 'MED_CHRONIC_EPILEPSY': return l.supplyItem_MED_CHRONIC_EPILEPSY;
+      case 'MED_RESP_INHALER': return l.supplyItem_MED_RESP_INHALER;
+      case 'MED_RESP_MASK_O2': return l.supplyItem_MED_RESP_MASK_O2;
+      case 'MED_GI_ORS': return l.supplyItem_MED_GI_ORS;
+      case 'MED_GI_ANTACID': return l.supplyItem_MED_GI_ANTACID;
+      case 'MED_GI_CHARCOAL': return l.supplyItem_MED_GI_CHARCOAL;
+      case 'MED_KIT_BASIC': return l.supplyItem_MED_KIT_BASIC;
+      case 'MED_KIT_SPLINT': return l.supplyItem_MED_KIT_SPLINT;
+      case 'MED_KIT_AED': return l.supplyItem_MED_KIT_AED;
+      case 'HYG_FEM_PAD': return l.supplyItem_HYG_FEM_PAD;
+      case 'HYG_FEM_TAMPON': return l.supplyItem_HYG_FEM_TAMPON;
+      case 'HYG_FEM_CUP': return l.supplyItem_HYG_FEM_CUP;
+      case 'HYG_BABY_DIAPER': return l.supplyItem_HYG_BABY_DIAPER;
+      case 'HYG_BABY_WIPE': return l.supplyItem_HYG_BABY_WIPE;
+      case 'HYG_BABY_CREAM': return l.supplyItem_HYG_BABY_CREAM;
+      case 'HYG_PERS_SOAP': return l.supplyItem_HYG_PERS_SOAP;
+      case 'HYG_PERS_TOOTH': return l.supplyItem_HYG_PERS_TOOTH;
+      case 'HYG_PERS_TISSUE': return l.supplyItem_HYG_PERS_TISSUE;
+      case 'HYG_PERS_TOWEL': return l.supplyItem_HYG_PERS_TOWEL;
+      case 'HYG_SAN_BLEACH': return l.supplyItem_HYG_SAN_BLEACH;
+      case 'HYG_SAN_TRASH': return l.supplyItem_HYG_SAN_TRASH;
+      case 'HYG_SAN_GLOVE': return l.supplyItem_HYG_SAN_GLOVE;
+      case 'HYG_SAN_BUCKET': return l.supplyItem_HYG_SAN_BUCKET;
+      case 'PROT_RESP_N95': return l.supplyItem_PROT_RESP_N95;
+      case 'PROT_RESP_SURGICAL': return l.supplyItem_PROT_RESP_SURGICAL;
+      case 'PROT_RESP_GAS': return l.supplyItem_PROT_RESP_GAS;
+      case 'PROT_BODY_GLOVES': return l.supplyItem_PROT_BODY_GLOVES;
+      case 'PROT_BODY_HELMET': return l.supplyItem_PROT_BODY_HELMET;
+      case 'PROT_BODY_BOOTS': return l.supplyItem_PROT_BODY_BOOTS;
+      case 'PROT_BODY_GOGGLES': return l.supplyItem_PROT_BODY_GOGGLES;
+      case 'PROT_BODY_VEST': return l.supplyItem_PROT_BODY_VEST;
+      case 'PROT_LIGHT_FLASHLIGHT': return l.supplyItem_PROT_LIGHT_FLASHLIGHT;
+      case 'PROT_LIGHT_LANTERN': return l.supplyItem_PROT_LIGHT_LANTERN;
+      case 'PROT_LIGHT_BATTERY': return l.supplyItem_PROT_LIGHT_BATTERY;
+      case 'PROT_LIGHT_CANDLE': return l.supplyItem_PROT_LIGHT_CANDLE;
+      case 'SHELTER_TEMP_TENT': return l.supplyItem_SHELTER_TEMP_TENT;
+      case 'SHELTER_TEMP_TARP': return l.supplyItem_SHELTER_TEMP_TARP;
+      case 'SHELTER_TEMP_ROPE': return l.supplyItem_SHELTER_TEMP_ROPE;
+      case 'SHELTER_BED_BAG': return l.supplyItem_SHELTER_BED_BAG;
+      case 'SHELTER_BED_MAT': return l.supplyItem_SHELTER_BED_MAT;
+      case 'SHELTER_BED_BLANKET': return l.supplyItem_SHELTER_BED_BLANKET;
+      case 'SHELTER_CLOTH_RAIN': return l.supplyItem_SHELTER_CLOTH_RAIN;
+      case 'SHELTER_CLOTH_WARM': return l.supplyItem_SHELTER_CLOTH_WARM;
+      case 'SHELTER_CLOTH_CHANGE': return l.supplyItem_SHELTER_CLOTH_CHANGE;
+      case 'TOOL_COMM_RADIO': return l.supplyItem_TOOL_COMM_RADIO;
+      case 'TOOL_COMM_CHARGER': return l.supplyItem_TOOL_COMM_CHARGER;
+      case 'TOOL_COMM_POWERBANK': return l.supplyItem_TOOL_COMM_POWERBANK;
+      case 'TOOL_COMM_WHISTLE': return l.supplyItem_TOOL_COMM_WHISTLE;
+      case 'TOOL_RESCUE_CROWBAR': return l.supplyItem_TOOL_RESCUE_CROWBAR;
+      case 'TOOL_RESCUE_SHOVEL': return l.supplyItem_TOOL_RESCUE_SHOVEL;
+      case 'TOOL_RESCUE_SAW': return l.supplyItem_TOOL_RESCUE_SAW;
+      case 'TOOL_RESCUE_MULTI': return l.supplyItem_TOOL_RESCUE_MULTI;
+      case 'TOOL_POWER_GENERATOR': return l.supplyItem_TOOL_POWER_GENERATOR;
+      case 'TOOL_POWER_SOLAR': return l.supplyItem_TOOL_POWER_SOLAR;
+      case 'TOOL_POWER_INVERTER': return l.supplyItem_TOOL_POWER_INVERTER;
+      case 'TOOL_POWER_EXT': return l.supplyItem_TOOL_POWER_EXT;
+      case 'TOOL_TRANS_CART': return l.supplyItem_TOOL_TRANS_CART;
+      case 'TOOL_TRANS_STRETCHER': return l.supplyItem_TOOL_TRANS_STRETCHER;
+      case 'PET_FOOD_DOG_DRY': return l.supplyItem_PET_FOOD_DOG_DRY;
+      case 'PET_FOOD_DOG_CAN': return l.supplyItem_PET_FOOD_DOG_CAN;
+      case 'PET_FOOD_CAT_DRY': return l.supplyItem_PET_FOOD_CAT_DRY;
+      case 'PET_FOOD_CAT_CAN': return l.supplyItem_PET_FOOD_CAT_CAN;
+      case 'PET_FOOD_BOWL': return l.supplyItem_PET_FOOD_BOWL;
+      case 'PET_CARE_CRATE': return l.supplyItem_PET_CARE_CRATE;
+      case 'PET_CARE_LEASH': return l.supplyItem_PET_CARE_LEASH;
+      case 'PET_CARE_PAD': return l.supplyItem_PET_CARE_PAD;
+      case 'PET_CARE_MED': return l.supplyItem_PET_CARE_MED;
+      case 'PET_CARE_TAG': return l.supplyItem_PET_CARE_TAG;
+      case 'SKILL_MEDICAL_DOCTOR': return l.supplyItem_SKILL_MEDICAL_DOCTOR;
+      case 'SKILL_MEDICAL_NURSE': return l.supplyItem_SKILL_MEDICAL_NURSE;
+      case 'SKILL_MEDICAL_EMT': return l.supplyItem_SKILL_MEDICAL_EMT;
+      case 'SKILL_MEDICAL_FIRSTAID': return l.supplyItem_SKILL_MEDICAL_FIRSTAID;
+      case 'SKILL_MEDICAL_PHARMACIST': return l.supplyItem_SKILL_MEDICAL_PHARMACIST;
+      case 'SKILL_RESCUE_FIREFIGHTER': return l.supplyItem_SKILL_RESCUE_FIREFIGHTER;
+      case 'SKILL_RESCUE_DIVER': return l.supplyItem_SKILL_RESCUE_DIVER;
+      case 'SKILL_RESCUE_K9': return l.supplyItem_SKILL_RESCUE_K9;
+      case 'SKILL_RESCUE_MOUNTAIN': return l.supplyItem_SKILL_RESCUE_MOUNTAIN;
+      case 'SKILL_LANG_EN': return l.supplyItem_SKILL_LANG_EN;
+      case 'SKILL_LANG_JP': return l.supplyItem_SKILL_LANG_JP;
+      case 'SKILL_LANG_SEA': return l.supplyItem_SKILL_LANG_SEA;
+      case 'SKILL_LANG_SIGN': return l.supplyItem_SKILL_LANG_SIGN;
+      case 'SKILL_PSYCH_COUNSELOR': return l.supplyItem_SKILL_PSYCH_COUNSELOR;
+      case 'SKILL_PSYCH_SOCIAL': return l.supplyItem_SKILL_PSYCH_SOCIAL;
+      case 'SKILL_CARE_BABY': return l.supplyItem_SKILL_CARE_BABY;
+      case 'SKILL_CARE_ELDER': return l.supplyItem_SKILL_CARE_ELDER;
+      case 'SKILL_CARE_DISABLED': return l.supplyItem_SKILL_CARE_DISABLED;
+      case 'SKILL_CARE_SPECIAL': return l.supplyItem_SKILL_CARE_SPECIAL;
+      case 'SKILL_TECH_ELECTRIC': return l.supplyItem_SKILL_TECH_ELECTRIC;
+      case 'SKILL_TECH_PLUMB': return l.supplyItem_SKILL_TECH_PLUMB;
+      case 'SKILL_TECH_STRUCT': return l.supplyItem_SKILL_TECH_STRUCT;
+      case 'SKILL_TECH_COMM': return l.supplyItem_SKILL_TECH_COMM;
+      case 'SKILL_TECH_LABOR': return l.supplyItem_SKILL_TECH_LABOR;
+      case 'SKILL_LOG_TRUCK': return l.supplyItem_SKILL_LOG_TRUCK;
+      case 'SKILL_LOG_4WD': return l.supplyItem_SKILL_LOG_4WD;
+      case 'SKILL_LOG_MOTO': return l.supplyItem_SKILL_LOG_MOTO;
+      case 'SKILL_LOG_FORKLIFT': return l.supplyItem_SKILL_LOG_FORKLIFT;
+      case 'SKILL_LOG_HEAVYOP': return l.supplyItem_SKILL_LOG_HEAVYOP;
+      case 'SKILL_LOG_MANAGE': return l.supplyItem_SKILL_LOG_MANAGE;
+      default: return code;
+    }
+  }
 }

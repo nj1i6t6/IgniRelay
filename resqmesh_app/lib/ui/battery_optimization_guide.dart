@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../mesh/native_bridge.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// 電池優化引導 Dialog
 /// 首次使用時引導用戶：
@@ -56,7 +57,7 @@ class BatteryOptimizationGuide {
     if (!Platform.isAndroid) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('此功能僅適用 Android 裝置')),
+          SnackBar(content: Text(S.of(context)!.batteryAndroidOnly)),
         );
       }
       return;
@@ -81,41 +82,6 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
   bool _manufacturerDone = false;
   String _manufacturer = 'unknown';
 
-  static const _manufacturerLabels = {
-    'xiaomi': '小米 / Redmi',
-    'redmi': '小米 / Redmi',
-    'huawei': '華為',
-    'honor': '榮耀',
-    'oppo': 'OPPO',
-    'realme': 'realme',
-    'vivo': 'vivo',
-    'samsung': '三星 Samsung',
-    'asus': '華碩 ASUS',
-  };
-
-  static const _manufacturerInstructions = {
-    'xiaomi': '請在「自啟動管理」中找到 烽傳 → 開啟自啟動\n'
-        '另外在「省電策略」→ 選擇「無限制」',
-    'redmi': '請在「自啟動管理」中找到 烽傳 → 開啟自啟動\n'
-        '另外在「省電策略」→ 選擇「無限制」',
-    'huawei': '請在「啟動管理」中找到 烽傳\n'
-        '→ 關閉「自動管理」→ 手動開啟所有開關\n'
-        '另在「鎖屏清理」中不要清理本 App',
-    'honor': '請在「啟動管理」中找到 烽傳\n'
-        '→ 關閉「自動管理」→ 手動開啟所有開關',
-    'oppo': '請在「自啟動管理」中允許 烽傳 自啟動\n'
-        '另在「省電」→「App 電池管理」→ 選擇「不優化」',
-    'realme': '請在「自啟動管理」中允許 烽傳 自啟動\n'
-        '另在「省電」→「App 電池管理」→ 選擇「不優化」',
-    'vivo': '請在「後臺管理」中允許 烽傳 高耗電運行\n'
-        '另在「自啟動」中開啟本 App',
-    'samsung': '請在「電池」→「背景使用限制」\n'
-        '→ 將 烽傳 從「受限 App」清單移除\n'
-        '或加入「永不進入休眠」清單',
-    'asus': '請在「自動啟動管理員」中允許 烽傳\n'
-        '另在「電池」中選擇「不受限」',
-  };
-
   @override
   void initState() {
     super.initState();
@@ -128,21 +94,36 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
   }
 
   bool get _isKnownManufacturer {
-    return _manufacturerLabels.keys.any((k) => _manufacturer.contains(k));
+    const knownKeys = ['xiaomi', 'redmi', 'huawei', 'honor', 'oppo', 'realme', 'vivo', 'samsung', 'asus'];
+    return knownKeys.any((k) => _manufacturer.contains(k));
   }
 
-  String get _manufacturerLabel {
-    for (final entry in _manufacturerLabels.entries) {
-      if (_manufacturer.contains(entry.key)) return entry.value;
-    }
+  String _getManufacturerLabel(BuildContext context) {
+    final l = S.of(context)!;
+    final m = _manufacturer;
+    if (m.contains('xiaomi') || m.contains('redmi')) return l.batteryManufacturerXiaomi;
+    if (m.contains('huawei')) return l.batteryManufacturerHuawei;
+    if (m.contains('honor')) return l.batteryManufacturerHonor;
+    if (m.contains('oppo')) return l.batteryManufacturerOppo;
+    if (m.contains('realme')) return l.batteryManufacturerRealme;
+    if (m.contains('vivo')) return l.batteryManufacturerVivo;
+    if (m.contains('samsung')) return l.batteryManufacturerSamsung;
+    if (m.contains('asus')) return l.batteryManufacturerAsus;
     return _manufacturer;
   }
 
-  String get _manufacturerInstruction {
-    for (final entry in _manufacturerInstructions.entries) {
-      if (_manufacturer.contains(entry.key)) return entry.value;
-    }
-    return '請到手機的「設定」→「電池」→「背景執行管理」中\n允許 烽傳 在背景運行。';
+  String _getManufacturerInstruction(BuildContext context) {
+    final l = S.of(context)!;
+    final m = _manufacturer;
+    if (m.contains('xiaomi') || m.contains('redmi')) return l.batteryInstructionXiaomi;
+    if (m.contains('huawei')) return l.batteryInstructionHuawei;
+    if (m.contains('honor')) return l.batteryInstructionHonor;
+    if (m.contains('oppo')) return l.batteryInstructionOppo;
+    if (m.contains('realme')) return l.batteryInstructionRealme;
+    if (m.contains('vivo')) return l.batteryInstructionVivo;
+    if (m.contains('samsung')) return l.batteryInstructionSamsung;
+    if (m.contains('asus')) return l.batteryInstructionAsus;
+    return l.batteryInstructionDefault;
   }
 
   @override
@@ -158,7 +139,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
           ),
           const SizedBox(width: 8),
           Text(
-            _step == 3 ? '設定完成！' : '背景執行設定',
+            _step == 3 ? S.of(context)!.batteryDoneTitle : S.of(context)!.batteryGuideTitle,
             style: const TextStyle(color: Colors.white, fontSize: 18),
           ),
         ],
@@ -199,14 +180,14 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Colors.orange.withValues(alpha:0.3)),
           ),
-          child: const Row(
+          child: Row(
             children: [
-              Icon(Icons.warning_amber, color: Colors.orange, size: 28),
-              SizedBox(width: 10),
+              const Icon(Icons.warning_amber, color: Colors.orange, size: 28),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '重要！Mesh 網路需要在後台持續運行',
-                  style: TextStyle(
+                  S.of(context)!.batteryIntroTitle,
+                  style: const TextStyle(
                     color: Colors.orange,
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
@@ -217,19 +198,18 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
           ),
         ),
         const SizedBox(height: 16),
-        const Text(
-          '烽傳 依賴藍牙 Mesh 在背景持續廣播與中繼救援資訊。\n\n'
-          '若 Android 系統將 App 殺掉，您的裝置將：',
-          style: TextStyle(color: Colors.white70, fontSize: 13),
+        Text(
+          S.of(context)!.batteryIntroBody,
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
         ),
         const SizedBox(height: 8),
-        _bulletPoint('無法接收附近求救訊號'),
-        _bulletPoint('無法擔任 Data Mule 中繼節點'),
-        _bulletPoint('無法自動同步物資媒合資訊'),
+        _bulletPoint(S.of(context)!.batteryIntroConsequence1),
+        _bulletPoint(S.of(context)!.batteryIntroConsequence2),
+        _bulletPoint(S.of(context)!.batteryIntroConsequence3),
         const SizedBox(height: 12),
-        const Text(
-          '接下來會引導您完成 1-2 步設定，確保 Mesh 網路持續運作。',
-          style: TextStyle(color: Colors.white54, fontSize: 12),
+        Text(
+          S.of(context)!.batteryIntroGuide,
+          style: const TextStyle(color: Colors.white54, fontSize: 12),
         ),
       ],
     );
@@ -241,12 +221,11 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _stepIndicator('步驟 1/2', '系統電池優化豁免'),
+        _stepIndicator(S.of(context)!.batteryStep1Label, S.of(context)!.batteryStep1Title),
         const SizedBox(height: 12),
-        const Text(
-          '點擊下方按鈕，系統會彈出確認視窗。\n'
-          '請選擇「允許」，讓 烽傳 不受 Doze 省電限制。',
-          style: TextStyle(color: Colors.white70, fontSize: 13),
+        Text(
+          S.of(context)!.batteryStep1Desc,
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
         ),
         const SizedBox(height: 16),
         Center(
@@ -269,14 +248,16 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
                     }
                   },
             icon: Icon(_exemptDone ? Icons.check : Icons.battery_saver),
-            label: Text(_exemptDone ? '已完成' : '開啟電池優化豁免'),
+            label: Text(_exemptDone ? S.of(context)!.batteryStep1Done : S.of(context)!.batteryStep1Button),
           ),
         ),
         if (_exemptDone) ...[
           const SizedBox(height: 12),
-          const Center(
-            child: Text('✓ 已成功豁免電池優化',
-                style: TextStyle(color: Colors.green, fontSize: 13)),
+          Center(
+            child: Text(
+              '✓ ${S.of(context)!.batteryStep1Success}',
+              style: const TextStyle(color: Colors.green, fontSize: 13),
+            ),
           ),
         ],
       ],
@@ -289,7 +270,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _stepIndicator('步驟 2/2', '${_manufacturerLabel} 背景執行設定'),
+        _stepIndicator(S.of(context)!.batteryStep2Label, S.of(context)!.batteryStep2Title(_getManufacturerLabel(context))),
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(10),
@@ -299,7 +280,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
             border: Border.all(color: Colors.cyan.withValues(alpha:0.2)),
           ),
           child: Text(
-            _manufacturerInstruction,
+            _getManufacturerInstruction(context),
             style: const TextStyle(color: Colors.white70, fontSize: 12.5),
           ),
         ),
@@ -320,15 +301,15 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
                     }
                   },
             icon: Icon(_manufacturerDone ? Icons.check : Icons.settings),
-            label: Text(_manufacturerDone ? '已開啟設定' : '前往設定'),
+            label: Text(_manufacturerDone ? S.of(context)!.batteryOpenedSettings : S.of(context)!.batteryGoSettings),
           ),
         ),
         if (_manufacturerDone) ...[
           const SizedBox(height: 8),
-          const Center(
+          Center(
             child: Text(
-              '請在設定頁面完成操作後返回此畫面',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
+              S.of(context)!.batteryReturnNote,
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
             ),
           ),
         ],
@@ -343,19 +324,18 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
       children: [
         const Icon(Icons.check_circle, color: Colors.green, size: 64),
         const SizedBox(height: 16),
-        const Text(
-          '背景執行設定完成！',
-          style: TextStyle(
+        Text(
+          S.of(context)!.batteryDoneContent,
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 16,
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          '烽傳 現在可以在背景持續運行 Mesh 網路，\n'
-          '即使螢幕關閉也能接收並中繼救援資訊。',
-          style: TextStyle(color: Colors.white70, fontSize: 13),
+        Text(
+          S.of(context)!.batteryDoneBody,
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 16),
@@ -365,15 +345,15 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
             color: Colors.green.withValues(alpha:0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.info_outline, color: Colors.green, size: 16),
-              SizedBox(width: 8),
+              const Icon(Icons.info_outline, color: Colors.green, size: 16),
+              const SizedBox(width: 8),
               Flexible(
                 child: Text(
-                  '前景服務通知會在 Mesh 守護啟動後出現',
-                  style: TextStyle(color: Colors.green, fontSize: 12),
+                  S.of(context)!.batteryDoneNote,
+                  style: const TextStyle(color: Colors.green, fontSize: 12),
                 ),
               ),
             ],
@@ -428,12 +408,12 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
         return [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('稍後再說', style: TextStyle(color: Colors.white38)),
+            child: Text(S.of(context)!.batteryLaterButton, style: const TextStyle(color: Colors.white38)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
             onPressed: () => setState(() => _step = 1),
-            child: const Text('開始設定'),
+            child: Text(S.of(context)!.batteryStartButton),
           ),
         ];
       case 1:
@@ -446,7 +426,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
                 setState(() => _step = 3);
               }
             },
-            child: const Text('跳過此步', style: TextStyle(color: Colors.white38)),
+            child: Text(S.of(context)!.batterySkipButton, style: const TextStyle(color: Colors.white38)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
@@ -457,19 +437,19 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
                 setState(() => _step = 3);
               }
             },
-            child: const Text('下一步'),
+            child: Text(S.of(context)!.batteryNextButton),
           ),
         ];
       case 2:
         return [
           TextButton(
             onPressed: () => setState(() => _step = 3),
-            child: const Text('跳過此步', style: TextStyle(color: Colors.white38)),
+            child: Text(S.of(context)!.batterySkipButton, style: const TextStyle(color: Colors.white38)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
             onPressed: () => setState(() => _step = 3),
-            child: const Text('下一步'),
+            child: Text(S.of(context)!.batteryNextButton),
           ),
         ];
       case 3:
@@ -477,7 +457,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('完成'),
+            child: Text(S.of(context)!.batteryFinishButton),
           ),
         ];
       default:

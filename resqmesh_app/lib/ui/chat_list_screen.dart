@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../services/chat_service.dart';
 import 'chat_room_screen.dart';
 import 'chat_join_screen.dart';
@@ -48,18 +49,18 @@ class _ChatListScreenState extends State<ChatListScreen>
     }
   }
 
-  String _roomTypeLabel(String type) {
+  String _roomTypeLabel(String type, S l10n) {
     switch (type) {
       case 'nation':
-        return '全國公告';
+        return l10n.chatListRoomNational;
       case 'county':
-        return '縣市公告';
+        return l10n.chatListRoomCounty;
       case 'township':
-        return '鄉鎮區公告';
+        return l10n.chatListRoomTownship;
       case 'village':
-        return '里聊天室';
+        return l10n.chatListRoomVillage;
       case 'custom':
-        return '自訂頻道';
+        return l10n.chatListRoomCustom;
       default:
         return type;
     }
@@ -104,12 +105,12 @@ class _ChatListScreenState extends State<ChatListScreen>
     super.build(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('聊天室'),
+        title: Text(S.of(context)!.chatListTitle),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadRooms,
-            tooltip: '重新整理',
+            tooltip: S.of(context)!.chatListRefreshTooltip,
           ),
         ],
       ),
@@ -132,23 +133,24 @@ class _ChatListScreenState extends State<ChatListScreen>
           );
           if (joined == true) _loadRooms();
         },
-        tooltip: '加入聊天室',
+        tooltip: S.of(context)!.chatListFabTooltip,
         child: const Icon(Icons.add),
       ),
     );
   }
 
   Widget _buildEmptyState() {
+    final l10n = S.of(context)!;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey[400]),
           const SizedBox(height: 16),
-          Text('尚未加入任何聊天室',
+          Text(l10n.chatListEmptyTitle,
               style: TextStyle(fontSize: 18, color: Colors.grey[600])),
           const SizedBox(height: 8),
-          Text('點擊右下角 + 加入或掃碼',
+          Text(l10n.chatListEmptySubtitle,
               style: TextStyle(color: Colors.grey[500])),
           const SizedBox(height: 24),
           ElevatedButton.icon(
@@ -156,17 +158,17 @@ class _ChatListScreenState extends State<ChatListScreen>
               final roomId = await _chatService.autoJoinVillageRoom();
               if (roomId != null && mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已自動加入所在里的聊天室')),
+                  SnackBar(content: Text(S.of(context)!.chatListAutoJoinSuccess)),
                 );
                 _loadRooms();
               } else if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('無法取得位置資訊，請手動加入')),
+                  SnackBar(content: Text(S.of(context)!.chatListAutoJoinFail)),
                 );
               }
             },
             icon: const Icon(Icons.my_location),
-            label: const Text('自動加入所在里聊天室'),
+            label: Text(l10n.chatListAutoJoin),
           ),
         ],
       ),
@@ -188,8 +190,8 @@ class _ChatListScreenState extends State<ChatListScreen>
       title: Text(roomName, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         adminOnly
-            ? '${_roomTypeLabel(roomType)} · 公告頻道'
-            : _roomTypeLabel(roomType),
+            ? '${_roomTypeLabel(roomType, S.of(context)!)} · ${S.of(context)!.chatListAdminBadge}'
+            : _roomTypeLabel(roomType, S.of(context)!),
         style: TextStyle(color: Colors.grey[500], fontSize: 12),
       ),
       trailing: unread > 0
@@ -231,23 +233,23 @@ class _ChatListScreenState extends State<ChatListScreen>
           children: [
             ListTile(
               leading: const Icon(Icons.exit_to_app, color: Colors.red),
-              title: const Text('離開聊天室',
-                  style: TextStyle(color: Colors.red)),
+              title: Text(S.of(context)!.chatListLeaveTitle,
+                  style: const TextStyle(color: Colors.red)),
               onTap: () async {
                 Navigator.pop(ctx);
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (c) => AlertDialog(
-                    title: const Text('離開聊天室'),
-                    content: Text('確定要離開「$roomName」嗎？歷史訊息將被清除。'),
+                    title: Text(S.of(context)!.chatListLeaveTitle),
+                    content: Text(S.of(context)!.chatListLeaveContent(roomName)),
                     actions: [
                       TextButton(
                           onPressed: () => Navigator.pop(c, false),
-                          child: const Text('取消')),
+                          child: Text(S.of(context)!.chatListLeaveCancel)),
                       TextButton(
                         onPressed: () => Navigator.pop(c, true),
-                        child: const Text('離開',
-                            style: TextStyle(color: Colors.red)),
+                        child: Text(S.of(context)!.chatListLeaveConfirm,
+                            style: const TextStyle(color: Colors.red)),
                       ),
                     ],
                   ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../services/chat_service.dart';
 import '../crypto/identity_manager.dart';
 import '../mesh/mesh_event_handler.dart';
@@ -105,7 +106,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       _scrollToBottom();
     } else if (!success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('發送失敗，請等待 $_cooldownRemaining 秒後再試')),
+        SnackBar(content: Text(S.of(context)!.chatRoomSendCooldown(_cooldownRemaining))),
       );
     }
   }
@@ -129,8 +130,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
-  String _shortenPubKey(String? hexKey) {
-    if (hexKey == null || hexKey.length < 8) return '匿名';
+  String _shortenPubKey(String? hexKey, BuildContext ctx) {
+    if (hexKey == null || hexKey.length < 8) return S.of(ctx)!.chatRoomAnonymous;
     return hexKey.substring(0, 8);
   }
 
@@ -170,7 +171,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           children: [
             Text(widget.roomName, style: const TextStyle(fontSize: 16)),
             Text(
-              '${_messages.length} 則訊息',
+              S.of(context)!.chatRoomMessageCount(_messages.length),
               style: TextStyle(fontSize: 12, color: Colors.grey[400]),
             ),
           ],
@@ -189,9 +190,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _messages.isEmpty
-                    ? const Center(
-                        child: Text('還沒有訊息',
-                            style: TextStyle(color: Colors.grey)))
+                    ? Center(
+                        child: Text(S.of(context)!.chatRoomEmpty,
+                            style: const TextStyle(color: Colors.grey)))
                     : ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.symmetric(
@@ -211,7 +212,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   const Icon(Icons.reply, size: 16, color: Colors.grey),
                   const SizedBox(width: 8),
                   Expanded(
-                      child: Text('回覆訊息',
+                      child: Text(S.of(context)!.chatRoomReply,
                           style: TextStyle(
                               fontSize: 12, color: Colors.grey[600]))),
                   IconButton(
@@ -262,7 +263,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             children: [
               if (!isMe)
                 Text(
-                  _shortenPubKey(senderHex),
+                  _shortenPubKey(senderHex, context),
                   style: TextStyle(
                       fontSize: 10,
                       color: Colors.grey[600],
@@ -302,7 +303,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             Icon(Icons.lock_outline, size: 16, color: Colors.grey[500]),
             const SizedBox(width: 8),
             Text(
-              '公告頻道 — 僅管理員（L3）可發言',
+              S.of(context)!.chatRoomAdminLock,
               style: TextStyle(color: Colors.grey[500], fontSize: 13),
             ),
           ],
@@ -335,7 +336,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               maxLines: 3,
               minLines: 1,
               decoration: InputDecoration(
-                hintText: '輸入訊息...',
+                hintText: S.of(context)!.chatRoomInputHint,
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20)),
                 contentPadding:
