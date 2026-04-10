@@ -8,6 +8,7 @@ import '../crypto/identity_manager.dart';
 import '../db/database_helper.dart';
 import '../geo/village_geofence.dart';
 import '../mesh/event_manager.dart';
+import '../mesh/event_types.dart';
 import '../proto/mesh_protocol.pb.dart' as pb;
 import '../l10n/generated/app_localizations.dart';
 import 'supply_category_data.dart';

@@ -2,7 +2,7 @@ name: ignirelay_app
 description: 烽傳 IgniRelay - Offline Mesh Emergency Rescue System
 publish_to: 'none'
 
-version: 0.1.26+27
+version: 0.1.27+28
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -38,6 +38,7 @@ dependencies:
   sqflite: ^2.3.3+1
   path: ^1.9.0
   shared_preferences: ^2.2.3
+  flutter_secure_storage: ^9.2.4
   # Native SQLite3 shared library (required by mbtiles on Android/iOS)
   sqlite3: ^2.9.0
   sqlite3_flutter_libs: ^0.5.24

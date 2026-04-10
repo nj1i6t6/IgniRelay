@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import '../db/database_helper.dart';
 import '../geo/village_geofence.dart';
 import '../mesh/event_manager.dart';
+import '../mesh/event_types.dart';
 import '../crypto/identity_manager.dart';
 import '../proto/mesh_protocol.pb.dart' as pb;
 import 'location_service.dart';

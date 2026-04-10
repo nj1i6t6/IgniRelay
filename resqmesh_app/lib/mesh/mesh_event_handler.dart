@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:fixnum/fixnum.dart' as fixnum;
@@ -12,27 +13,7 @@ import '../services/negotiation_manager.dart';
 
 import 'mesh_router.dart';
 import 'mesh_transport.dart';
-
-/// 事件類型常數（供 wire payload 解碼使用）
-class EventType {
-  static const int resourceRegister = 0;
-  static const int requestBroadcast = 1;
-  static const int matchIntent = 2;
-  static const int physicalHandshake = 3;
-  static const int hazardMarker = 4;
-  static const int quarantineVote = 5;
-  static const int matchCancel = 6;
-  static const int fireAlarmRf = 7;
-  static const int matchConfirm = 8;
-  static const int matchReject = 9;
-  static const int matchInquiry = 10;
-  static const int matchAvailable = 11;
-  static const int matchGone = 12;
-  static const int chatMessage = 13;
-  static const int locationUpdate = 14;
-  static const int matchRequest = 15;
-  static const int handshakeComplete = 16;
-}
+import 'event_types.dart';
 
 /// Wire payload 解碼結果
 class WirePayload {
@@ -81,8 +62,9 @@ class MeshEventHandler {
 
   final NegotiationManager _negotiationManager = NegotiationManager();
 
-  // 已看過的 event_id（去重）
-  final Set<String> _seenEvents = {};
+  // 已看過的 event_id（去重，上限 10000 條 LRU）
+  static const int _maxSeenEvents = 10000;
+  final LinkedHashSet<String> _seenEvents = LinkedHashSet<String>();
 
   // (已移除全網聊天限流 — 僅保留前端限流)
 
@@ -112,7 +94,12 @@ class MeshEventHandler {
   bool hasSeen(String eventId) => _seenEvents.contains(eventId);
 
   /// 手動標記事件為已見過
-  void markSeen(String eventId) => _seenEvents.add(eventId);
+  void markSeen(String eventId) {
+    _seenEvents.add(eventId);
+    while (_seenEvents.length > _maxSeenEvents) {
+      _seenEvents.remove(_seenEvents.first);
+    }
+  }
 
   /// 已見過事件數量
   int get seenEventsCount => _seenEvents.length;
@@ -121,6 +108,11 @@ class MeshEventHandler {
   Future<void> handleIncomingData(
       Uint8List data, String sourceNodeId) async {
     try {
+      // 拒絕超大封包（>64KB），防止惡意節點 DoS
+      if (data.length > 65536) {
+        debugPrint('[MeshEvt] Oversized payload (${data.length}B) from $sourceNodeId');
+        return;
+      }
       final decoded = decodeWirePayload(data);
       if (decoded == null) {
         debugPrint('[MeshEvt] Invalid wire payload from $sourceNodeId');
@@ -145,7 +137,7 @@ class MeshEventHandler {
           whereArgs: [evtId],
           limit: 1);
       if (existingEvt.isNotEmpty) {
-        _seenEvents.add(evtId); // 補進記憶體快取
+        markSeen(evtId); // 補進記憶體快取
         _dlog('RECV SKIP(db-dup) ${evtId.substring(0, 8)}..');
         return;
       }
@@ -157,8 +149,11 @@ class MeshEventHandler {
         _dlog('RECV REJECT(no-sig) ${evtId.substring(0, 8)}..');
         return;
       }
-      final verified = await Signer.verifySignature(
-        payloadBytes: decoded.payload,
+      final verified = await Signer.verifyEvent(
+        eventId: evtId,
+        eventType: decoded.eventType,
+        ttl: decoded.ttl,
+        payload: decoded.payload,
         signatureBytes: decoded.signature!,
         publicKeyBytes: decoded.senderPubKey!,
       );
@@ -227,10 +222,10 @@ class MeshEventHandler {
           'is_synced': 0,
         });
         // DB insert 成功後才加入去重快取
-        _seenEvents.add(evtId);
+        markSeen(evtId);
       } catch (e) {
         // UNIQUE constraint 失敗代表已有此事件，忽略
-        _seenEvents.add(evtId); // 既然 DB 有了，也加入快取
+        markSeen(evtId); // 既然 DB 有了，也加入快取
         debugPrint('[MeshEvt] DB insert skipped (duplicate): $evtId');
         return; // DB 已有此事件，不需要重複處理
       }
@@ -378,7 +373,7 @@ class MeshEventHandler {
         'sender_pub_key': decoded.senderPubKey != null
             ? Uint8List.fromList(decoded.senderPubKey!)
             : Uint8List(0),
-        'status': 'AVAILABLE',
+        'status': 'OPEN',
         'hlc_timestamp': decoded.hlcTimestamp > 0
             ? decoded.hlcTimestamp
             : DateTime.now().millisecondsSinceEpoch,

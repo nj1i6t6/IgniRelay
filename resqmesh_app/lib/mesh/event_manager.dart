@@ -13,38 +13,7 @@ import '../proto/mesh_protocol.pb.dart' as pb;
 import '../services/negotiation_manager.dart';
 import 'hazard_manager.dart';
 import 'triage_queue.dart';
-
-// 事件類型常數（對應 Protobuf EventType enum）
-class EventType {
-  // ── Broadcast (unchanged) ──
-  static const int resourceRegister = 0;
-  static const int requestBroadcast = 1;
-  // ── Match negotiation (redefined) ──
-  static const int matchOffer   = 2;       // was matchIntent
-  static const int physicalHandshake = 3;  // preserved
-  static const int matchAccept  = 8;       // was matchConfirm
-  static const int matchDecline = 9;       // was matchReject
-  static const int matchCancel  = 6;       // preserved
-  // ── New slots ──
-  static const int matchRequest      = 15;
-  static const int handshakeComplete = 16;
-  static const int stationClaim      = 17;
-  static const int stationResponse   = 18;
-  // ── Navigation (unchanged) ──
-  static const int locationUpdate = 14;
-  // ── Non-match (unchanged) ──
-  static const int hazardMarker    = 4;
-  static const int quarantineVote  = 5;
-  static const int fireAlarmRf     = 7;
-  static const int chatMessage     = 13;
-  // ── Deprecated (ignored but don't crash) ──
-  // slot 10 (matchInquiry), 11 (matchAvailable), 12 (matchGone)
-
-  // Backward compat aliases
-  static const int matchIntent = matchOffer;
-  static const int matchConfirm = matchAccept;
-  static const int matchReject = matchDecline;
-}
+import 'event_types.dart';
 
 // 物資狀態常數
 class MaterialStatus {
@@ -189,29 +158,15 @@ class EventManager {
     if (lng != null) requestData.lng = lng;
     requestData.maxRangeMeters = maxRangeMeters.toDouble();
 
-    // 附加醫療卡（僅 SOS 等級且用戶開啟時）
-    Uint8List? medicalBytes;
-    if (attachMedicalCard && urgency >= 2) {
-      final card = await loadMedicalCardForSos();
-      if (card != null) {
-        medicalBytes = buildMedicalPayload(card);
-      }
-    }
+    // TODO: 醫療卡附加功能需擴充 RequestData proto (加 bytes medical_summary 欄位)
+    // 目前接收端尚無解析醫療資料邏輯，暫不附加以避免破壞 protobuf 格式
 
-    // payload = description + 可選的醫療摘要 (以 \x00 分隔)
-    final descBytes = utf8.encode(description);
-    Uint8List payload;
-    if (medicalBytes != null && medicalBytes.isNotEmpty) {
-      // 格式: [description bytes] [0x00] [medical protobuf bytes]
-      payload = Uint8List(descBytes.length + 1 + medicalBytes.length);
-      payload.setRange(0, descBytes.length, descBytes);
-      payload[descBytes.length] = 0x00; // 分隔符
-      payload.setRange(descBytes.length + 1, payload.length, medicalBytes);
-    } else {
-      payload = Uint8List.fromList(descBytes);
-    }
+    // 使用 RequestData protobuf 序列化（接收端以 RequestData.fromBuffer 解碼）
+    final payload = Uint8List.fromList(requestData.writeToBuffer());
 
-    final signature = await Signer.signPayload(payload);
+    final signature = await Signer.signEvent(
+      eventId: eventId, eventType: EventType.requestBroadcast, ttl: 10, payload: payload,
+    );
 
     final db = await _db.database;
     await db.insert('Event_Logs', {
@@ -267,7 +222,9 @@ class EventManager {
     if (lat != null) resourceData.lat = lat;
     if (lng != null) resourceData.lng = lng;
     final payload = Uint8List.fromList(resourceData.writeToBuffer());
-    final signature = await Signer.signPayload(payload);
+    final signature = await Signer.signEvent(
+      eventId: eventId, eventType: EventType.resourceRegister, ttl: 10, payload: payload,
+    );
 
     final db = await _db.database;
 
@@ -339,7 +296,9 @@ class EventManager {
     if (lng != null) requestData.lng = lng;
 
     final payload = Uint8List.fromList(requestData.writeToBuffer());
-    final signature = await Signer.signPayload(payload);
+    final signature = await Signer.signEvent(
+      eventId: eventId, eventType: EventType.requestBroadcast, ttl: 10, payload: payload,
+    );
 
     final db = await _db.database;
 
@@ -419,7 +378,9 @@ class EventManager {
       if (replyTo != null) 'reply_to': replyTo,
     };
     final payload = Uint8List.fromList(utf8.encode(jsonEncode(payloadMap)));
-    final signature = await Signer.signPayload(payload);
+    final signature = await Signer.signEvent(
+      eventId: eventId, eventType: EventType.chatMessage, ttl: 5, payload: payload,
+    );
 
     final db = await _db.database;
 
@@ -710,11 +671,11 @@ class EventManager {
     );
   }
 
-  // ── 查詢活躍 Match Sessions ───────────────────────────────────
+  // ── 查詢活躍 Match Negotiations ─────────────────────────────────
   Future<List<Map<String, dynamic>>> getActiveSessions() async {
     final db = await _db.database;
-    return db.query('Match_Sessions',
-        where: "status = 'ACTIVE'",
+    return db.query('Match_Negotiations',
+        where: "status IN ('PENDING', 'ACCEPTED', 'NAVIGATING')",
         orderBy: 'created_at DESC');
   }
 
@@ -769,12 +730,13 @@ class EventManager {
     if (payload != null) {
       try {
         final rd = pb.ResourceData.fromBuffer(payload);
+        final hlcCancel = HLC.now();
         await db.update(
           'Materials_State',
           {
             'status': MaterialStatus.consumed,
-            'hlc_timestamp': HLC.now().timestamp,
-            'hlc_counter': HLC.now().counter,
+            'hlc_timestamp': hlcCancel.timestamp,
+            'hlc_counter': hlcCancel.counter,
           },
           where: 'resource_id = ?',
           whereArgs: [rd.resourceId],
@@ -790,8 +752,9 @@ class EventManager {
     final cancelId = _uuid.v4();
     final hlc = HLC.now();
     final pubKeyBytes = await _identity.getPublicKeyBytes();
-    final signature =
-        await Signer.signPayload(Uint8List.fromList(cancelPayload));
+    final signature = await Signer.signEvent(
+      eventId: cancelId, eventType: EventType.matchCancel, ttl: 8, payload: cancelPayload,
+    );
     await db.insert('Event_Logs', {
       'event_id': cancelId,
       'sender_pub_key': Uint8List.fromList(pubKeyBytes),
@@ -815,6 +778,14 @@ class EventManager {
   Future<void> cancelRequest(String eventId) async {
     final db = await _db.database;
 
+    // 更新 Requests_State 為 CANCELLED
+    await db.update(
+      'Requests_State',
+      {'status': 'CANCELLED'},
+      where: 'event_id = ?',
+      whereArgs: [eventId],
+    );
+
     // 刪除事件紀錄
     await db.delete('Event_Logs', where: 'event_id = ?', whereArgs: [eventId]);
 
@@ -823,8 +794,9 @@ class EventManager {
     final cancelId = _uuid.v4();
     final hlc = HLC.now();
     final pubKeyBytes = await _identity.getPublicKeyBytes();
-    final signature =
-        await Signer.signPayload(Uint8List.fromList(cancelPayload));
+    final signature = await Signer.signEvent(
+      eventId: cancelId, eventType: EventType.matchCancel, ttl: 8, payload: cancelPayload,
+    );
     await db.insert('Event_Logs', {
       'event_id': cancelId,
       'sender_pub_key': Uint8List.fromList(pubKeyBytes),
@@ -855,7 +827,9 @@ class EventManager {
     final eventId = _uuid.v4();
     final pubKey = await _identity.getPublicKeyBytes();
     final idLevel = _identity.getIdentityLevel();
-    final sig = await Signer.signPayload(Uint8List.fromList(payload));
+    final sig = await Signer.signEvent(
+      eventId: eventId, eventType: eventType, ttl: ttl, payload: payload,
+    );
 
     final db = await _db.database;
     await db.insert('Event_Logs', {

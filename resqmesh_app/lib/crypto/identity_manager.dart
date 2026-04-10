@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../crdt/hlc.dart';
 
@@ -12,6 +13,10 @@ class IdentityManager {
   int _identityLevel = 0; // Default: Level 0 (Anonymous)
   bool _initialized = false;
 
+  static const _secureStorage = FlutterSecureStorage();
+  static const _privKeyKey = 'ed25519_private_key';
+  static const _pubKeyKey = 'ed25519_public_key';
+
   /// 初始化：從持久化儲存中恢復金鑰對與身分等級
   /// 應在 main() 中呼叫一次
   Future<void> initialize() async {
@@ -21,9 +26,9 @@ class IdentityManager {
     // 恢復身分等級
     _identityLevel = prefs.getInt('identity_level') ?? 0;
 
-    // 嘗試恢復已儲存的金鑰對
-    final savedPrivateKey = prefs.getString('ed25519_private_key');
-    final savedPublicKey = prefs.getString('ed25519_public_key');
+    // 嘗試從 Secure Storage 恢復金鑰（Android Keystore / iOS Keychain）
+    final savedPrivateKey = await _secureStorage.read(key: _privKeyKey);
+    final savedPublicKey = await _secureStorage.read(key: _pubKeyKey);
 
     if (savedPrivateKey != null && savedPublicKey != null) {
       try {
@@ -41,9 +46,34 @@ class IdentityManager {
       }
     }
 
+    // 從舊版 SharedPreferences 遷移到 Secure Storage
+    if (_keyPair == null) {
+      final legacyPriv = prefs.getString(_privKeyKey);
+      final legacyPub = prefs.getString(_pubKeyKey);
+      if (legacyPriv != null && legacyPub != null) {
+        try {
+          final privBytes = base64Decode(legacyPriv);
+          final pubBytes = base64Decode(legacyPub);
+          final publicKey = SimplePublicKey(pubBytes, type: KeyPairType.ed25519);
+          _keyPair = SimpleKeyPairData(
+            privBytes,
+            publicKey: publicKey,
+            type: KeyPairType.ed25519,
+          );
+          // 遷移至 Secure Storage 並清除舊存儲
+          await _secureStorage.write(key: _privKeyKey, value: legacyPriv);
+          await _secureStorage.write(key: _pubKeyKey, value: legacyPub);
+          await prefs.remove(_privKeyKey);
+          await prefs.remove(_pubKeyKey);
+        } catch (_) {
+          _keyPair = null;
+        }
+      }
+    }
+
     // 若沒有已儲存的金鑰，生成新的
     if (_keyPair == null) {
-      await _generateAndSave(prefs);
+      await _generateAndSave();
     }
 
     // 設定 HLC nodeId = 公鑰前 8 bytes hex
@@ -59,16 +89,16 @@ class IdentityManager {
     _initialized = true;
   }
 
-  Future<void> _generateAndSave(SharedPreferences prefs) async {
+  Future<void> _generateAndSave() async {
     final algorithm = Ed25519();
     _keyPair = await algorithm.newKeyPair();
 
-    // 持久化儲存
+    // 持久化至 Secure Storage（Android Keystore / iOS Keychain）
     final privData = await _keyPair!.extractPrivateKeyBytes();
     final pubKey = await _keyPair!.extractPublicKey();
     final pubData = pubKey.bytes;
-    await prefs.setString('ed25519_private_key', base64Encode(privData));
-    await prefs.setString('ed25519_public_key', base64Encode(pubData));
+    await _secureStorage.write(key: _privKeyKey, value: base64Encode(privData));
+    await _secureStorage.write(key: _pubKeyKey, value: base64Encode(pubData));
   }
 
   /// 獲取或產生本機金鑰對 (Ed25519)

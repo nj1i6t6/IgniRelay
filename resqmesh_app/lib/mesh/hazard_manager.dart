@@ -8,6 +8,7 @@ import '../crypto/signer.dart';
 import '../db/database_helper.dart';
 import '../proto/mesh_protocol.pb.dart' as pb;
 import 'event_manager.dart';
+import 'event_types.dart';
 import 'triage_queue.dart';
 
 /// 危險標記管理器 — 從 EventManager 抽出的 Hazard CRUD 功能
@@ -44,7 +45,9 @@ class HazardManager {
       ..radiusMeters = radiusMeters.toDouble();
     if (description.isNotEmpty) hazardData.description = description;
     final payload = Uint8List.fromList(hazardData.writeToBuffer());
-    final signature = await Signer.signPayload(payload);
+    final signature = await Signer.signEvent(
+      eventId: eventId, eventType: EventType.hazardMarker, ttl: 8, payload: payload,
+    );
 
     final db = await _db.database;
 
@@ -116,7 +119,9 @@ class HazardManager {
       final eventId = _uuid.v4();
       final hlc = HLC.now();
       final pubKeyBytes = await _identity.getPublicKeyBytes();
-      final signature = await Signer.signPayload(payload);
+      final signature = await Signer.signEvent(
+        eventId: eventId, eventType: EventType.hazardMarker, ttl: 8, payload: payload,
+      );
       await db.insert('Event_Logs', {
         'event_id': eventId,
         'sender_pub_key': Uint8List.fromList(pubKeyBytes),
@@ -178,7 +183,9 @@ class HazardManager {
       final eventId = _uuid.v4();
       final hlc = HLC.now();
       final pubKeyBytes = await _identity.getPublicKeyBytes();
-      final signature = await Signer.signPayload(payload);
+      final signature = await Signer.signEvent(
+        eventId: eventId, eventType: EventType.hazardMarker, ttl: 8, payload: payload,
+      );
       await db.insert('Event_Logs', {
         'event_id': eventId,
         'sender_pub_key': Uint8List.fromList(pubKeyBytes),
@@ -226,7 +233,9 @@ class HazardManager {
       final eventId = _uuid.v4();
       final hlc = HLC.now();
       final pubKeyBytes = await _identity.getPublicKeyBytes();
-      final signature = await Signer.signPayload(payload);
+      final signature = await Signer.signEvent(
+        eventId: eventId, eventType: EventType.hazardMarker, ttl: 8, payload: payload,
+      );
       await db.insert('Event_Logs', {
         'event_id': eventId,
         'sender_pub_key': Uint8List.fromList(pubKeyBytes),

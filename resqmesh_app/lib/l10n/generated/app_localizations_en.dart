@@ -2700,10 +2700,10 @@ class SEn extends S {
   String get supplyItem_TOOL_RESCUE_MULTI => 'Multi-tool Pliers';
 
   @override
-  String get supplyItem_TOOL_POWER_GENERATOR => 'Generator (small gas/propane)';
+  String get supplyItem_TOOL_POWER_GENERATOR => 'Generator';
 
   @override
-  String get supplyItem_TOOL_POWER_SOLAR => 'Solar Panel (foldable 50W+)';
+  String get supplyItem_TOOL_POWER_SOLAR => 'Solar Charging Panel';
 
   @override
   String get supplyItem_TOOL_POWER_INVERTER => 'Inverter (12V→110V)';
@@ -2867,4 +2867,593 @@ class SEn extends S {
 
   @override
   String get commonQtyUnit => 'pcs';
+
+  @override
+  String get tierLabel1Standard => 'Standard Mode (Tier 1)';
+
+  @override
+  String get tierLabel1Force => 'Full Speed Mode (Tier 1)';
+
+  @override
+  String get tierLabel2EcoRelay => 'Eco Relay Mode (Tier 2)';
+
+  @override
+  String get tierLabel3UltraEco => 'Ultra Eco Mode (Tier 3)';
+
+  @override
+  String get supplyCategory_MEDICINE => 'Medical/First Aid';
+
+  @override
+  String get supplyCategory_PPE => 'Protective Gear';
+
+  @override
+  String get supplySubCategory_WATER_TANK => 'Water Storage Containers';
+
+  @override
+  String get supplySubCategory_FOOD_DRY => 'Dry Goods';
+
+  @override
+  String get supplySubCategory_FOOD_SPECIAL => 'Special Dietary Needs';
+
+  @override
+  String get supplySubCategory_FOOD_DRINK => 'Beverages/Electrolytes';
+
+  @override
+  String get supplySubCategory_MED_ANTIBIOTIC => 'Antibiotics/Anti-infection';
+
+  @override
+  String get supplySubCategory_MED_KIT => 'First Aid Kits & Equipment';
+
+  @override
+  String get supplySubCategory_MED_OTHER => 'Other Medications';
+
+  @override
+  String get supplySubCategory_HYG_DIAPER => 'Diapers/Waste Management';
+
+  @override
+  String get supplySubCategory_HYG_CLEAN => 'Cleaning & Hygiene';
+
+  @override
+  String get supplySubCategory_HYG_PEST => 'Mosquito/Pest Control';
+
+  @override
+  String get supplySubCategory_HYG_DISINFECT => 'Environmental Disinfection';
+
+  @override
+  String get supplySubCategory_PPE_HEAD => 'Head Protection';
+
+  @override
+  String get supplySubCategory_PPE_RESP => 'Respiratory Protection';
+
+  @override
+  String get supplySubCategory_PPE_HAND => 'Hand Protection';
+
+  @override
+  String get supplySubCategory_PPE_BODY => 'Body Protection';
+
+  @override
+  String get supplySubCategory_PPE_WEATHER => 'Weather Protection/Clothing';
+
+  @override
+  String get supplySubCategory_SHELTER_TENT => 'Tents/Tarps';
+
+  @override
+  String get supplySubCategory_SHELTER_SLEEP => 'Sleeping/Bedding';
+
+  @override
+  String get supplySubCategory_SHELTER_THERMAL => 'Emergency Warmth';
+
+  @override
+  String get supplySubCategory_SHELTER_SPACE => 'Space Provision';
+
+  @override
+  String get supplySubCategory_SHELTER_SUPPLY => 'Shelter Supplies';
+
+  @override
+  String get supplySubCategory_TOOL_LIGHT => 'Lighting';
+
+  @override
+  String get supplySubCategory_TOOL_BATTERY => 'Batteries (Cylindrical)';
+
+  @override
+  String get supplySubCategory_TOOL_BATTERY_COIN => 'Button/Coin Batteries';
+
+  @override
+  String get supplySubCategory_TOOL_HAND => 'Hand Tools';
+
+  @override
+  String get supplySubCategory_TOOL_REPAIR => 'Repair Supplies';
+
+  @override
+  String get supplySubCategory_TOOL_HEAVY => 'Heavy Equipment';
+
+  @override
+  String get supplySubCategory_TOOL_DEMOLITION => 'Demolition Tools';
+
+  @override
+  String get supplySubCategory_TOOL_CLEANING => 'Cleaning Equipment';
+
+  @override
+  String get supplySubCategory_TOOL_SIGNAL => 'Distress Signals';
+
+  @override
+  String get supplyItem_WATER_BOTTLE_20L => '20L Large Barrel (Family/Shelter)';
+
+  @override
+  String get supplyItem_WATER_PURIFY_FILTER => 'Portable Water Filter';
+
+  @override
+  String get supplyItem_WATER_TANK_BARREL => 'Water Storage Barrel';
+
+  @override
+  String get supplyItem_WATER_TANK_BAG => 'Collapsible Water Bag';
+
+  @override
+  String get supplyItem_FOOD_READY_NOODLE => 'Instant Noodles/Cup Noodles';
+
+  @override
+  String get supplyItem_FOOD_READY_BAR => 'Energy Bar/Crackers';
+
+  @override
+  String get supplyItem_FOOD_DRY_RICE => 'Dry Rice/Grain';
+
+  @override
+  String get supplyItem_FOOD_DRY_BREAD => 'Bread/Toast';
+
+  @override
+  String get supplyItem_FOOD_DRY_NUTS => 'Nuts/Dried Fruit';
+
+  @override
+  String get supplyItem_FOOD_SPECIAL_HALAL => 'Halal Food';
+
+  @override
+  String get supplyItem_FOOD_SPECIAL_VEGAN => 'Vegetarian/Vegan Food';
+
+  @override
+  String get supplyItem_FOOD_SPECIAL_GLUTEN => 'Gluten-Free Food';
+
+  @override
+  String get supplyItem_FOOD_SPECIAL_DIABETIC =>
+      'Low-Sugar/Diabetic-Friendly Food';
+
+  @override
+  String get supplyItem_FOOD_COOK_GAS => 'Camping Gas Cartridge';
+
+  @override
+  String get supplyItem_FOOD_COOK_SOLID => 'Solid Alcohol/Fuel Gel';
+
+  @override
+  String get supplyItem_FOOD_COOK_LIGHTER =>
+      'Windproof Lighter/Waterproof Matches';
+
+  @override
+  String get supplyItem_FOOD_COOK_POT => 'Camp Cookset/Steel Cup';
+
+  @override
+  String get supplyItem_FOOD_DRINK_ELECTRO => 'Sports Drink/Electrolyte Powder';
+
+  @override
+  String get supplyItem_FOOD_DRINK_COFFEE => 'Instant Coffee/Tea Bags';
+
+  @override
+  String get supplyItem_FOOD_DRINK_JUICE => 'UHT Milk/Juice';
+
+  @override
+  String get supplyItem_MED_PAIN_ASPIRIN => 'Aspirin';
+
+  @override
+  String get supplyItem_MED_ANTIBIOTIC_AMOX => 'Amoxicillin';
+
+  @override
+  String get supplyItem_MED_ANTIBIOTIC_AZITHRO => 'Azithromycin (Z-Pak)';
+
+  @override
+  String get supplyItem_MED_ANTIBIOTIC_OINTMENT => 'Antibiotic Ointment';
+
+  @override
+  String get supplyItem_MED_CHRONIC_INSULIN => 'Insulin';
+
+  @override
+  String get supplyItem_MED_CHRONIC_ASTHMA => 'Asthma Inhaler';
+
+  @override
+  String get supplyItem_MED_CHRONIC_THYROID => 'Thyroid Medication';
+
+  @override
+  String get supplyItem_MED_WOUND_DISINFECT => 'Disinfectant/Iodine';
+
+  @override
+  String get supplyItem_MED_WOUND_SUTURE => 'Steri-Strips/Closure Tape';
+
+  @override
+  String get supplyItem_MED_WOUND_SALINE =>
+      'Saline Solution (wound irrigation)';
+
+  @override
+  String get supplyItem_MED_WOUND_BURN => 'Burn Ointment/Dressing';
+
+  @override
+  String get supplyItem_MED_WOUND_SPLINT =>
+      'Splint (temporary fracture immobilization)';
+
+  @override
+  String get supplyItem_MED_KIT_TRAUMA => 'Trauma First Aid Kit';
+
+  @override
+  String get supplyItem_MED_KIT_STRETCHER => 'Folding/Flexible Stretcher';
+
+  @override
+  String get supplyItem_MED_OTHER_ANTIDIARRHEAL => 'Anti-diarrheal Medication';
+
+  @override
+  String get supplyItem_MED_OTHER_ANTIHISTAMINE => 'Antihistamine (allergy)';
+
+  @override
+  String get supplyItem_MED_OTHER_REHYDRATION => 'Oral Rehydration Salts';
+
+  @override
+  String get supplyItem_MED_OTHER_EYEDROP => 'Eye Drops/Artificial Tears';
+
+  @override
+  String get supplyItem_MED_OTHER_INSECT_BITE => 'Insect Bite Cream';
+
+  @override
+  String get supplyItem_HYG_FEM_PAD_DAY => 'Day Pads';
+
+  @override
+  String get supplyItem_HYG_FEM_PAD_NIGHT => 'Night Pads';
+
+  @override
+  String get supplyItem_HYG_FEM_LINER => 'Panty Liners';
+
+  @override
+  String get supplyItem_HYG_DIAPER_BABY_S => 'Baby Diapers S (3-6kg)';
+
+  @override
+  String get supplyItem_HYG_DIAPER_BABY_M => 'Baby Diapers M (6-11kg)';
+
+  @override
+  String get supplyItem_HYG_DIAPER_BABY_L => 'Baby Diapers L (9-14kg)';
+
+  @override
+  String get supplyItem_HYG_DIAPER_BABY_XL => 'Baby Diapers XL (12-17kg)';
+
+  @override
+  String get supplyItem_HYG_DIAPER_ADULT => 'Adult Diapers';
+
+  @override
+  String get supplyItem_HYG_DIAPER_PORTABLE_TOILET => 'Portable Toilet';
+
+  @override
+  String get supplyItem_HYG_DIAPER_SOLIDIFIER => 'Waste Solidifier';
+
+  @override
+  String get supplyItem_HYG_DIAPER_TRASH_BAG => 'Large Black Garbage Bags';
+
+  @override
+  String get supplyItem_HYG_CLEAN_WET_WIPE => 'Antibacterial Wet Wipes';
+
+  @override
+  String get supplyItem_HYG_CLEAN_HAND_GEL => 'Hand Sanitizer Gel';
+
+  @override
+  String get supplyItem_HYG_CLEAN_SOAP => 'Bar Soap';
+
+  @override
+  String get supplyItem_HYG_CLEAN_TOOTH => 'Toothbrush & Toothpaste Set';
+
+  @override
+  String get supplyItem_HYG_CLEAN_SHAMPOO => 'Dry Shampoo/Shampoo';
+
+  @override
+  String get supplyItem_HYG_CLEAN_TOWEL => 'Quick-Dry Towel';
+
+  @override
+  String get supplyItem_HYG_PEST_REPELLENT =>
+      'Insect Repellent (DEET/Picaridin)';
+
+  @override
+  String get supplyItem_HYG_PEST_COIL => 'Mosquito Coil/Electric Repellent';
+
+  @override
+  String get supplyItem_HYG_PEST_NET => 'Mosquito Net';
+
+  @override
+  String get supplyItem_HYG_PEST_ROACH => 'Insecticide (cockroach/fly)';
+
+  @override
+  String get supplyItem_HYG_DISINFECT_BLEACH => 'Bleach/Sodium Hypochlorite';
+
+  @override
+  String get supplyItem_HYG_DISINFECT_ALCOHOL => '75% Alcohol (disinfecting)';
+
+  @override
+  String get supplyItem_HYG_DISINFECT_SPRAY =>
+      'Environmental Disinfectant Spray';
+
+  @override
+  String get supplyItem_PPE_HEAD_HELMET => 'Hard Hat/Safety Helmet';
+
+  @override
+  String get supplyItem_PPE_HEAD_GOGGLES => 'Safety Goggles/Dust Glasses';
+
+  @override
+  String get supplyItem_PPE_RESP_N95 => 'N95 Respirator Mask';
+
+  @override
+  String get supplyItem_PPE_RESP_DUST => 'Standard Dust Mask';
+
+  @override
+  String get supplyItem_PPE_RESP_GAS => 'Gas Mask (chemical/fire)';
+
+  @override
+  String get supplyItem_PPE_HAND_CUT => 'Cut-Resistant Work Gloves';
+
+  @override
+  String get supplyItem_PPE_HAND_RUBBER =>
+      'Rubber Gloves (cleaning/disinfecting)';
+
+  @override
+  String get supplyItem_PPE_HAND_LATEX => 'Medical Latex Gloves';
+
+  @override
+  String get supplyItem_PPE_BODY_VEST => 'Reflective Safety Vest';
+
+  @override
+  String get supplyItem_PPE_BODY_COVERALL => 'Full-Body Protective Suit';
+
+  @override
+  String get supplyItem_PPE_BODY_BOOTS => 'Safety Boots/Steel-Toe Rain Boots';
+
+  @override
+  String get supplyItem_PPE_WEATHER_PONCHO => 'Disposable Rain Poncho';
+
+  @override
+  String get supplyItem_PPE_WEATHER_RAINSUIT => 'Two-Piece Rain Suit';
+
+  @override
+  String get supplyItem_PPE_WEATHER_RAINBOOT => 'Rain Boots/Waterproof Boots';
+
+  @override
+  String get supplyItem_PPE_WEATHER_WARM => 'Thermal Clothing/Heat Undershirt';
+
+  @override
+  String get supplyItem_PPE_WEATHER_JACKET => 'Waterproof Jacket/Windbreaker';
+
+  @override
+  String get supplyItem_PPE_WEATHER_HAT => 'Warm Hat/Sun Hat';
+
+  @override
+  String get supplyItem_SHELTER_TENT_2P => '2-Person Tent';
+
+  @override
+  String get supplyItem_SHELTER_TENT_4P => '4-Person Tent';
+
+  @override
+  String get supplyItem_SHELTER_TENT_TARP => 'Waterproof Tarp';
+
+  @override
+  String get supplyItem_SHELTER_TENT_PLASTIC =>
+      'Waterproof Canvas/Plastic Sheet';
+
+  @override
+  String get supplyItem_SHELTER_SLEEP_BAG => 'Sleeping Bag';
+
+  @override
+  String get supplyItem_SHELTER_SLEEP_BLANKET => 'Warm Blanket';
+
+  @override
+  String get supplyItem_SHELTER_SLEEP_MAT => 'Sleeping Pad';
+
+  @override
+  String get supplyItem_SHELTER_SLEEP_AIR => 'Inflatable Air Mattress';
+
+  @override
+  String get supplyItem_SHELTER_THERM_SPACE => 'Emergency Space Blanket (foil)';
+
+  @override
+  String get supplyItem_SHELTER_THERM_HANDWARMER => 'Hand Warmers';
+
+  @override
+  String get supplyItem_SHELTER_THERM_COAT => 'Warm Jacket/Used Clothing';
+
+  @override
+  String get supplyItem_SHELTER_SPACE_ROOM => 'Room Available';
+
+  @override
+  String get supplyItem_SHELTER_SPACE_GARAGE => 'Garage/Warehouse Available';
+
+  @override
+  String get supplyItem_SHELTER_SPACE_LAND =>
+      'Open Land Available (tent/parking)';
+
+  @override
+  String get supplyItem_SHELTER_SUPPLY_TABLE => 'Folding Tables & Chairs';
+
+  @override
+  String get supplyItem_SHELTER_SUPPLY_PARTITION =>
+      'Privacy Screen/Curtain Divider';
+
+  @override
+  String get supplyItem_SHELTER_SUPPLY_FAN => 'Portable Fan/USB Fan';
+
+  @override
+  String get supplyItem_TOOL_LIGHT_FLASH => 'Flashlight';
+
+  @override
+  String get supplyItem_TOOL_LIGHT_LANTERN => 'Camping Lantern';
+
+  @override
+  String get supplyItem_TOOL_LIGHT_HEADLAMP => 'Headlamp';
+
+  @override
+  String get supplyItem_TOOL_LIGHT_GLOWSTICK => 'Glow Stick (no power needed)';
+
+  @override
+  String get supplyItem_TOOL_POWER_BANK => 'Power Bank';
+
+  @override
+  String get supplyItem_TOOL_POWER_EXTENSION => 'Extension Cord/Power Strip';
+
+  @override
+  String get supplyItem_TOOL_BAT_AA => 'AA Batteries (1.5V)';
+
+  @override
+  String get supplyItem_TOOL_BAT_AAA => 'AAA Batteries (1.5V)';
+
+  @override
+  String get supplyItem_TOOL_BAT_C => 'C Batteries (1.5V)';
+
+  @override
+  String get supplyItem_TOOL_BAT_D => 'D Batteries (1.5V)';
+
+  @override
+  String get supplyItem_TOOL_BAT_9V => '9V Block Batteries';
+
+  @override
+  String get supplyItem_TOOL_BAT_18650 => '18650 Li-ion Batteries (3.7V)';
+
+  @override
+  String get supplyItem_TOOL_COIN_CR2032 => 'CR2032 (3V, most common)';
+
+  @override
+  String get supplyItem_TOOL_COIN_CR2025 => 'CR2025 (3V)';
+
+  @override
+  String get supplyItem_TOOL_COIN_CR2016 => 'CR2016 (3V)';
+
+  @override
+  String get supplyItem_TOOL_COIN_LR44 => 'LR44 / AG13 (1.5V)';
+
+  @override
+  String get supplyItem_TOOL_COIN_SR626 => 'SR626SW (watch battery 1.55V)';
+
+  @override
+  String get supplyItem_TOOL_COMM_WALKIE => 'Walkie-Talkie';
+
+  @override
+  String get supplyItem_TOOL_COMM_SAT => 'Satellite Communicator';
+
+  @override
+  String get supplyItem_TOOL_RESCUE_ROPE => 'Rope';
+
+  @override
+  String get supplyItem_TOOL_RESCUE_AXE => 'Axe/Crowbar';
+
+  @override
+  String get supplyItem_TOOL_RESCUE_PARACORD => 'Paracord';
+
+  @override
+  String get supplyItem_TOOL_RESCUE_SPRAYPAINT =>
+      'Spray Paint (search/rescue marking)';
+
+  @override
+  String get supplyItem_TOOL_HAND_SCREWDRIVER_PH => 'Phillips Screwdriver';
+
+  @override
+  String get supplyItem_TOOL_HAND_SCREWDRIVER_FLAT => 'Flathead Screwdriver';
+
+  @override
+  String get supplyItem_TOOL_HAND_WRENCH => 'Adjustable Wrench';
+
+  @override
+  String get supplyItem_TOOL_HAND_HAMMER => 'Hammer';
+
+  @override
+  String get supplyItem_TOOL_HAND_SHOVEL => 'Shovel/Spade';
+
+  @override
+  String get supplyItem_TOOL_HAND_MULTITOOL => 'Multi-tool/Swiss Army Knife';
+
+  @override
+  String get supplyItem_TOOL_HAND_PLIER => 'Pliers/Locking Pliers';
+
+  @override
+  String get supplyItem_TOOL_REPAIR_DUCT => 'Duct Tape';
+
+  @override
+  String get supplyItem_TOOL_REPAIR_ZIPTIE => 'Zip Ties/Cable Ties';
+
+  @override
+  String get supplyItem_TOOL_REPAIR_WIRE => 'Metal Wire/Binding Wire';
+
+  @override
+  String get supplyItem_TOOL_REPAIR_SEALANT =>
+      'Waterproof Adhesive/Silicone Sealant';
+
+  @override
+  String get supplyItem_TOOL_REPAIR_TARP_TAPE => 'Canvas Repair Tape';
+
+  @override
+  String get supplyItem_TOOL_TRANSPORT_CAR => 'Vehicle (motorized)';
+
+  @override
+  String get supplyItem_TOOL_TRANSPORT_BIKE => 'Bicycle';
+
+  @override
+  String get supplyItem_TOOL_TRANSPORT_CART => 'Push Cart/Hand Truck';
+
+  @override
+  String get supplyItem_TOOL_TRANSPORT_WHEELBARROW =>
+      'Wheelbarrow (rubble transport)';
+
+  @override
+  String get supplyItem_TOOL_HEAVY_EXCAVATOR_MINI =>
+      'Mini Excavator (narrow access)';
+
+  @override
+  String get supplyItem_TOOL_HEAVY_EXCAVATOR_STD => 'Standard Excavator';
+
+  @override
+  String get supplyItem_TOOL_HEAVY_BOBCAT_MINI =>
+      'Mini Skid Steer (narrow access)';
+
+  @override
+  String get supplyItem_TOOL_HEAVY_BOBCAT_STD => 'Standard Skid Steer';
+
+  @override
+  String get supplyItem_TOOL_HEAVY_CRANE => 'Crane/Hoist';
+
+  @override
+  String get supplyItem_TOOL_HEAVY_LOADER => 'Bulldozer/Loader';
+
+  @override
+  String get supplyItem_TOOL_DEMO_JACKHAMMER => 'Electric/Pneumatic Jackhammer';
+
+  @override
+  String get supplyItem_TOOL_DEMO_CONCRETE_SAW => 'Concrete Saw/Angle Grinder';
+
+  @override
+  String get supplyItem_TOOL_DEMO_HYDRAULIC =>
+      'Hydraulic Spreader/Cutter (heavy rescue)';
+
+  @override
+  String get supplyItem_TOOL_DEMO_CHAINSAW => 'Chainsaw (tree/brush clearing)';
+
+  @override
+  String get supplyItem_TOOL_CLEANING_WASHER => 'Pressure Washer';
+
+  @override
+  String get supplyItem_TOOL_CLEANING_PUMP_CLEAN =>
+      'Engine Water Pump (clean water)';
+
+  @override
+  String get supplyItem_TOOL_CLEANING_PUMP_SLUDGE =>
+      'Sludge Pump (wastewater/debris)';
+
+  @override
+  String get supplyItem_TOOL_CLEANING_BLOWER =>
+      'Industrial Blower (ventilation)';
+
+  @override
+  String get supplyItem_TOOL_SIGNAL_FLARE => 'Signal Flare';
+
+  @override
+  String get supplyItem_TOOL_SIGNAL_MIRROR => 'Signal Mirror';
+
+  @override
+  String get supplyItem_TOOL_SIGNAL_FLAG => 'Distress Flag/Banner';
+
+  @override
+  String get supplyItem_TOOL_SIGNAL_STROBE => 'Strobe Emergency Light';
 }

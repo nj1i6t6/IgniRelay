@@ -9,6 +9,7 @@ import '../crypto/signer.dart';
 import '../db/database_helper.dart';
 import '../geo/village_geofence.dart';
 import '../mesh/event_manager.dart';
+import '../mesh/event_types.dart';
 import '../mesh/triage_queue.dart';
 import '../services/location_service.dart';
 
@@ -53,6 +54,7 @@ class ChatService {
   }) async {
     if (!canSendMessage(roomId)) return false;
     if (content.trim().isEmpty) return false;
+    if (content.trim().length > 1000) return false; // 防止超大 payload 經 mesh 擴散
 
     try {
       final trimmed = content.trim();
@@ -69,7 +71,9 @@ class ChatService {
         if (replyTo != null) 'reply_to': replyTo,
       };
       final payload = Uint8List.fromList(utf8.encode(jsonEncode(payloadMap)));
-      final signature = await Signer.signPayload(payload);
+      final signature = await Signer.signEvent(
+        eventId: eventId, eventType: EventType.chatMessage, ttl: 5, payload: payload,
+      );
 
       final loc = LocationService().currentLocation;
 

@@ -2618,10 +2618,10 @@ class SZh extends S {
   String get supplyItem_TOOL_RESCUE_MULTI => '多功能工具鉗';
 
   @override
-  String get supplyItem_TOOL_POWER_GENERATOR => '發電機 (小型汽油/瓦斯)';
+  String get supplyItem_TOOL_POWER_GENERATOR => '發電機';
 
   @override
-  String get supplyItem_TOOL_POWER_SOLAR => '太陽能板 (可折疊 50W+)';
+  String get supplyItem_TOOL_POWER_SOLAR => '太陽能充電板';
 
   @override
   String get supplyItem_TOOL_POWER_INVERTER => '逆變器 (12V→110V)';
@@ -2781,4 +2781,574 @@ class SZh extends S {
 
   @override
   String get commonQtyUnit => '份';
+
+  @override
+  String get tierLabel1Standard => '標準模式 (Tier 1)';
+
+  @override
+  String get tierLabel1Force => '全速模式 (Tier 1)';
+
+  @override
+  String get tierLabel2EcoRelay => '省電中繼模式 (Tier 2)';
+
+  @override
+  String get tierLabel3UltraEco => '極省電模式 (Tier 3)';
+
+  @override
+  String get supplyCategory_MEDICINE => '藥品/急救';
+
+  @override
+  String get supplyCategory_PPE => '防護裝備';
+
+  @override
+  String get supplySubCategory_WATER_TANK => '儲水設備';
+
+  @override
+  String get supplySubCategory_FOOD_DRY => '乾糧';
+
+  @override
+  String get supplySubCategory_FOOD_SPECIAL => '特殊飲食';
+
+  @override
+  String get supplySubCategory_FOOD_DRINK => '飲品/電解質';
+
+  @override
+  String get supplySubCategory_MED_ANTIBIOTIC => '抗生素/抗感染';
+
+  @override
+  String get supplySubCategory_MED_KIT => '急救包/器材';
+
+  @override
+  String get supplySubCategory_MED_OTHER => '其他藥品';
+
+  @override
+  String get supplySubCategory_HYG_DIAPER => '尿布/排泄處理';
+
+  @override
+  String get supplySubCategory_HYG_CLEAN => '清潔衛生';
+
+  @override
+  String get supplySubCategory_HYG_PEST => '防蚊防蟲';
+
+  @override
+  String get supplySubCategory_HYG_DISINFECT => '環境消毒';
+
+  @override
+  String get supplySubCategory_PPE_HEAD => '頭部防護';
+
+  @override
+  String get supplySubCategory_PPE_RESP => '呼吸防護';
+
+  @override
+  String get supplySubCategory_PPE_HAND => '手部防護';
+
+  @override
+  String get supplySubCategory_PPE_BODY => '身體防護';
+
+  @override
+  String get supplySubCategory_PPE_WEATHER => '氣候防護/衣物';
+
+  @override
+  String get supplySubCategory_SHELTER_TENT => '帳篷/遮蔽';
+
+  @override
+  String get supplySubCategory_SHELTER_SLEEP => '保暖寢具';
+
+  @override
+  String get supplySubCategory_SHELTER_THERMAL => '緊急禦寒';
+
+  @override
+  String get supplySubCategory_SHELTER_SPACE => '空間提供';
+
+  @override
+  String get supplySubCategory_SHELTER_SUPPLY => '收容所耗材';
+
+  @override
+  String get supplySubCategory_TOOL_LIGHT => '照明';
+
+  @override
+  String get supplySubCategory_TOOL_BATTERY => '乾電池 (圓筒型)';
+
+  @override
+  String get supplySubCategory_TOOL_BATTERY_COIN => '鈕扣電池';
+
+  @override
+  String get supplySubCategory_TOOL_HAND => '手工具';
+
+  @override
+  String get supplySubCategory_TOOL_REPAIR => '修繕耗材';
+
+  @override
+  String get supplySubCategory_TOOL_HEAVY => '重型機具';
+
+  @override
+  String get supplySubCategory_TOOL_DEMOLITION => '破拆工具';
+
+  @override
+  String get supplySubCategory_TOOL_CLEANING => '清理設備';
+
+  @override
+  String get supplySubCategory_TOOL_SIGNAL => '求救信號';
+
+  @override
+  String get supplyItem_WATER_BOTTLE_20L => '20L 大桶 (家庭/收容所)';
+
+  @override
+  String get supplyItem_WATER_PURIFY_FILTER => '攜帶型濾水器';
+
+  @override
+  String get supplyItem_WATER_TANK_BARREL => '儲水桶';
+
+  @override
+  String get supplyItem_WATER_TANK_BAG => '可折疊水袋';
+
+  @override
+  String get supplyItem_FOOD_READY_NOODLE => '即食麵/泡麵';
+
+  @override
+  String get supplyItem_FOOD_READY_BAR => '能量棒/餅乾';
+
+  @override
+  String get supplyItem_FOOD_DRY_RICE => '乾飯/米';
+
+  @override
+  String get supplyItem_FOOD_DRY_BREAD => '麵包/吐司';
+
+  @override
+  String get supplyItem_FOOD_DRY_NUTS => '堅果/果乾';
+
+  @override
+  String get supplyItem_FOOD_SPECIAL_HALAL => '清真食品';
+
+  @override
+  String get supplyItem_FOOD_SPECIAL_VEGAN => '素食';
+
+  @override
+  String get supplyItem_FOOD_SPECIAL_GLUTEN => '無麩質食品';
+
+  @override
+  String get supplyItem_FOOD_SPECIAL_DIABETIC => '低糖/糖尿病適用';
+
+  @override
+  String get supplyItem_FOOD_COOK_GAS => '卡式瓦斯罐';
+
+  @override
+  String get supplyItem_FOOD_COOK_SOLID => '固體酒精/酒精膏';
+
+  @override
+  String get supplyItem_FOOD_COOK_LIGHTER => '防風打火機/防水火柴';
+
+  @override
+  String get supplyItem_FOOD_COOK_POT => '野炊鍋組/鋼杯';
+
+  @override
+  String get supplyItem_FOOD_DRINK_ELECTRO => '運動飲料/電解質粉';
+
+  @override
+  String get supplyItem_FOOD_DRINK_COFFEE => '即溶咖啡/茶包';
+
+  @override
+  String get supplyItem_FOOD_DRINK_JUICE => '保久乳/果汁';
+
+  @override
+  String get supplyItem_MED_PAIN_ASPIRIN => '阿斯匹靈';
+
+  @override
+  String get supplyItem_MED_ANTIBIOTIC_AMOX => '阿莫西林';
+
+  @override
+  String get supplyItem_MED_ANTIBIOTIC_AZITHRO => '日舒 (阿奇黴素)';
+
+  @override
+  String get supplyItem_MED_ANTIBIOTIC_OINTMENT => '抗生素藥膏';
+
+  @override
+  String get supplyItem_MED_CHRONIC_INSULIN => '胰島素';
+
+  @override
+  String get supplyItem_MED_CHRONIC_ASTHMA => '氣喘吸入劑';
+
+  @override
+  String get supplyItem_MED_CHRONIC_THYROID => '甲狀腺藥物';
+
+  @override
+  String get supplyItem_MED_WOUND_DISINFECT => '消毒液/碘酒';
+
+  @override
+  String get supplyItem_MED_WOUND_SUTURE => '縫合膠帶';
+
+  @override
+  String get supplyItem_MED_WOUND_SALINE => '生理食鹽水 (沖洗傷口)';
+
+  @override
+  String get supplyItem_MED_WOUND_BURN => '燒燙傷藥膏/敷料';
+
+  @override
+  String get supplyItem_MED_WOUND_SPLINT => '固定夾板 (骨折臨時固定)';
+
+  @override
+  String get supplyItem_MED_KIT_TRAUMA => '外傷急救包';
+
+  @override
+  String get supplyItem_MED_KIT_STRETCHER => '摺疊擔架/軟式擔架';
+
+  @override
+  String get supplyItem_MED_OTHER_ANTIDIARRHEAL => '止瀉藥';
+
+  @override
+  String get supplyItem_MED_OTHER_ANTIHISTAMINE => '抗組織胺 (過敏)';
+
+  @override
+  String get supplyItem_MED_OTHER_REHYDRATION => '口服補液鹽';
+
+  @override
+  String get supplyItem_MED_OTHER_EYEDROP => '眼藥水/人工淚液';
+
+  @override
+  String get supplyItem_MED_OTHER_INSECT_BITE => '蚊蟲叮咬藥膏';
+
+  @override
+  String get supplyItem_HYG_FEM_PAD_DAY => '日用衛生棉';
+
+  @override
+  String get supplyItem_HYG_FEM_PAD_NIGHT => '夜用衛生棉';
+
+  @override
+  String get supplyItem_HYG_FEM_LINER => '護墊';
+
+  @override
+  String get supplyItem_HYG_DIAPER_BABY_S => '嬰兒尿布 S (3-6kg)';
+
+  @override
+  String get supplyItem_HYG_DIAPER_BABY_M => '嬰兒尿布 M (6-11kg)';
+
+  @override
+  String get supplyItem_HYG_DIAPER_BABY_L => '嬰兒尿布 L (9-14kg)';
+
+  @override
+  String get supplyItem_HYG_DIAPER_BABY_XL => '嬰兒尿布 XL (12-17kg)';
+
+  @override
+  String get supplyItem_HYG_DIAPER_ADULT => '成人紙尿褲';
+
+  @override
+  String get supplyItem_HYG_DIAPER_PORTABLE_TOILET => '攜帶式馬桶/行動廁所';
+
+  @override
+  String get supplyItem_HYG_DIAPER_SOLIDIFIER => '排泄物凝固劑';
+
+  @override
+  String get supplyItem_HYG_DIAPER_TRASH_BAG => '黑色大垃圾袋';
+
+  @override
+  String get supplyItem_HYG_CLEAN_WET_WIPE => '抗菌濕紙巾';
+
+  @override
+  String get supplyItem_HYG_CLEAN_HAND_GEL => '乾洗手液';
+
+  @override
+  String get supplyItem_HYG_CLEAN_SOAP => '肥皂';
+
+  @override
+  String get supplyItem_HYG_CLEAN_TOOTH => '牙刷牙膏組';
+
+  @override
+  String get supplyItem_HYG_CLEAN_SHAMPOO => '乾洗髮/洗髮乳';
+
+  @override
+  String get supplyItem_HYG_CLEAN_TOWEL => '速乾毛巾';
+
+  @override
+  String get supplyItem_HYG_PEST_REPELLENT => '防蚊液 (DEET/派卡瑞丁)';
+
+  @override
+  String get supplyItem_HYG_PEST_COIL => '蚊香/電蚊香';
+
+  @override
+  String get supplyItem_HYG_PEST_NET => '蚊帳';
+
+  @override
+  String get supplyItem_HYG_PEST_ROACH => '殺蟲劑 (蟑螂/蒼蠅)';
+
+  @override
+  String get supplyItem_HYG_DISINFECT_BLEACH => '漂白水/次氯酸鈉';
+
+  @override
+  String get supplyItem_HYG_DISINFECT_ALCOHOL => '75%酒精 (消毒用)';
+
+  @override
+  String get supplyItem_HYG_DISINFECT_SPRAY => '環境消毒噴劑';
+
+  @override
+  String get supplyItem_PPE_HEAD_HELMET => '工程安全帽';
+
+  @override
+  String get supplyItem_PPE_HEAD_GOGGLES => '護目鏡/防塵眼鏡';
+
+  @override
+  String get supplyItem_PPE_RESP_N95 => 'N95 口罩';
+
+  @override
+  String get supplyItem_PPE_RESP_DUST => '一般防塵口罩';
+
+  @override
+  String get supplyItem_PPE_RESP_GAS => '防毒面罩 (化學/火災)';
+
+  @override
+  String get supplyItem_PPE_HAND_CUT => '防割工作手套';
+
+  @override
+  String get supplyItem_PPE_HAND_RUBBER => '橡膠手套 (清淤/消毒)';
+
+  @override
+  String get supplyItem_PPE_HAND_LATEX => '醫療乳膠手套';
+
+  @override
+  String get supplyItem_PPE_BODY_VEST => '反光背心';
+
+  @override
+  String get supplyItem_PPE_BODY_COVERALL => '連身防護衣';
+
+  @override
+  String get supplyItem_PPE_BODY_BOOTS => '安全鞋/鋼頭雨靴';
+
+  @override
+  String get supplyItem_PPE_WEATHER_PONCHO => '輕便雨衣 (拋棄式)';
+
+  @override
+  String get supplyItem_PPE_WEATHER_RAINSUIT => '兩截式雨衣';
+
+  @override
+  String get supplyItem_PPE_WEATHER_RAINBOOT => '雨鞋/防水靴';
+
+  @override
+  String get supplyItem_PPE_WEATHER_WARM => '保暖衣物/發熱衣';
+
+  @override
+  String get supplyItem_PPE_WEATHER_JACKET => '防水外套/風衣';
+
+  @override
+  String get supplyItem_PPE_WEATHER_HAT => '保暖帽/遮陽帽';
+
+  @override
+  String get supplyItem_SHELTER_TENT_2P => '2人帳篷';
+
+  @override
+  String get supplyItem_SHELTER_TENT_4P => '4人帳篷';
+
+  @override
+  String get supplyItem_SHELTER_TENT_TARP => '防水天幕';
+
+  @override
+  String get supplyItem_SHELTER_TENT_PLASTIC => '防水帆布/塑膠布';
+
+  @override
+  String get supplyItem_SHELTER_SLEEP_BAG => '睡袋';
+
+  @override
+  String get supplyItem_SHELTER_SLEEP_BLANKET => '保暖毯';
+
+  @override
+  String get supplyItem_SHELTER_SLEEP_MAT => '睡墊';
+
+  @override
+  String get supplyItem_SHELTER_SLEEP_AIR => '充氣床墊';
+
+  @override
+  String get supplyItem_SHELTER_THERM_SPACE => '急救保溫毯 (Space Blanket)';
+
+  @override
+  String get supplyItem_SHELTER_THERM_HANDWARMER => '暖暖包';
+
+  @override
+  String get supplyItem_SHELTER_THERM_COAT => '保暖外套/二手衣物';
+
+  @override
+  String get supplyItem_SHELTER_SPACE_ROOM => '可提供房間';
+
+  @override
+  String get supplyItem_SHELTER_SPACE_GARAGE => '可提供車庫/倉庫';
+
+  @override
+  String get supplyItem_SHELTER_SPACE_LAND => '可提供空地 (搭帳篷/停車)';
+
+  @override
+  String get supplyItem_SHELTER_SUPPLY_TABLE => '摺疊桌椅';
+
+  @override
+  String get supplyItem_SHELTER_SUPPLY_PARTITION => '隔間屏風/隔簾';
+
+  @override
+  String get supplyItem_SHELTER_SUPPLY_FAN => '攜帶式風扇/USB風扇';
+
+  @override
+  String get supplyItem_TOOL_LIGHT_FLASH => '手電筒';
+
+  @override
+  String get supplyItem_TOOL_LIGHT_LANTERN => '露營燈';
+
+  @override
+  String get supplyItem_TOOL_LIGHT_HEADLAMP => '頭燈';
+
+  @override
+  String get supplyItem_TOOL_LIGHT_GLOWSTICK => '螢光棒 (不需電力)';
+
+  @override
+  String get supplyItem_TOOL_POWER_BANK => '行動電源';
+
+  @override
+  String get supplyItem_TOOL_POWER_EXTENSION => '延長線/排插';
+
+  @override
+  String get supplyItem_TOOL_BAT_AA => '3號電池 (AA 1.5V)';
+
+  @override
+  String get supplyItem_TOOL_BAT_AAA => '4號電池 (AAA 1.5V)';
+
+  @override
+  String get supplyItem_TOOL_BAT_C => '2號電池 (C 1.5V)';
+
+  @override
+  String get supplyItem_TOOL_BAT_D => '1號電池 (D 1.5V)';
+
+  @override
+  String get supplyItem_TOOL_BAT_9V => '9V 方型電池';
+
+  @override
+  String get supplyItem_TOOL_BAT_18650 => '18650 鋰電池 (3.7V)';
+
+  @override
+  String get supplyItem_TOOL_COIN_CR2032 => 'CR2032 (3V 最常見)';
+
+  @override
+  String get supplyItem_TOOL_COIN_CR2025 => 'CR2025 (3V)';
+
+  @override
+  String get supplyItem_TOOL_COIN_CR2016 => 'CR2016 (3V)';
+
+  @override
+  String get supplyItem_TOOL_COIN_LR44 => 'LR44 / AG13 (1.5V)';
+
+  @override
+  String get supplyItem_TOOL_COIN_SR626 => 'SR626SW (手錶電池 1.55V)';
+
+  @override
+  String get supplyItem_TOOL_COMM_WALKIE => '對講機';
+
+  @override
+  String get supplyItem_TOOL_COMM_SAT => '衛星通訊器';
+
+  @override
+  String get supplyItem_TOOL_RESCUE_ROPE => '繩索';
+
+  @override
+  String get supplyItem_TOOL_RESCUE_AXE => '斧頭/撬棒';
+
+  @override
+  String get supplyItem_TOOL_RESCUE_PARACORD => '傘繩 (Paracord)';
+
+  @override
+  String get supplyItem_TOOL_RESCUE_SPRAYPAINT => '噴漆 (建物搜救標記)';
+
+  @override
+  String get supplyItem_TOOL_HAND_SCREWDRIVER_PH => '十字螺絲起子';
+
+  @override
+  String get supplyItem_TOOL_HAND_SCREWDRIVER_FLAT => '一字螺絲起子';
+
+  @override
+  String get supplyItem_TOOL_HAND_WRENCH => '活動扳手';
+
+  @override
+  String get supplyItem_TOOL_HAND_HAMMER => '鐵鎚';
+
+  @override
+  String get supplyItem_TOOL_HAND_SHOVEL => '鏟子/圓鍬';
+
+  @override
+  String get supplyItem_TOOL_HAND_MULTITOOL => '多功能工具鉗/瑞士刀';
+
+  @override
+  String get supplyItem_TOOL_HAND_PLIER => '鉗子/老虎鉗';
+
+  @override
+  String get supplyItem_TOOL_REPAIR_DUCT => '大力膠帶 (Duct Tape)';
+
+  @override
+  String get supplyItem_TOOL_REPAIR_ZIPTIE => '束線帶/紮帶';
+
+  @override
+  String get supplyItem_TOOL_REPAIR_WIRE => '鐵絲/綁線';
+
+  @override
+  String get supplyItem_TOOL_REPAIR_SEALANT => '防水膠/矽利康';
+
+  @override
+  String get supplyItem_TOOL_REPAIR_TARP_TAPE => '帆布修補膠帶';
+
+  @override
+  String get supplyItem_TOOL_TRANSPORT_CAR => '車輛 (機動)';
+
+  @override
+  String get supplyItem_TOOL_TRANSPORT_BIKE => '腳踏車';
+
+  @override
+  String get supplyItem_TOOL_TRANSPORT_CART => '推車';
+
+  @override
+  String get supplyItem_TOOL_TRANSPORT_WHEELBARROW => '手推車/獨輪車 (搬運瓦礫)';
+
+  @override
+  String get supplyItem_TOOL_HEAVY_EXCAVATOR_MINI => '微型怪手 (可入戶/狹窄巷弄)';
+
+  @override
+  String get supplyItem_TOOL_HEAVY_EXCAVATOR_STD => '標準怪手 (大型挖掘)';
+
+  @override
+  String get supplyItem_TOOL_HEAVY_BOBCAT_MINI => '微型山貓 (可入戶/滑移裝載)';
+
+  @override
+  String get supplyItem_TOOL_HEAVY_BOBCAT_STD => '標準山貓 (滑移裝載機)';
+
+  @override
+  String get supplyItem_TOOL_HEAVY_CRANE => '吊車/起重機';
+
+  @override
+  String get supplyItem_TOOL_HEAVY_LOADER => '鏟土機/推土機';
+
+  @override
+  String get supplyItem_TOOL_DEMO_JACKHAMMER => '電動/氣動打石機';
+
+  @override
+  String get supplyItem_TOOL_DEMO_CONCRETE_SAW => '混凝土切割機/引擎砂輪機';
+
+  @override
+  String get supplyItem_TOOL_DEMO_HYDRAULIC => '液壓破壞剪/撐開器 (重型救援)';
+
+  @override
+  String get supplyItem_TOOL_DEMO_CHAINSAW => '動力鏈鋸 (伐木/路樹清理)';
+
+  @override
+  String get supplyItem_TOOL_CLEANING_WASHER => '高壓清洗機';
+
+  @override
+  String get supplyItem_TOOL_CLEANING_PUMP_CLEAN => '引擎抽水馬達 (清水泵)';
+
+  @override
+  String get supplyItem_TOOL_CLEANING_PUMP_SLUDGE => '污泥泵 (廢水/污泥專用)';
+
+  @override
+  String get supplyItem_TOOL_CLEANING_BLOWER => '工業排風機 (地下室排煙/換氣)';
+
+  @override
+  String get supplyItem_TOOL_SIGNAL_FLARE => '信號彈';
+
+  @override
+  String get supplyItem_TOOL_SIGNAL_MIRROR => '信號鏡 (反光求救)';
+
+  @override
+  String get supplyItem_TOOL_SIGNAL_FLAG => '求救旗幟/布條';
+
+  @override
+  String get supplyItem_TOOL_SIGNAL_STROBE => '閃光求救燈';
 }

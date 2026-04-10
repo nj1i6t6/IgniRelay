@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../l10n/generated/app_localizations.dart';
 import 'mesh_constants.dart';
 
 /// 電量感知 Tier 管理器
@@ -58,15 +59,12 @@ class TierManager {
     }
   }
 
-  String getTierLabel() {
-    if (_forceFullSpeed) return '全速模式 (Tier 1)';
+  String getTierLabel(S l) {
+    if (_forceFullSpeed) return l.tierLabel1Force;
     switch (_currentTier) {
-      case 3:
-        return '極省電模式 (Tier 3)';
-      case 2:
-        return '省電中繼模式 (Tier 2)';
-      default:
-        return '標準模式 (Tier 1)';
+      case 3: return l.tierLabel3UltraEco;
+      case 2: return l.tierLabel2EcoRelay;
+      default: return l.tierLabel1Standard;
     }
   }
 }

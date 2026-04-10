@@ -10,6 +10,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:ignirelay_app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/db/database_helper.dart';
 import 'package:ignirelay_app/mesh/event_manager.dart';
+import 'package:ignirelay_app/mesh/event_types.dart';
 import 'package:ignirelay_app/proto/mesh_protocol.pb.dart' as pb;
 
 String _uid(String prefix) =>

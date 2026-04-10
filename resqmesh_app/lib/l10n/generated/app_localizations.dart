@@ -4954,13 +4954,13 @@ abstract class S {
   /// No description provided for @supplyItem_TOOL_POWER_GENERATOR.
   ///
   /// In zh, this message translates to:
-  /// **'發電機 (小型汽油/瓦斯)'**
+  /// **'發電機'**
   String get supplyItem_TOOL_POWER_GENERATOR;
 
   /// No description provided for @supplyItem_TOOL_POWER_SOLAR.
   ///
   /// In zh, this message translates to:
-  /// **'太陽能板 (可折疊 50W+)'**
+  /// **'太陽能充電板'**
   String get supplyItem_TOOL_POWER_SOLAR;
 
   /// No description provided for @supplyItem_TOOL_POWER_INVERTER.
@@ -5280,6 +5280,1146 @@ abstract class S {
   /// In zh, this message translates to:
   /// **'份'**
   String get commonQtyUnit;
+
+  /// No description provided for @tierLabel1Standard.
+  ///
+  /// In zh, this message translates to:
+  /// **'標準模式 (Tier 1)'**
+  String get tierLabel1Standard;
+
+  /// No description provided for @tierLabel1Force.
+  ///
+  /// In zh, this message translates to:
+  /// **'全速模式 (Tier 1)'**
+  String get tierLabel1Force;
+
+  /// No description provided for @tierLabel2EcoRelay.
+  ///
+  /// In zh, this message translates to:
+  /// **'省電中繼模式 (Tier 2)'**
+  String get tierLabel2EcoRelay;
+
+  /// No description provided for @tierLabel3UltraEco.
+  ///
+  /// In zh, this message translates to:
+  /// **'極省電模式 (Tier 3)'**
+  String get tierLabel3UltraEco;
+
+  /// No description provided for @supplyCategory_MEDICINE.
+  ///
+  /// In zh, this message translates to:
+  /// **'藥品/急救'**
+  String get supplyCategory_MEDICINE;
+
+  /// No description provided for @supplyCategory_PPE.
+  ///
+  /// In zh, this message translates to:
+  /// **'防護裝備'**
+  String get supplyCategory_PPE;
+
+  /// No description provided for @supplySubCategory_WATER_TANK.
+  ///
+  /// In zh, this message translates to:
+  /// **'儲水設備'**
+  String get supplySubCategory_WATER_TANK;
+
+  /// No description provided for @supplySubCategory_FOOD_DRY.
+  ///
+  /// In zh, this message translates to:
+  /// **'乾糧'**
+  String get supplySubCategory_FOOD_DRY;
+
+  /// No description provided for @supplySubCategory_FOOD_SPECIAL.
+  ///
+  /// In zh, this message translates to:
+  /// **'特殊飲食'**
+  String get supplySubCategory_FOOD_SPECIAL;
+
+  /// No description provided for @supplySubCategory_FOOD_DRINK.
+  ///
+  /// In zh, this message translates to:
+  /// **'飲品/電解質'**
+  String get supplySubCategory_FOOD_DRINK;
+
+  /// No description provided for @supplySubCategory_MED_ANTIBIOTIC.
+  ///
+  /// In zh, this message translates to:
+  /// **'抗生素/抗感染'**
+  String get supplySubCategory_MED_ANTIBIOTIC;
+
+  /// No description provided for @supplySubCategory_MED_KIT.
+  ///
+  /// In zh, this message translates to:
+  /// **'急救包/器材'**
+  String get supplySubCategory_MED_KIT;
+
+  /// No description provided for @supplySubCategory_MED_OTHER.
+  ///
+  /// In zh, this message translates to:
+  /// **'其他藥品'**
+  String get supplySubCategory_MED_OTHER;
+
+  /// No description provided for @supplySubCategory_HYG_DIAPER.
+  ///
+  /// In zh, this message translates to:
+  /// **'尿布/排泄處理'**
+  String get supplySubCategory_HYG_DIAPER;
+
+  /// No description provided for @supplySubCategory_HYG_CLEAN.
+  ///
+  /// In zh, this message translates to:
+  /// **'清潔衛生'**
+  String get supplySubCategory_HYG_CLEAN;
+
+  /// No description provided for @supplySubCategory_HYG_PEST.
+  ///
+  /// In zh, this message translates to:
+  /// **'防蚊防蟲'**
+  String get supplySubCategory_HYG_PEST;
+
+  /// No description provided for @supplySubCategory_HYG_DISINFECT.
+  ///
+  /// In zh, this message translates to:
+  /// **'環境消毒'**
+  String get supplySubCategory_HYG_DISINFECT;
+
+  /// No description provided for @supplySubCategory_PPE_HEAD.
+  ///
+  /// In zh, this message translates to:
+  /// **'頭部防護'**
+  String get supplySubCategory_PPE_HEAD;
+
+  /// No description provided for @supplySubCategory_PPE_RESP.
+  ///
+  /// In zh, this message translates to:
+  /// **'呼吸防護'**
+  String get supplySubCategory_PPE_RESP;
+
+  /// No description provided for @supplySubCategory_PPE_HAND.
+  ///
+  /// In zh, this message translates to:
+  /// **'手部防護'**
+  String get supplySubCategory_PPE_HAND;
+
+  /// No description provided for @supplySubCategory_PPE_BODY.
+  ///
+  /// In zh, this message translates to:
+  /// **'身體防護'**
+  String get supplySubCategory_PPE_BODY;
+
+  /// No description provided for @supplySubCategory_PPE_WEATHER.
+  ///
+  /// In zh, this message translates to:
+  /// **'氣候防護/衣物'**
+  String get supplySubCategory_PPE_WEATHER;
+
+  /// No description provided for @supplySubCategory_SHELTER_TENT.
+  ///
+  /// In zh, this message translates to:
+  /// **'帳篷/遮蔽'**
+  String get supplySubCategory_SHELTER_TENT;
+
+  /// No description provided for @supplySubCategory_SHELTER_SLEEP.
+  ///
+  /// In zh, this message translates to:
+  /// **'保暖寢具'**
+  String get supplySubCategory_SHELTER_SLEEP;
+
+  /// No description provided for @supplySubCategory_SHELTER_THERMAL.
+  ///
+  /// In zh, this message translates to:
+  /// **'緊急禦寒'**
+  String get supplySubCategory_SHELTER_THERMAL;
+
+  /// No description provided for @supplySubCategory_SHELTER_SPACE.
+  ///
+  /// In zh, this message translates to:
+  /// **'空間提供'**
+  String get supplySubCategory_SHELTER_SPACE;
+
+  /// No description provided for @supplySubCategory_SHELTER_SUPPLY.
+  ///
+  /// In zh, this message translates to:
+  /// **'收容所耗材'**
+  String get supplySubCategory_SHELTER_SUPPLY;
+
+  /// No description provided for @supplySubCategory_TOOL_LIGHT.
+  ///
+  /// In zh, this message translates to:
+  /// **'照明'**
+  String get supplySubCategory_TOOL_LIGHT;
+
+  /// No description provided for @supplySubCategory_TOOL_BATTERY.
+  ///
+  /// In zh, this message translates to:
+  /// **'乾電池 (圓筒型)'**
+  String get supplySubCategory_TOOL_BATTERY;
+
+  /// No description provided for @supplySubCategory_TOOL_BATTERY_COIN.
+  ///
+  /// In zh, this message translates to:
+  /// **'鈕扣電池'**
+  String get supplySubCategory_TOOL_BATTERY_COIN;
+
+  /// No description provided for @supplySubCategory_TOOL_HAND.
+  ///
+  /// In zh, this message translates to:
+  /// **'手工具'**
+  String get supplySubCategory_TOOL_HAND;
+
+  /// No description provided for @supplySubCategory_TOOL_REPAIR.
+  ///
+  /// In zh, this message translates to:
+  /// **'修繕耗材'**
+  String get supplySubCategory_TOOL_REPAIR;
+
+  /// No description provided for @supplySubCategory_TOOL_HEAVY.
+  ///
+  /// In zh, this message translates to:
+  /// **'重型機具'**
+  String get supplySubCategory_TOOL_HEAVY;
+
+  /// No description provided for @supplySubCategory_TOOL_DEMOLITION.
+  ///
+  /// In zh, this message translates to:
+  /// **'破拆工具'**
+  String get supplySubCategory_TOOL_DEMOLITION;
+
+  /// No description provided for @supplySubCategory_TOOL_CLEANING.
+  ///
+  /// In zh, this message translates to:
+  /// **'清理設備'**
+  String get supplySubCategory_TOOL_CLEANING;
+
+  /// No description provided for @supplySubCategory_TOOL_SIGNAL.
+  ///
+  /// In zh, this message translates to:
+  /// **'求救信號'**
+  String get supplySubCategory_TOOL_SIGNAL;
+
+  /// No description provided for @supplyItem_WATER_BOTTLE_20L.
+  ///
+  /// In zh, this message translates to:
+  /// **'20L 大桶 (家庭/收容所)'**
+  String get supplyItem_WATER_BOTTLE_20L;
+
+  /// No description provided for @supplyItem_WATER_PURIFY_FILTER.
+  ///
+  /// In zh, this message translates to:
+  /// **'攜帶型濾水器'**
+  String get supplyItem_WATER_PURIFY_FILTER;
+
+  /// No description provided for @supplyItem_WATER_TANK_BARREL.
+  ///
+  /// In zh, this message translates to:
+  /// **'儲水桶'**
+  String get supplyItem_WATER_TANK_BARREL;
+
+  /// No description provided for @supplyItem_WATER_TANK_BAG.
+  ///
+  /// In zh, this message translates to:
+  /// **'可折疊水袋'**
+  String get supplyItem_WATER_TANK_BAG;
+
+  /// No description provided for @supplyItem_FOOD_READY_NOODLE.
+  ///
+  /// In zh, this message translates to:
+  /// **'即食麵/泡麵'**
+  String get supplyItem_FOOD_READY_NOODLE;
+
+  /// No description provided for @supplyItem_FOOD_READY_BAR.
+  ///
+  /// In zh, this message translates to:
+  /// **'能量棒/餅乾'**
+  String get supplyItem_FOOD_READY_BAR;
+
+  /// No description provided for @supplyItem_FOOD_DRY_RICE.
+  ///
+  /// In zh, this message translates to:
+  /// **'乾飯/米'**
+  String get supplyItem_FOOD_DRY_RICE;
+
+  /// No description provided for @supplyItem_FOOD_DRY_BREAD.
+  ///
+  /// In zh, this message translates to:
+  /// **'麵包/吐司'**
+  String get supplyItem_FOOD_DRY_BREAD;
+
+  /// No description provided for @supplyItem_FOOD_DRY_NUTS.
+  ///
+  /// In zh, this message translates to:
+  /// **'堅果/果乾'**
+  String get supplyItem_FOOD_DRY_NUTS;
+
+  /// No description provided for @supplyItem_FOOD_SPECIAL_HALAL.
+  ///
+  /// In zh, this message translates to:
+  /// **'清真食品'**
+  String get supplyItem_FOOD_SPECIAL_HALAL;
+
+  /// No description provided for @supplyItem_FOOD_SPECIAL_VEGAN.
+  ///
+  /// In zh, this message translates to:
+  /// **'素食'**
+  String get supplyItem_FOOD_SPECIAL_VEGAN;
+
+  /// No description provided for @supplyItem_FOOD_SPECIAL_GLUTEN.
+  ///
+  /// In zh, this message translates to:
+  /// **'無麩質食品'**
+  String get supplyItem_FOOD_SPECIAL_GLUTEN;
+
+  /// No description provided for @supplyItem_FOOD_SPECIAL_DIABETIC.
+  ///
+  /// In zh, this message translates to:
+  /// **'低糖/糖尿病適用'**
+  String get supplyItem_FOOD_SPECIAL_DIABETIC;
+
+  /// No description provided for @supplyItem_FOOD_COOK_GAS.
+  ///
+  /// In zh, this message translates to:
+  /// **'卡式瓦斯罐'**
+  String get supplyItem_FOOD_COOK_GAS;
+
+  /// No description provided for @supplyItem_FOOD_COOK_SOLID.
+  ///
+  /// In zh, this message translates to:
+  /// **'固體酒精/酒精膏'**
+  String get supplyItem_FOOD_COOK_SOLID;
+
+  /// No description provided for @supplyItem_FOOD_COOK_LIGHTER.
+  ///
+  /// In zh, this message translates to:
+  /// **'防風打火機/防水火柴'**
+  String get supplyItem_FOOD_COOK_LIGHTER;
+
+  /// No description provided for @supplyItem_FOOD_COOK_POT.
+  ///
+  /// In zh, this message translates to:
+  /// **'野炊鍋組/鋼杯'**
+  String get supplyItem_FOOD_COOK_POT;
+
+  /// No description provided for @supplyItem_FOOD_DRINK_ELECTRO.
+  ///
+  /// In zh, this message translates to:
+  /// **'運動飲料/電解質粉'**
+  String get supplyItem_FOOD_DRINK_ELECTRO;
+
+  /// No description provided for @supplyItem_FOOD_DRINK_COFFEE.
+  ///
+  /// In zh, this message translates to:
+  /// **'即溶咖啡/茶包'**
+  String get supplyItem_FOOD_DRINK_COFFEE;
+
+  /// No description provided for @supplyItem_FOOD_DRINK_JUICE.
+  ///
+  /// In zh, this message translates to:
+  /// **'保久乳/果汁'**
+  String get supplyItem_FOOD_DRINK_JUICE;
+
+  /// No description provided for @supplyItem_MED_PAIN_ASPIRIN.
+  ///
+  /// In zh, this message translates to:
+  /// **'阿斯匹靈'**
+  String get supplyItem_MED_PAIN_ASPIRIN;
+
+  /// No description provided for @supplyItem_MED_ANTIBIOTIC_AMOX.
+  ///
+  /// In zh, this message translates to:
+  /// **'阿莫西林'**
+  String get supplyItem_MED_ANTIBIOTIC_AMOX;
+
+  /// No description provided for @supplyItem_MED_ANTIBIOTIC_AZITHRO.
+  ///
+  /// In zh, this message translates to:
+  /// **'日舒 (阿奇黴素)'**
+  String get supplyItem_MED_ANTIBIOTIC_AZITHRO;
+
+  /// No description provided for @supplyItem_MED_ANTIBIOTIC_OINTMENT.
+  ///
+  /// In zh, this message translates to:
+  /// **'抗生素藥膏'**
+  String get supplyItem_MED_ANTIBIOTIC_OINTMENT;
+
+  /// No description provided for @supplyItem_MED_CHRONIC_INSULIN.
+  ///
+  /// In zh, this message translates to:
+  /// **'胰島素'**
+  String get supplyItem_MED_CHRONIC_INSULIN;
+
+  /// No description provided for @supplyItem_MED_CHRONIC_ASTHMA.
+  ///
+  /// In zh, this message translates to:
+  /// **'氣喘吸入劑'**
+  String get supplyItem_MED_CHRONIC_ASTHMA;
+
+  /// No description provided for @supplyItem_MED_CHRONIC_THYROID.
+  ///
+  /// In zh, this message translates to:
+  /// **'甲狀腺藥物'**
+  String get supplyItem_MED_CHRONIC_THYROID;
+
+  /// No description provided for @supplyItem_MED_WOUND_DISINFECT.
+  ///
+  /// In zh, this message translates to:
+  /// **'消毒液/碘酒'**
+  String get supplyItem_MED_WOUND_DISINFECT;
+
+  /// No description provided for @supplyItem_MED_WOUND_SUTURE.
+  ///
+  /// In zh, this message translates to:
+  /// **'縫合膠帶'**
+  String get supplyItem_MED_WOUND_SUTURE;
+
+  /// No description provided for @supplyItem_MED_WOUND_SALINE.
+  ///
+  /// In zh, this message translates to:
+  /// **'生理食鹽水 (沖洗傷口)'**
+  String get supplyItem_MED_WOUND_SALINE;
+
+  /// No description provided for @supplyItem_MED_WOUND_BURN.
+  ///
+  /// In zh, this message translates to:
+  /// **'燒燙傷藥膏/敷料'**
+  String get supplyItem_MED_WOUND_BURN;
+
+  /// No description provided for @supplyItem_MED_WOUND_SPLINT.
+  ///
+  /// In zh, this message translates to:
+  /// **'固定夾板 (骨折臨時固定)'**
+  String get supplyItem_MED_WOUND_SPLINT;
+
+  /// No description provided for @supplyItem_MED_KIT_TRAUMA.
+  ///
+  /// In zh, this message translates to:
+  /// **'外傷急救包'**
+  String get supplyItem_MED_KIT_TRAUMA;
+
+  /// No description provided for @supplyItem_MED_KIT_STRETCHER.
+  ///
+  /// In zh, this message translates to:
+  /// **'摺疊擔架/軟式擔架'**
+  String get supplyItem_MED_KIT_STRETCHER;
+
+  /// No description provided for @supplyItem_MED_OTHER_ANTIDIARRHEAL.
+  ///
+  /// In zh, this message translates to:
+  /// **'止瀉藥'**
+  String get supplyItem_MED_OTHER_ANTIDIARRHEAL;
+
+  /// No description provided for @supplyItem_MED_OTHER_ANTIHISTAMINE.
+  ///
+  /// In zh, this message translates to:
+  /// **'抗組織胺 (過敏)'**
+  String get supplyItem_MED_OTHER_ANTIHISTAMINE;
+
+  /// No description provided for @supplyItem_MED_OTHER_REHYDRATION.
+  ///
+  /// In zh, this message translates to:
+  /// **'口服補液鹽'**
+  String get supplyItem_MED_OTHER_REHYDRATION;
+
+  /// No description provided for @supplyItem_MED_OTHER_EYEDROP.
+  ///
+  /// In zh, this message translates to:
+  /// **'眼藥水/人工淚液'**
+  String get supplyItem_MED_OTHER_EYEDROP;
+
+  /// No description provided for @supplyItem_MED_OTHER_INSECT_BITE.
+  ///
+  /// In zh, this message translates to:
+  /// **'蚊蟲叮咬藥膏'**
+  String get supplyItem_MED_OTHER_INSECT_BITE;
+
+  /// No description provided for @supplyItem_HYG_FEM_PAD_DAY.
+  ///
+  /// In zh, this message translates to:
+  /// **'日用衛生棉'**
+  String get supplyItem_HYG_FEM_PAD_DAY;
+
+  /// No description provided for @supplyItem_HYG_FEM_PAD_NIGHT.
+  ///
+  /// In zh, this message translates to:
+  /// **'夜用衛生棉'**
+  String get supplyItem_HYG_FEM_PAD_NIGHT;
+
+  /// No description provided for @supplyItem_HYG_FEM_LINER.
+  ///
+  /// In zh, this message translates to:
+  /// **'護墊'**
+  String get supplyItem_HYG_FEM_LINER;
+
+  /// No description provided for @supplyItem_HYG_DIAPER_BABY_S.
+  ///
+  /// In zh, this message translates to:
+  /// **'嬰兒尿布 S (3-6kg)'**
+  String get supplyItem_HYG_DIAPER_BABY_S;
+
+  /// No description provided for @supplyItem_HYG_DIAPER_BABY_M.
+  ///
+  /// In zh, this message translates to:
+  /// **'嬰兒尿布 M (6-11kg)'**
+  String get supplyItem_HYG_DIAPER_BABY_M;
+
+  /// No description provided for @supplyItem_HYG_DIAPER_BABY_L.
+  ///
+  /// In zh, this message translates to:
+  /// **'嬰兒尿布 L (9-14kg)'**
+  String get supplyItem_HYG_DIAPER_BABY_L;
+
+  /// No description provided for @supplyItem_HYG_DIAPER_BABY_XL.
+  ///
+  /// In zh, this message translates to:
+  /// **'嬰兒尿布 XL (12-17kg)'**
+  String get supplyItem_HYG_DIAPER_BABY_XL;
+
+  /// No description provided for @supplyItem_HYG_DIAPER_ADULT.
+  ///
+  /// In zh, this message translates to:
+  /// **'成人紙尿褲'**
+  String get supplyItem_HYG_DIAPER_ADULT;
+
+  /// No description provided for @supplyItem_HYG_DIAPER_PORTABLE_TOILET.
+  ///
+  /// In zh, this message translates to:
+  /// **'攜帶式馬桶/行動廁所'**
+  String get supplyItem_HYG_DIAPER_PORTABLE_TOILET;
+
+  /// No description provided for @supplyItem_HYG_DIAPER_SOLIDIFIER.
+  ///
+  /// In zh, this message translates to:
+  /// **'排泄物凝固劑'**
+  String get supplyItem_HYG_DIAPER_SOLIDIFIER;
+
+  /// No description provided for @supplyItem_HYG_DIAPER_TRASH_BAG.
+  ///
+  /// In zh, this message translates to:
+  /// **'黑色大垃圾袋'**
+  String get supplyItem_HYG_DIAPER_TRASH_BAG;
+
+  /// No description provided for @supplyItem_HYG_CLEAN_WET_WIPE.
+  ///
+  /// In zh, this message translates to:
+  /// **'抗菌濕紙巾'**
+  String get supplyItem_HYG_CLEAN_WET_WIPE;
+
+  /// No description provided for @supplyItem_HYG_CLEAN_HAND_GEL.
+  ///
+  /// In zh, this message translates to:
+  /// **'乾洗手液'**
+  String get supplyItem_HYG_CLEAN_HAND_GEL;
+
+  /// No description provided for @supplyItem_HYG_CLEAN_SOAP.
+  ///
+  /// In zh, this message translates to:
+  /// **'肥皂'**
+  String get supplyItem_HYG_CLEAN_SOAP;
+
+  /// No description provided for @supplyItem_HYG_CLEAN_TOOTH.
+  ///
+  /// In zh, this message translates to:
+  /// **'牙刷牙膏組'**
+  String get supplyItem_HYG_CLEAN_TOOTH;
+
+  /// No description provided for @supplyItem_HYG_CLEAN_SHAMPOO.
+  ///
+  /// In zh, this message translates to:
+  /// **'乾洗髮/洗髮乳'**
+  String get supplyItem_HYG_CLEAN_SHAMPOO;
+
+  /// No description provided for @supplyItem_HYG_CLEAN_TOWEL.
+  ///
+  /// In zh, this message translates to:
+  /// **'速乾毛巾'**
+  String get supplyItem_HYG_CLEAN_TOWEL;
+
+  /// No description provided for @supplyItem_HYG_PEST_REPELLENT.
+  ///
+  /// In zh, this message translates to:
+  /// **'防蚊液 (DEET/派卡瑞丁)'**
+  String get supplyItem_HYG_PEST_REPELLENT;
+
+  /// No description provided for @supplyItem_HYG_PEST_COIL.
+  ///
+  /// In zh, this message translates to:
+  /// **'蚊香/電蚊香'**
+  String get supplyItem_HYG_PEST_COIL;
+
+  /// No description provided for @supplyItem_HYG_PEST_NET.
+  ///
+  /// In zh, this message translates to:
+  /// **'蚊帳'**
+  String get supplyItem_HYG_PEST_NET;
+
+  /// No description provided for @supplyItem_HYG_PEST_ROACH.
+  ///
+  /// In zh, this message translates to:
+  /// **'殺蟲劑 (蟑螂/蒼蠅)'**
+  String get supplyItem_HYG_PEST_ROACH;
+
+  /// No description provided for @supplyItem_HYG_DISINFECT_BLEACH.
+  ///
+  /// In zh, this message translates to:
+  /// **'漂白水/次氯酸鈉'**
+  String get supplyItem_HYG_DISINFECT_BLEACH;
+
+  /// No description provided for @supplyItem_HYG_DISINFECT_ALCOHOL.
+  ///
+  /// In zh, this message translates to:
+  /// **'75%酒精 (消毒用)'**
+  String get supplyItem_HYG_DISINFECT_ALCOHOL;
+
+  /// No description provided for @supplyItem_HYG_DISINFECT_SPRAY.
+  ///
+  /// In zh, this message translates to:
+  /// **'環境消毒噴劑'**
+  String get supplyItem_HYG_DISINFECT_SPRAY;
+
+  /// No description provided for @supplyItem_PPE_HEAD_HELMET.
+  ///
+  /// In zh, this message translates to:
+  /// **'工程安全帽'**
+  String get supplyItem_PPE_HEAD_HELMET;
+
+  /// No description provided for @supplyItem_PPE_HEAD_GOGGLES.
+  ///
+  /// In zh, this message translates to:
+  /// **'護目鏡/防塵眼鏡'**
+  String get supplyItem_PPE_HEAD_GOGGLES;
+
+  /// No description provided for @supplyItem_PPE_RESP_N95.
+  ///
+  /// In zh, this message translates to:
+  /// **'N95 口罩'**
+  String get supplyItem_PPE_RESP_N95;
+
+  /// No description provided for @supplyItem_PPE_RESP_DUST.
+  ///
+  /// In zh, this message translates to:
+  /// **'一般防塵口罩'**
+  String get supplyItem_PPE_RESP_DUST;
+
+  /// No description provided for @supplyItem_PPE_RESP_GAS.
+  ///
+  /// In zh, this message translates to:
+  /// **'防毒面罩 (化學/火災)'**
+  String get supplyItem_PPE_RESP_GAS;
+
+  /// No description provided for @supplyItem_PPE_HAND_CUT.
+  ///
+  /// In zh, this message translates to:
+  /// **'防割工作手套'**
+  String get supplyItem_PPE_HAND_CUT;
+
+  /// No description provided for @supplyItem_PPE_HAND_RUBBER.
+  ///
+  /// In zh, this message translates to:
+  /// **'橡膠手套 (清淤/消毒)'**
+  String get supplyItem_PPE_HAND_RUBBER;
+
+  /// No description provided for @supplyItem_PPE_HAND_LATEX.
+  ///
+  /// In zh, this message translates to:
+  /// **'醫療乳膠手套'**
+  String get supplyItem_PPE_HAND_LATEX;
+
+  /// No description provided for @supplyItem_PPE_BODY_VEST.
+  ///
+  /// In zh, this message translates to:
+  /// **'反光背心'**
+  String get supplyItem_PPE_BODY_VEST;
+
+  /// No description provided for @supplyItem_PPE_BODY_COVERALL.
+  ///
+  /// In zh, this message translates to:
+  /// **'連身防護衣'**
+  String get supplyItem_PPE_BODY_COVERALL;
+
+  /// No description provided for @supplyItem_PPE_BODY_BOOTS.
+  ///
+  /// In zh, this message translates to:
+  /// **'安全鞋/鋼頭雨靴'**
+  String get supplyItem_PPE_BODY_BOOTS;
+
+  /// No description provided for @supplyItem_PPE_WEATHER_PONCHO.
+  ///
+  /// In zh, this message translates to:
+  /// **'輕便雨衣 (拋棄式)'**
+  String get supplyItem_PPE_WEATHER_PONCHO;
+
+  /// No description provided for @supplyItem_PPE_WEATHER_RAINSUIT.
+  ///
+  /// In zh, this message translates to:
+  /// **'兩截式雨衣'**
+  String get supplyItem_PPE_WEATHER_RAINSUIT;
+
+  /// No description provided for @supplyItem_PPE_WEATHER_RAINBOOT.
+  ///
+  /// In zh, this message translates to:
+  /// **'雨鞋/防水靴'**
+  String get supplyItem_PPE_WEATHER_RAINBOOT;
+
+  /// No description provided for @supplyItem_PPE_WEATHER_WARM.
+  ///
+  /// In zh, this message translates to:
+  /// **'保暖衣物/發熱衣'**
+  String get supplyItem_PPE_WEATHER_WARM;
+
+  /// No description provided for @supplyItem_PPE_WEATHER_JACKET.
+  ///
+  /// In zh, this message translates to:
+  /// **'防水外套/風衣'**
+  String get supplyItem_PPE_WEATHER_JACKET;
+
+  /// No description provided for @supplyItem_PPE_WEATHER_HAT.
+  ///
+  /// In zh, this message translates to:
+  /// **'保暖帽/遮陽帽'**
+  String get supplyItem_PPE_WEATHER_HAT;
+
+  /// No description provided for @supplyItem_SHELTER_TENT_2P.
+  ///
+  /// In zh, this message translates to:
+  /// **'2人帳篷'**
+  String get supplyItem_SHELTER_TENT_2P;
+
+  /// No description provided for @supplyItem_SHELTER_TENT_4P.
+  ///
+  /// In zh, this message translates to:
+  /// **'4人帳篷'**
+  String get supplyItem_SHELTER_TENT_4P;
+
+  /// No description provided for @supplyItem_SHELTER_TENT_TARP.
+  ///
+  /// In zh, this message translates to:
+  /// **'防水天幕'**
+  String get supplyItem_SHELTER_TENT_TARP;
+
+  /// No description provided for @supplyItem_SHELTER_TENT_PLASTIC.
+  ///
+  /// In zh, this message translates to:
+  /// **'防水帆布/塑膠布'**
+  String get supplyItem_SHELTER_TENT_PLASTIC;
+
+  /// No description provided for @supplyItem_SHELTER_SLEEP_BAG.
+  ///
+  /// In zh, this message translates to:
+  /// **'睡袋'**
+  String get supplyItem_SHELTER_SLEEP_BAG;
+
+  /// No description provided for @supplyItem_SHELTER_SLEEP_BLANKET.
+  ///
+  /// In zh, this message translates to:
+  /// **'保暖毯'**
+  String get supplyItem_SHELTER_SLEEP_BLANKET;
+
+  /// No description provided for @supplyItem_SHELTER_SLEEP_MAT.
+  ///
+  /// In zh, this message translates to:
+  /// **'睡墊'**
+  String get supplyItem_SHELTER_SLEEP_MAT;
+
+  /// No description provided for @supplyItem_SHELTER_SLEEP_AIR.
+  ///
+  /// In zh, this message translates to:
+  /// **'充氣床墊'**
+  String get supplyItem_SHELTER_SLEEP_AIR;
+
+  /// No description provided for @supplyItem_SHELTER_THERM_SPACE.
+  ///
+  /// In zh, this message translates to:
+  /// **'急救保溫毯 (Space Blanket)'**
+  String get supplyItem_SHELTER_THERM_SPACE;
+
+  /// No description provided for @supplyItem_SHELTER_THERM_HANDWARMER.
+  ///
+  /// In zh, this message translates to:
+  /// **'暖暖包'**
+  String get supplyItem_SHELTER_THERM_HANDWARMER;
+
+  /// No description provided for @supplyItem_SHELTER_THERM_COAT.
+  ///
+  /// In zh, this message translates to:
+  /// **'保暖外套/二手衣物'**
+  String get supplyItem_SHELTER_THERM_COAT;
+
+  /// No description provided for @supplyItem_SHELTER_SPACE_ROOM.
+  ///
+  /// In zh, this message translates to:
+  /// **'可提供房間'**
+  String get supplyItem_SHELTER_SPACE_ROOM;
+
+  /// No description provided for @supplyItem_SHELTER_SPACE_GARAGE.
+  ///
+  /// In zh, this message translates to:
+  /// **'可提供車庫/倉庫'**
+  String get supplyItem_SHELTER_SPACE_GARAGE;
+
+  /// No description provided for @supplyItem_SHELTER_SPACE_LAND.
+  ///
+  /// In zh, this message translates to:
+  /// **'可提供空地 (搭帳篷/停車)'**
+  String get supplyItem_SHELTER_SPACE_LAND;
+
+  /// No description provided for @supplyItem_SHELTER_SUPPLY_TABLE.
+  ///
+  /// In zh, this message translates to:
+  /// **'摺疊桌椅'**
+  String get supplyItem_SHELTER_SUPPLY_TABLE;
+
+  /// No description provided for @supplyItem_SHELTER_SUPPLY_PARTITION.
+  ///
+  /// In zh, this message translates to:
+  /// **'隔間屏風/隔簾'**
+  String get supplyItem_SHELTER_SUPPLY_PARTITION;
+
+  /// No description provided for @supplyItem_SHELTER_SUPPLY_FAN.
+  ///
+  /// In zh, this message translates to:
+  /// **'攜帶式風扇/USB風扇'**
+  String get supplyItem_SHELTER_SUPPLY_FAN;
+
+  /// No description provided for @supplyItem_TOOL_LIGHT_FLASH.
+  ///
+  /// In zh, this message translates to:
+  /// **'手電筒'**
+  String get supplyItem_TOOL_LIGHT_FLASH;
+
+  /// No description provided for @supplyItem_TOOL_LIGHT_LANTERN.
+  ///
+  /// In zh, this message translates to:
+  /// **'露營燈'**
+  String get supplyItem_TOOL_LIGHT_LANTERN;
+
+  /// No description provided for @supplyItem_TOOL_LIGHT_HEADLAMP.
+  ///
+  /// In zh, this message translates to:
+  /// **'頭燈'**
+  String get supplyItem_TOOL_LIGHT_HEADLAMP;
+
+  /// No description provided for @supplyItem_TOOL_LIGHT_GLOWSTICK.
+  ///
+  /// In zh, this message translates to:
+  /// **'螢光棒 (不需電力)'**
+  String get supplyItem_TOOL_LIGHT_GLOWSTICK;
+
+  /// No description provided for @supplyItem_TOOL_POWER_BANK.
+  ///
+  /// In zh, this message translates to:
+  /// **'行動電源'**
+  String get supplyItem_TOOL_POWER_BANK;
+
+  /// No description provided for @supplyItem_TOOL_POWER_EXTENSION.
+  ///
+  /// In zh, this message translates to:
+  /// **'延長線/排插'**
+  String get supplyItem_TOOL_POWER_EXTENSION;
+
+  /// No description provided for @supplyItem_TOOL_BAT_AA.
+  ///
+  /// In zh, this message translates to:
+  /// **'3號電池 (AA 1.5V)'**
+  String get supplyItem_TOOL_BAT_AA;
+
+  /// No description provided for @supplyItem_TOOL_BAT_AAA.
+  ///
+  /// In zh, this message translates to:
+  /// **'4號電池 (AAA 1.5V)'**
+  String get supplyItem_TOOL_BAT_AAA;
+
+  /// No description provided for @supplyItem_TOOL_BAT_C.
+  ///
+  /// In zh, this message translates to:
+  /// **'2號電池 (C 1.5V)'**
+  String get supplyItem_TOOL_BAT_C;
+
+  /// No description provided for @supplyItem_TOOL_BAT_D.
+  ///
+  /// In zh, this message translates to:
+  /// **'1號電池 (D 1.5V)'**
+  String get supplyItem_TOOL_BAT_D;
+
+  /// No description provided for @supplyItem_TOOL_BAT_9V.
+  ///
+  /// In zh, this message translates to:
+  /// **'9V 方型電池'**
+  String get supplyItem_TOOL_BAT_9V;
+
+  /// No description provided for @supplyItem_TOOL_BAT_18650.
+  ///
+  /// In zh, this message translates to:
+  /// **'18650 鋰電池 (3.7V)'**
+  String get supplyItem_TOOL_BAT_18650;
+
+  /// No description provided for @supplyItem_TOOL_COIN_CR2032.
+  ///
+  /// In zh, this message translates to:
+  /// **'CR2032 (3V 最常見)'**
+  String get supplyItem_TOOL_COIN_CR2032;
+
+  /// No description provided for @supplyItem_TOOL_COIN_CR2025.
+  ///
+  /// In zh, this message translates to:
+  /// **'CR2025 (3V)'**
+  String get supplyItem_TOOL_COIN_CR2025;
+
+  /// No description provided for @supplyItem_TOOL_COIN_CR2016.
+  ///
+  /// In zh, this message translates to:
+  /// **'CR2016 (3V)'**
+  String get supplyItem_TOOL_COIN_CR2016;
+
+  /// No description provided for @supplyItem_TOOL_COIN_LR44.
+  ///
+  /// In zh, this message translates to:
+  /// **'LR44 / AG13 (1.5V)'**
+  String get supplyItem_TOOL_COIN_LR44;
+
+  /// No description provided for @supplyItem_TOOL_COIN_SR626.
+  ///
+  /// In zh, this message translates to:
+  /// **'SR626SW (手錶電池 1.55V)'**
+  String get supplyItem_TOOL_COIN_SR626;
+
+  /// No description provided for @supplyItem_TOOL_COMM_WALKIE.
+  ///
+  /// In zh, this message translates to:
+  /// **'對講機'**
+  String get supplyItem_TOOL_COMM_WALKIE;
+
+  /// No description provided for @supplyItem_TOOL_COMM_SAT.
+  ///
+  /// In zh, this message translates to:
+  /// **'衛星通訊器'**
+  String get supplyItem_TOOL_COMM_SAT;
+
+  /// No description provided for @supplyItem_TOOL_RESCUE_ROPE.
+  ///
+  /// In zh, this message translates to:
+  /// **'繩索'**
+  String get supplyItem_TOOL_RESCUE_ROPE;
+
+  /// No description provided for @supplyItem_TOOL_RESCUE_AXE.
+  ///
+  /// In zh, this message translates to:
+  /// **'斧頭/撬棒'**
+  String get supplyItem_TOOL_RESCUE_AXE;
+
+  /// No description provided for @supplyItem_TOOL_RESCUE_PARACORD.
+  ///
+  /// In zh, this message translates to:
+  /// **'傘繩 (Paracord)'**
+  String get supplyItem_TOOL_RESCUE_PARACORD;
+
+  /// No description provided for @supplyItem_TOOL_RESCUE_SPRAYPAINT.
+  ///
+  /// In zh, this message translates to:
+  /// **'噴漆 (建物搜救標記)'**
+  String get supplyItem_TOOL_RESCUE_SPRAYPAINT;
+
+  /// No description provided for @supplyItem_TOOL_HAND_SCREWDRIVER_PH.
+  ///
+  /// In zh, this message translates to:
+  /// **'十字螺絲起子'**
+  String get supplyItem_TOOL_HAND_SCREWDRIVER_PH;
+
+  /// No description provided for @supplyItem_TOOL_HAND_SCREWDRIVER_FLAT.
+  ///
+  /// In zh, this message translates to:
+  /// **'一字螺絲起子'**
+  String get supplyItem_TOOL_HAND_SCREWDRIVER_FLAT;
+
+  /// No description provided for @supplyItem_TOOL_HAND_WRENCH.
+  ///
+  /// In zh, this message translates to:
+  /// **'活動扳手'**
+  String get supplyItem_TOOL_HAND_WRENCH;
+
+  /// No description provided for @supplyItem_TOOL_HAND_HAMMER.
+  ///
+  /// In zh, this message translates to:
+  /// **'鐵鎚'**
+  String get supplyItem_TOOL_HAND_HAMMER;
+
+  /// No description provided for @supplyItem_TOOL_HAND_SHOVEL.
+  ///
+  /// In zh, this message translates to:
+  /// **'鏟子/圓鍬'**
+  String get supplyItem_TOOL_HAND_SHOVEL;
+
+  /// No description provided for @supplyItem_TOOL_HAND_MULTITOOL.
+  ///
+  /// In zh, this message translates to:
+  /// **'多功能工具鉗/瑞士刀'**
+  String get supplyItem_TOOL_HAND_MULTITOOL;
+
+  /// No description provided for @supplyItem_TOOL_HAND_PLIER.
+  ///
+  /// In zh, this message translates to:
+  /// **'鉗子/老虎鉗'**
+  String get supplyItem_TOOL_HAND_PLIER;
+
+  /// No description provided for @supplyItem_TOOL_REPAIR_DUCT.
+  ///
+  /// In zh, this message translates to:
+  /// **'大力膠帶 (Duct Tape)'**
+  String get supplyItem_TOOL_REPAIR_DUCT;
+
+  /// No description provided for @supplyItem_TOOL_REPAIR_ZIPTIE.
+  ///
+  /// In zh, this message translates to:
+  /// **'束線帶/紮帶'**
+  String get supplyItem_TOOL_REPAIR_ZIPTIE;
+
+  /// No description provided for @supplyItem_TOOL_REPAIR_WIRE.
+  ///
+  /// In zh, this message translates to:
+  /// **'鐵絲/綁線'**
+  String get supplyItem_TOOL_REPAIR_WIRE;
+
+  /// No description provided for @supplyItem_TOOL_REPAIR_SEALANT.
+  ///
+  /// In zh, this message translates to:
+  /// **'防水膠/矽利康'**
+  String get supplyItem_TOOL_REPAIR_SEALANT;
+
+  /// No description provided for @supplyItem_TOOL_REPAIR_TARP_TAPE.
+  ///
+  /// In zh, this message translates to:
+  /// **'帆布修補膠帶'**
+  String get supplyItem_TOOL_REPAIR_TARP_TAPE;
+
+  /// No description provided for @supplyItem_TOOL_TRANSPORT_CAR.
+  ///
+  /// In zh, this message translates to:
+  /// **'車輛 (機動)'**
+  String get supplyItem_TOOL_TRANSPORT_CAR;
+
+  /// No description provided for @supplyItem_TOOL_TRANSPORT_BIKE.
+  ///
+  /// In zh, this message translates to:
+  /// **'腳踏車'**
+  String get supplyItem_TOOL_TRANSPORT_BIKE;
+
+  /// No description provided for @supplyItem_TOOL_TRANSPORT_CART.
+  ///
+  /// In zh, this message translates to:
+  /// **'推車'**
+  String get supplyItem_TOOL_TRANSPORT_CART;
+
+  /// No description provided for @supplyItem_TOOL_TRANSPORT_WHEELBARROW.
+  ///
+  /// In zh, this message translates to:
+  /// **'手推車/獨輪車 (搬運瓦礫)'**
+  String get supplyItem_TOOL_TRANSPORT_WHEELBARROW;
+
+  /// No description provided for @supplyItem_TOOL_HEAVY_EXCAVATOR_MINI.
+  ///
+  /// In zh, this message translates to:
+  /// **'微型怪手 (可入戶/狹窄巷弄)'**
+  String get supplyItem_TOOL_HEAVY_EXCAVATOR_MINI;
+
+  /// No description provided for @supplyItem_TOOL_HEAVY_EXCAVATOR_STD.
+  ///
+  /// In zh, this message translates to:
+  /// **'標準怪手 (大型挖掘)'**
+  String get supplyItem_TOOL_HEAVY_EXCAVATOR_STD;
+
+  /// No description provided for @supplyItem_TOOL_HEAVY_BOBCAT_MINI.
+  ///
+  /// In zh, this message translates to:
+  /// **'微型山貓 (可入戶/滑移裝載)'**
+  String get supplyItem_TOOL_HEAVY_BOBCAT_MINI;
+
+  /// No description provided for @supplyItem_TOOL_HEAVY_BOBCAT_STD.
+  ///
+  /// In zh, this message translates to:
+  /// **'標準山貓 (滑移裝載機)'**
+  String get supplyItem_TOOL_HEAVY_BOBCAT_STD;
+
+  /// No description provided for @supplyItem_TOOL_HEAVY_CRANE.
+  ///
+  /// In zh, this message translates to:
+  /// **'吊車/起重機'**
+  String get supplyItem_TOOL_HEAVY_CRANE;
+
+  /// No description provided for @supplyItem_TOOL_HEAVY_LOADER.
+  ///
+  /// In zh, this message translates to:
+  /// **'鏟土機/推土機'**
+  String get supplyItem_TOOL_HEAVY_LOADER;
+
+  /// No description provided for @supplyItem_TOOL_DEMO_JACKHAMMER.
+  ///
+  /// In zh, this message translates to:
+  /// **'電動/氣動打石機'**
+  String get supplyItem_TOOL_DEMO_JACKHAMMER;
+
+  /// No description provided for @supplyItem_TOOL_DEMO_CONCRETE_SAW.
+  ///
+  /// In zh, this message translates to:
+  /// **'混凝土切割機/引擎砂輪機'**
+  String get supplyItem_TOOL_DEMO_CONCRETE_SAW;
+
+  /// No description provided for @supplyItem_TOOL_DEMO_HYDRAULIC.
+  ///
+  /// In zh, this message translates to:
+  /// **'液壓破壞剪/撐開器 (重型救援)'**
+  String get supplyItem_TOOL_DEMO_HYDRAULIC;
+
+  /// No description provided for @supplyItem_TOOL_DEMO_CHAINSAW.
+  ///
+  /// In zh, this message translates to:
+  /// **'動力鏈鋸 (伐木/路樹清理)'**
+  String get supplyItem_TOOL_DEMO_CHAINSAW;
+
+  /// No description provided for @supplyItem_TOOL_CLEANING_WASHER.
+  ///
+  /// In zh, this message translates to:
+  /// **'高壓清洗機'**
+  String get supplyItem_TOOL_CLEANING_WASHER;
+
+  /// No description provided for @supplyItem_TOOL_CLEANING_PUMP_CLEAN.
+  ///
+  /// In zh, this message translates to:
+  /// **'引擎抽水馬達 (清水泵)'**
+  String get supplyItem_TOOL_CLEANING_PUMP_CLEAN;
+
+  /// No description provided for @supplyItem_TOOL_CLEANING_PUMP_SLUDGE.
+  ///
+  /// In zh, this message translates to:
+  /// **'污泥泵 (廢水/污泥專用)'**
+  String get supplyItem_TOOL_CLEANING_PUMP_SLUDGE;
+
+  /// No description provided for @supplyItem_TOOL_CLEANING_BLOWER.
+  ///
+  /// In zh, this message translates to:
+  /// **'工業排風機 (地下室排煙/換氣)'**
+  String get supplyItem_TOOL_CLEANING_BLOWER;
+
+  /// No description provided for @supplyItem_TOOL_SIGNAL_FLARE.
+  ///
+  /// In zh, this message translates to:
+  /// **'信號彈'**
+  String get supplyItem_TOOL_SIGNAL_FLARE;
+
+  /// No description provided for @supplyItem_TOOL_SIGNAL_MIRROR.
+  ///
+  /// In zh, this message translates to:
+  /// **'信號鏡 (反光求救)'**
+  String get supplyItem_TOOL_SIGNAL_MIRROR;
+
+  /// No description provided for @supplyItem_TOOL_SIGNAL_FLAG.
+  ///
+  /// In zh, this message translates to:
+  /// **'求救旗幟/布條'**
+  String get supplyItem_TOOL_SIGNAL_FLAG;
+
+  /// No description provided for @supplyItem_TOOL_SIGNAL_STROBE.
+  ///
+  /// In zh, this message translates to:
+  /// **'閃光求救燈'**
+  String get supplyItem_TOOL_SIGNAL_STROBE;
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

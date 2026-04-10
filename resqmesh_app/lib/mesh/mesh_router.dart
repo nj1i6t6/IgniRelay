@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import '../db/database_helper.dart';
 import '../geo/village_geofence.dart';
@@ -82,30 +83,42 @@ class MeshRouter {
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
+  /// hex string → Uint8List (pub_key 欄位是 BLOB)
+  static Uint8List _hexToBytes(String hex) {
+    final len = hex.length ~/ 2;
+    final result = Uint8List(len);
+    for (var i = 0; i < len; i++) {
+      result[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
+    }
+    return result;
+  }
+
   /// 處理 Quarantine Vote 檢舉投票累加
   static Future<void> processQuarantineVote(
       String targetPubKeyHex, double voteWeight) async {
     final db = await DatabaseHelper().database;
+    final pubKeyBlob = _hexToBytes(targetPubKeyHex);
     await db.execute('''
       UPDATE Local_Users
       SET quarantine_votes_weight = quarantine_votes_weight + ?
       WHERE pub_key = ?
-    ''', [voteWeight, targetPubKeyHex]);
+    ''', [voteWeight, pubKeyBlob]);
     await db.execute('''
       UPDATE Local_Users
       SET is_blacklisted = 1
       WHERE pub_key = ? AND quarantine_votes_weight > 3.0
-    ''', [targetPubKeyHex]);
+    ''', [pubKeyBlob]);
   }
 
   /// 檢查某公鑰是否已被黑名單
   static Future<bool> isBlacklisted(String pubKeyHex) async {
     final db = await DatabaseHelper().database;
+    final pubKeyBlob = _hexToBytes(pubKeyHex);
     final result = await db.query(
       'Local_Users',
       columns: ['is_blacklisted'],
       where: 'pub_key = ? AND is_blacklisted = 1',
-      whereArgs: [pubKeyHex],
+      whereArgs: [pubKeyBlob],
     );
     return result.isNotEmpty;
   }

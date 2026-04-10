@@ -373,7 +373,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
               ),
               const SizedBox(height: 12),
               Text(
-                TierManager().getTierLabel(),
+                TierManager().getTierLabel(S.of(context)!),
                 style: TextStyle(
                   color: muleColor,
                   fontSize: 20,

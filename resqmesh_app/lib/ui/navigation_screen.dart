@@ -14,7 +14,7 @@ import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 import '../mesh/mbtiles_loader.dart';
 import '../db/database_helper.dart';
 import '../mesh/event_manager.dart';
-import '../mesh/mesh_event_handler.dart' hide EventType;
+import '../mesh/mesh_event_handler.dart';
 import '../services/location_service.dart';
 import '../services/match_service.dart';
 import 'physical_handoff.dart';

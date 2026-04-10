@@ -1,20 +1,78 @@
 import 'package:cryptography/cryptography.dart';
 import 'dart:typed_data';
+import 'dart:convert';
 import 'identity_manager.dart';
 
 class Signer {
   static final algorithm = Ed25519();
 
+  /// 構建 canonical signing bytes = eventId(utf8) + eventType(4B LE) + ttl(4B LE) + payload
+  /// 把外層 metadata 納入簽章範圍，防止攔截者竄改 event_id / type / ttl 後重放
+  static Uint8List buildCanonicalBytes({
+    required String eventId,
+    required int eventType,
+    required int ttl,
+    required List<int> payload,
+  }) {
+    final idBytes = utf8.encode(eventId);
+    final buf = ByteData(8);
+    buf.setInt32(0, eventType, Endian.little);
+    buf.setInt32(4, ttl, Endian.little);
+    final result = Uint8List(idBytes.length + 8 + payload.length);
+    result.setRange(0, idBytes.length, idBytes);
+    result.setRange(idBytes.length, idBytes.length + 8, buf.buffer.asUint8List());
+    result.setRange(idBytes.length + 8, result.length, payload);
+    return result;
+  }
+
+  /// 簽署完整 canonical event（推薦使用）
+  static Future<Uint8List> signEvent({
+    required String eventId,
+    required int eventType,
+    required int ttl,
+    required List<int> payload,
+  }) async {
+    final canonical = buildCanonicalBytes(
+      eventId: eventId,
+      eventType: eventType,
+      ttl: ttl,
+      payload: payload,
+    );
+    return signPayload(canonical);
+  }
+
+  /// 驗證完整 canonical event 簽章
+  static Future<bool> verifyEvent({
+    required String eventId,
+    required int eventType,
+    required int ttl,
+    required List<int> payload,
+    required List<int> signatureBytes,
+    required List<int> publicKeyBytes,
+  }) async {
+    final canonical = buildCanonicalBytes(
+      eventId: eventId,
+      eventType: eventType,
+      ttl: ttl,
+      payload: payload,
+    );
+    return verifySignature(
+      payloadBytes: canonical,
+      signatureBytes: signatureBytes,
+      publicKeyBytes: publicKeyBytes,
+    );
+  }
+
   /// 簽署資料 (使用本機私鑰)
   /// 傳入原始 Payload bytes，回傳 64 bytes 的 Signature
   static Future<Uint8List> signPayload(List<int> payloadBytes) async {
     final keyPair = await IdentityManager().getOrCreateKeyPair();
-    
+
     final signature = await algorithm.sign(
       payloadBytes,
       keyPair: keyPair,
     );
-    
+
     return Uint8List.fromList(signature.bytes);
   }
 
@@ -30,7 +88,7 @@ class Signer {
         publicKeyBytes,
         type: KeyPairType.ed25519,
       );
-      
+
       final signature = Signature(
         signatureBytes,
         publicKey: publicKey,
@@ -40,7 +98,7 @@ class Signer {
         payloadBytes,
         signature: signature,
       );
-      
+
       return isVerified;
     } catch (e) {
       // 解析金鑰或簽章格式錯誤
