@@ -4,6 +4,7 @@
 //
 // 使用 sqflite_common_ffi (in-memory SQLite) + mocked SharedPreferences。
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -22,6 +23,7 @@ void main() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfiNoIsolate;
     SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
     await IdentityManager().initialize();
   });
 
@@ -248,6 +250,7 @@ void main() {
   });
 
   group('EventManager — publishHandshakeComplete / publishMatchCancel (交接狀態)', () {
+    setUp(() => em.resetRateLimit());
     test('publishHandshakeComplete completes negotiation', () async {
       final resourceId = await em.publishSupply(
         resourceType: 'TOOLS',
@@ -285,6 +288,7 @@ void main() {
   });
 
   group('EventManager — confirmHazard', () {
+    setUp(() => em.resetRateLimit());
     test('confirmHazard increments confirm_count', () async {
       final hazardId = await em.publishHazard(
         type: 'TSUNAMI',
@@ -312,6 +316,7 @@ void main() {
   });
 
   group('EventManager — getRecentEvents', () {
+    setUp(() => em.resetRateLimit());
     test('getRecentEvents returns list (may be empty or non-empty)', () async {
       final events = await em.getRecentEvents(limit: 5);
       expect(events, isA<List<Map<String, dynamic>>>());
@@ -328,6 +333,8 @@ void main() {
   // Rate limit test 放最後：前面的測試會消耗部分配額，
   // 這裡只驗證「在同一窗口內不超過 20 次」的不變式。
   group('EventManager — Rate Limit', () {
+    setUp(() => em.resetRateLimit());
+
     test('more than 20 publishEvent calls in same window throws RateLimitException', () async {
       int successCount = 0;
       bool hitLimit = false;

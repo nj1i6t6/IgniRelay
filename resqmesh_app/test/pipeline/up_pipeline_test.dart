@@ -8,6 +8,7 @@
 
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -37,7 +38,12 @@ Future<Uint8List> _makeSignedWire(
   int eventType = 0,
   int ttl = 10,
 }) async {
-  final signature = await Signer.signPayload(payload);
+  final signature = await Signer.signEvent(
+    eventId: id,
+    eventType: eventType,
+    ttl: ttl,
+    payload: payload,
+  );
   final pubKey = await _getLocalPubKey();
   return Uint8List.fromList(MeshEventHandler.encodeWirePayload(
     id,
@@ -57,6 +63,7 @@ void main() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfiNoIsolate;
     SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
     await IdentityManager().initialize();
   });
 
@@ -187,8 +194,13 @@ void main() {
         ..radiusMeters = 300.0;
 
       final payload = hazardProto.writeToBuffer();
-      final signature = await Signer.signPayload(payload);
       final pubKey = await _getLocalPubKey();
+      final signature = await Signer.signEvent(
+        eventId: eventId,
+        eventType: 4,
+        ttl: 10,
+        payload: payload,
+      );
 
       final wire = Uint8List.fromList(MeshEventHandler.encodeWirePayload(
         eventId,
@@ -228,7 +240,12 @@ void main() {
     test('tampered payload: rejected (sig-fail)', () async {
       final id = _uid('up-tamper');
       final originalPayload = [10, 20, 30];
-      final signature = await Signer.signPayload(originalPayload);
+      final signature = await Signer.signEvent(
+        eventId: id,
+        eventType: 0,
+        ttl: 10,
+        payload: originalPayload,
+      );
       final pubKey = await _getLocalPubKey();
 
       // 用不同的 payload 但原本的簽章 → 驗證應失敗

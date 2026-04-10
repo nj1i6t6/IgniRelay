@@ -52,6 +52,12 @@ class EventManager {
   int _rateWindowStartHlc = 0;
   int _rateCount = 0;
   static const int _maxPerHour = 20;
+
+  @visibleForTesting
+  void resetRateLimit() {
+    _rateWindowStartHlc = 0;
+    _rateCount = 0;
+  }
   static const int _oneHourMs = 3600000;
 
   Future<void> _checkRateLimit() async {
