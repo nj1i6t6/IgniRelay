@@ -302,7 +302,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   @override
   Widget build(BuildContext context) {
     final m = widget.match;
-    final readableName = getReadableName(m.resourceType);
+    final readableName = getLocalizedReadableName(m.resourceType, context);
     final myLoc = _myLocation;
     final target = _targetPos;
 

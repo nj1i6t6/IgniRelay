@@ -1408,10 +1408,10 @@ class _MapScreenState extends State<MapScreen>
       try {
         if (eventType == 0) {
           final rd = pb.ResourceData.fromBuffer(payload);
-          payloadDesc = lEvt.mapPayloadQtyUnit(getReadableName(rd.resourceType), rd.quantity.toInt(), rd.unit);
+          payloadDesc = lEvt.mapPayloadQtyUnit(getLocalizedReadableName(rd.resourceType, context), rd.quantity.toInt(), rd.unit);
         } else if (eventType == 1) {
           final rd = pb.RequestData.fromBuffer(payload);
-          payloadDesc = lEvt.mapPayloadQtyPcs(getReadableName(rd.resourceType), rd.quantityNeeded.toInt());
+          payloadDesc = lEvt.mapPayloadQtyPcs(getLocalizedReadableName(rd.resourceType, context), rd.quantityNeeded.toInt());
         } else {
           payloadDesc = String.fromCharCodes(payload);
           if (payloadDesc.length > 100) payloadDesc = '${payloadDesc.substring(0, 100)}...';

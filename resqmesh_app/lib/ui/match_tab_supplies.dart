@@ -38,7 +38,7 @@ class MatchTabSupplies extends StatelessWidget {
   }
 
   Widget _buildSupplyCard(BuildContext context, DecodedSupply supply) {
-    final readableName = getReadableName(supply.resourceType);
+    final readableName = getLocalizedReadableName(supply.resourceType, context);
     final totalQty = supply.quantity.toInt();
     final availQty = supply.availableQty.toInt();
     final committedQty = totalQty - availQty;
@@ -158,7 +158,7 @@ class MatchTabSupplies extends StatelessWidget {
   }
 
   Future<void> _cancelSupply(BuildContext context, DecodedSupply supply) async {
-    final readableName = getReadableName(supply.resourceType);
+    final readableName = getLocalizedReadableName(supply.resourceType, context);
 
     // Find the eventId from MyPublish data
     final pub = mySupplyPublishes.where((p) =>

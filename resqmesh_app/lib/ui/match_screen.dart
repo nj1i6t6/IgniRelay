@@ -441,7 +441,7 @@ class _MatchScreenState extends State<MatchScreen>
 
   Future<void> _handleCancelSupply(DecodedSupply supply, MyPublish? pub) async {
     if (pub == null || !mounted) return;
-    final readableName = getReadableName(supply.resourceType);
+    final readableName = getLocalizedReadableName(supply.resourceType, context);
     try {
       await _eventManager.cancelSupply(pub.eventId);
       _showSnack(S.of(context)!.matchCancelSupplySnack(readableName), Colors.grey[700]!);
@@ -491,7 +491,7 @@ class _MatchScreenState extends State<MatchScreen>
   }
 
   Future<void> _handleCancelRequest(DecodedRequest request) async {
-    final readableName = getReadableName(request.resourceType);
+    final readableName = getLocalizedReadableName(request.resourceType, context);
     try {
       await _eventManager.cancelRequest(request.eventId);
       _showSnack(S.of(context)!.matchCancelRequestSnack(readableName), Colors.grey[700]!);
@@ -564,7 +564,7 @@ class _MatchScreenState extends State<MatchScreen>
   }
 
   Future<void> _handleCommunityAction(CommunityItem item, int qty) async {
-    final readableName = getReadableName(item.resourceType);
+    final readableName = getLocalizedReadableName(item.resourceType, context);
     final isSupply = item.isSupply;
     final loc = _locationService.currentLocation;
 

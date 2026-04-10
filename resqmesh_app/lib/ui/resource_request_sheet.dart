@@ -243,7 +243,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      getReadableName(_fullResourceType),
+                      getLocalizedReadableName(_fullResourceType, context),
                       style: const TextStyle(color: Colors.white, fontSize: 13),
                     ),
                   ),

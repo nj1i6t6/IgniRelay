@@ -250,7 +250,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      getReadableName(_fullResourceType),
+                      getLocalizedReadableName(_fullResourceType, context),
                       style: const TextStyle(color: Colors.white, fontSize: 13),
                     ),
                   ),

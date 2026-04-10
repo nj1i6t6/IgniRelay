@@ -43,7 +43,7 @@ class MatchTabCommunity extends StatelessWidget {
     final time = DateTime.fromMillisecondsSinceEpoch(item.timestamp);
     final timeStr =
         '${time.month}/${time.day} ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-    final readableName = getReadableName(item.resourceType);
+    final readableName = getLocalizedReadableName(item.resourceType, context);
     final isSupply = item.isSupply;
     final urgColor = urgencyColor(item.urgency);
 
@@ -137,7 +137,7 @@ class MatchTabCommunity extends StatelessWidget {
   }
 
   Future<void> _showCommunityResponseDialog(BuildContext context, CommunityItem item) async {
-    final readableName = getReadableName(item.resourceType);
+    final readableName = getLocalizedReadableName(item.resourceType, context);
     final isSupply = item.isSupply;
     final qtyController =
         TextEditingController(text: item.quantity.toInt().toString());

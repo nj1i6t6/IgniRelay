@@ -364,7 +364,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                           color: selected ? cat.color : Colors.white54,
                           size: 18),
                       const SizedBox(width: 6),
-                      Text(cat.label,
+                      Text(SupplyCategoryLocalizer.categoryLabel(context, cat.code),
                           style: TextStyle(
                             color: selected ? cat.color : Colors.white54,
                             fontWeight:
@@ -460,7 +460,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    getReadableName(_fullResourceType),
+                    getLocalizedReadableName(_fullResourceType, context),
                     style: const TextStyle(color: Colors.white, fontSize: 13),
                   ),
                 ),
@@ -917,7 +917,7 @@ class _StationItemCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    getReadableName(item.resourceType),
+                    getLocalizedReadableName(item.resourceType, context),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -1081,7 +1081,7 @@ class _StationItemCard extends StatelessWidget {
                     color: Colors.orangeAccent, size: 20),
                 const SizedBox(width: 8),
                 Text(
-                  S.of(ctx)!.stationQuotaDetailTitle(getReadableName(item.resourceType)),
+                  S.of(ctx)!.stationQuotaDetailTitle(getLocalizedReadableName(item.resourceType, ctx)),
                   style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -1218,7 +1218,7 @@ class _StationItemCard extends StatelessWidget {
         title: Text(S.of(ctx)!.stationRemoveDialogTitle,
             style: const TextStyle(color: Colors.white)),
         content: Text(
-          S.of(ctx)!.stationRemoveDialogContent(getReadableName(item.resourceType)),
+          S.of(ctx)!.stationRemoveDialogContent(getLocalizedReadableName(item.resourceType, ctx)),
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [

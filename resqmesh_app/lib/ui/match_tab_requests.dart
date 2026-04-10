@@ -52,7 +52,7 @@ class MatchTabRequests extends StatelessWidget {
   }
 
   Widget _buildRequestCard(BuildContext context, DecodedRequest request) {
-    final readableName = getReadableName(request.resourceType);
+    final readableName = getLocalizedReadableName(request.resourceType, context);
     final totalQty = request.quantityNeeded.toInt();
     final remaining = request.remainingNeed.toInt();
     final fulfilled = totalQty - remaining;
@@ -254,7 +254,7 @@ class MatchTabRequests extends StatelessWidget {
   }
 
   Future<void> _cancelRequestDialog(BuildContext context, DecodedRequest request) async {
-    final readableName = getReadableName(request.resourceType);
+    final readableName = getLocalizedReadableName(request.resourceType, context);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
