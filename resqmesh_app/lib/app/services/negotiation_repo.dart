@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:sqflite/sqflite.dart';
-import '../db/database_helper.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
 
 /// NegotiationRepo — 純 DB CRUD，無業務邏輯
 /// 屬於 Application Layer，所有 Match_Negotiations 的讀寫都經過這裡

@@ -2,14 +2,14 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
-import '../crdt/hlc.dart';
-import '../crypto/identity_manager.dart';
-import '../crypto/signer.dart';
-import '../db/database_helper.dart';
-import '../proto/mesh_protocol.pb.dart' as pb;
-import 'event_manager.dart';
-import 'event_types.dart';
-import 'triage_queue.dart';
+import 'package:ignirelay_app/app/crdt/hlc.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/crypto/signer.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
+import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/app/mesh/event_types.dart';
+import 'package:ignirelay_app/app/mesh/triage_queue.dart';
 
 /// 危險標記管理器 — 從 EventManager 抽出的 Hazard CRUD 功能
 class HazardManager {

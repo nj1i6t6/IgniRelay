@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ignirelay_app/mesh/event_manager.dart';
-import 'package:ignirelay_app/models/medical_card.dart';
-import 'package:ignirelay_app/proto/mesh_protocol.pb.dart' as pb;
+import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/app/models/medical_card.dart';
+import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 
 void main() {
   final em = EventManager();

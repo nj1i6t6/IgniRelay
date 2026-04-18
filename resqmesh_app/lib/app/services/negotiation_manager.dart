@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import '../db/database_helper.dart';
-import '../crypto/crypto_utils.dart';
-import '../proto/mesh_protocol.pb.dart' as pb;
-import 'negotiation_repo.dart';
-import 'negotiation_events.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/crypto/crypto_utils.dart';
+import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
+import 'package:ignirelay_app/app/services/negotiation_repo.dart';
+import 'package:ignirelay_app/app/services/negotiation_events.dart';
 
 /// NegotiationManager — 狀態機 + CAS + 角色授權 + Stream
 /// Application Layer 的核心：所有 Match_Negotiations 狀態轉換的唯一入口

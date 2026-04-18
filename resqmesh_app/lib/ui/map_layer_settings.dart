@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POI 類別定義

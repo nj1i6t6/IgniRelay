@@ -1,12 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../crypto/identity_manager.dart';
-import '../db/database_helper.dart';
-import '../l10n/generated/app_localizations.dart';
-import '../main.dart';
-import 'battery_optimization_guide.dart';
-import 'medical_card_screen.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/main.dart';
+import 'package:ignirelay_app/ui/battery_optimization_guide.dart';
+import 'package:ignirelay_app/ui/medical_card_screen.dart';
 
 /// 身分 / 信任 Profile 頁面
 class ProfilePage extends StatefulWidget {

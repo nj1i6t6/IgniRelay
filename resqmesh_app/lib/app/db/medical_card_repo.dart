@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:sqflite/sqflite.dart';
-import 'database_helper.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
 
 class MedicalCardRepo {
   final DatabaseHelper _dbHelper;

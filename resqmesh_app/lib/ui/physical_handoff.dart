@@ -4,9 +4,9 @@ import 'dart:math';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../mesh/event_manager.dart';
-import '../mesh/native_bridge.dart';
-import '../l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/platform/native_bridge.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 
 enum HandoffRole { provider, requester }
 

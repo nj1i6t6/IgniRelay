@@ -3,17 +3,17 @@ import 'dart:collection';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:fixnum/fixnum.dart' as fixnum;
-import '../crdt/hlc.dart';
-import '../crypto/signer.dart';
-import '../db/database_helper.dart';
-import '../proto/mesh_protocol.pb.dart' as pb;
-import '../crypto/identity_manager.dart';
-import '../services/location_service.dart';
-import '../services/negotiation_manager.dart';
+import 'package:ignirelay_app/app/crdt/hlc.dart';
+import 'package:ignirelay_app/app/crypto/signer.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/services/location_service.dart';
+import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 
-import 'mesh_router.dart';
-import 'mesh_transport.dart';
-import 'event_types.dart';
+import 'package:ignirelay_app/app/mesh/mesh_router.dart';
+import 'package:ignirelay_app/platform/mesh_transport.dart';
+import 'package:ignirelay_app/app/mesh/event_types.dart';
 
 /// Wire payload 解碼結果
 class WirePayload {

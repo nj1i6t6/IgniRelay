@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../crdt/hlc.dart';
+import 'package:ignirelay_app/app/crdt/hlc.dart';
 
 class IdentityManager {
   static final IdentityManager _instance = IdentityManager._internal();

@@ -1,6 +1,6 @@
 import 'package:latlong2/latlong.dart';
-import 'location_service.dart';
-import 'match_repository.dart';
+import 'package:ignirelay_app/app/services/location_service.dart';
+import 'package:ignirelay_app/app/services/match_repository.dart';
 
 // ── 媒合評分權重常數 ─────────────────────────────────────────────
 /// 各因子在 100 分中的比重

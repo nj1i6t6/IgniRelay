@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../crypto/identity_manager.dart';
-import '../l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 
 class OnboardingScreen extends StatefulWidget {
   final VoidCallback onComplete;

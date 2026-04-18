@@ -1,8 +1,8 @@
 import 'dart:math';
 import 'dart:typed_data';
 
-import '../db/database_helper.dart';
-import '../geo/village_geofence.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/geo/village_geofence.dart';
 
 class MeshRouter {
   /// 評估是否接受並轉發該封包（Zone-Based Geo-Fencing 核心邏輯）

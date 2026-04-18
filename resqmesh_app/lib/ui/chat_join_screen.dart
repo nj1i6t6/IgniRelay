@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart' as crypto_lib;
-import '../l10n/generated/app_localizations.dart';
-import '../services/chat_service.dart';
-import '../services/location_service.dart';
-import '../geo/village_geofence.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/services/chat_service.dart';
+import 'package:ignirelay_app/app/services/location_service.dart';
+import 'package:ignirelay_app/app/geo/village_geofence.dart';
 
 /// Screen for joining chat rooms via GPS auto-detect, manual location, or invite code.
 class ChatJoinScreen extends StatefulWidget {

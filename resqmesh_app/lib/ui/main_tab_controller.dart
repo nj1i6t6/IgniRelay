@@ -1,16 +1,16 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import '../l10n/generated/app_localizations.dart';
-import '../crypto/identity_manager.dart';
-import '../db/database_helper.dart';
-import '../mesh/mesh_event_handler.dart';
-import '../proto/mesh_protocol.pb.dart' as pb;
-import 'map_screen.dart';
-import 'survival_mode_screen.dart';
-import 'chat_list_screen.dart';
-import 'match_screen.dart';
-import 'profile_page.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
+import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
+import 'package:ignirelay_app/ui/map_screen.dart';
+import 'package:ignirelay_app/ui/survival_mode_screen.dart';
+import 'package:ignirelay_app/ui/chat_list_screen.dart';
+import 'package:ignirelay_app/ui/match_screen.dart';
+import 'package:ignirelay_app/ui/profile_page.dart';
 
 class MainTabController extends StatefulWidget {
   const MainTabController({super.key});

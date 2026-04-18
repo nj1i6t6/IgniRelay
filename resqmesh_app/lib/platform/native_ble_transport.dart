@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'ble_manager.dart';
-import 'event_manager.dart';
-import 'mesh_transport.dart';
-import 'mesh_event_handler.dart';
-import 'native_bridge.dart';
-import 'triage_queue.dart';
-import '../crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/mesh/ble_manager.dart';
+import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/platform/mesh_transport.dart';
+import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
+import 'package:ignirelay_app/platform/native_bridge.dart';
+import 'package:ignirelay_app/app/mesh/triage_queue.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 
 /// NativeBleTransport — 完整的自研 BLE Mesh Transport
 ///

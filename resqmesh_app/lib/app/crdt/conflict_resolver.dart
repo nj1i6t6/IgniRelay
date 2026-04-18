@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'hlc.dart';
+import 'package:ignirelay_app/app/crdt/hlc.dart';
 
 class ConflictResolver {
   

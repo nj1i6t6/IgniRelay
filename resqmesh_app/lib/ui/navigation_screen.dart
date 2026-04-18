@@ -2,25 +2,25 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../mesh/native_bridge.dart';
-import '../services/negotiation_manager.dart';
-import '../services/negotiation_events.dart';
+import 'package:ignirelay_app/platform/native_bridge.dart';
+import 'package:ignirelay_app/app/services/negotiation_manager.dart';
+import 'package:ignirelay_app/app/services/negotiation_events.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:mbtiles/mbtiles.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_mbtiles/vector_map_tiles_mbtiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
-import '../mesh/mbtiles_loader.dart';
-import '../db/database_helper.dart';
-import '../mesh/event_manager.dart';
-import '../mesh/mesh_event_handler.dart';
-import '../services/location_service.dart';
-import '../services/match_service.dart';
-import 'physical_handoff.dart';
-import 'ignirelay_theme.dart';
-import 'supply_category_data.dart';
-import '../l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/mesh/mbtiles_loader.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
+import 'package:ignirelay_app/app/services/location_service.dart';
+import 'package:ignirelay_app/app/services/match_service.dart';
+import 'package:ignirelay_app/ui/physical_handoff.dart';
+import 'package:ignirelay_app/ui/ignirelay_theme.dart';
+import 'package:ignirelay_app/app/data/supply_category_data.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 
 /// 導航引導畫面
 /// 顯示供給/需求兩方座標、直線距離、方位、BLE 近接偵測

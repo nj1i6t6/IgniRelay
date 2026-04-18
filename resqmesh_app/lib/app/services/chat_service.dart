@@ -3,15 +3,15 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
-import '../crdt/hlc.dart';
-import '../crypto/identity_manager.dart';
-import '../crypto/signer.dart';
-import '../db/database_helper.dart';
-import '../geo/village_geofence.dart';
-import '../mesh/event_manager.dart';
-import '../mesh/event_types.dart';
-import '../mesh/triage_queue.dart';
-import '../services/location_service.dart';
+import 'package:ignirelay_app/app/crdt/hlc.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/crypto/signer.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/geo/village_geofence.dart';
+import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/app/mesh/event_types.dart';
+import 'package:ignirelay_app/app/mesh/triage_queue.dart';
+import 'package:ignirelay_app/app/services/location_service.dart';
 
 /// Chat service handling room management, message CRUD, and rate limiting.
 class ChatService {

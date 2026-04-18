@@ -2,10 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:health/health.dart';
-import '../crypto/identity_manager.dart';
-import '../db/database_helper.dart';
-import '../models/medical_card.dart';
-import '../l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/models/medical_card.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 
 class MedicalCardScreen extends StatefulWidget {
   const MedicalCardScreen({super.key});

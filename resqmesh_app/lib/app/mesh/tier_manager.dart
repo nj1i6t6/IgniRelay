@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import '../l10n/generated/app_localizations.dart';
-import 'mesh_constants.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/mesh/mesh_constants.dart';
 
 /// 電量感知 Tier 管理器
 ///

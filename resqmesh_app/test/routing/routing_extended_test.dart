@@ -5,7 +5,7 @@
 //
 // 需要 VillageGeofence DB 的距離/行政區測試請見 routing_test.dart (marked skip)。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ignirelay_app/mesh/mesh_router.dart';
+import 'package:ignirelay_app/app/mesh/mesh_router.dart';
 
 // 台北→高雄：任何行政區邊界的距離都不會通過（~330 km）
 const double _tpLat = 25.0339, _tpLng = 121.5644;

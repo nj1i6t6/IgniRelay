@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../l10n/generated/app_localizations.dart';
-import '../services/chat_service.dart';
-import 'chat_room_screen.dart';
-import 'chat_join_screen.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/services/chat_service.dart';
+import 'package:ignirelay_app/ui/chat_room_screen.dart';
+import 'package:ignirelay_app/ui/chat_join_screen.dart';
 
 /// Chat room list screen showing all joined rooms.
 class ChatListScreen extends StatefulWidget {

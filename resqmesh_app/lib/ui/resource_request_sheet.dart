@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../l10n/generated/app_localizations.dart';
-import '../mesh/event_manager.dart';
-import '../mesh/geo_context_resolver.dart';
-import 'supply_category_data.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/app/mesh/geo_context_resolver.dart';
+import 'package:ignirelay_app/app/data/supply_category_data.dart';
 
 /// 物資需求發佈頁面（全頁 Scaffold，與供給登記頁面統一風格）
 class ResourceRequestScreen extends StatefulWidget {

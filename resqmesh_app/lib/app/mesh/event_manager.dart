@@ -3,17 +3,17 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:fixnum/fixnum.dart' as fixnum;
 import 'package:uuid/uuid.dart';
-import '../crdt/hlc.dart';
-import '../crypto/identity_manager.dart';
-import '../crypto/signer.dart';
+import 'package:ignirelay_app/app/crdt/hlc.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/crypto/signer.dart';
 
-import '../db/database_helper.dart';
-import '../models/medical_card.dart';
-import '../proto/mesh_protocol.pb.dart' as pb;
-import '../services/negotiation_manager.dart';
-import 'hazard_manager.dart';
-import 'triage_queue.dart';
-import 'event_types.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/models/medical_card.dart';
+import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
+import 'package:ignirelay_app/app/services/negotiation_manager.dart';
+import 'package:ignirelay_app/app/mesh/hazard_manager.dart';
+import 'package:ignirelay_app/app/mesh/triage_queue.dart';
+import 'package:ignirelay_app/app/mesh/event_types.dart';
 
 // 物資狀態常數
 class MaterialStatus {

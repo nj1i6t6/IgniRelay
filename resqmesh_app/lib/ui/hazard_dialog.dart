@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../l10n/generated/app_localizations.dart';
-import '../mesh/event_manager.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/mesh/event_manager.dart';
 
 class HazardDialog extends StatefulWidget {
   final double lat;

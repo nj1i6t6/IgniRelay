@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ignirelay_app/crdt/hlc.dart';
-import 'package:ignirelay_app/crdt/conflict_resolver.dart';
+import 'package:ignirelay_app/app/crdt/hlc.dart';
+import 'package:ignirelay_app/app/crdt/conflict_resolver.dart';
 import 'dart:typed_data';
 
 void main() {

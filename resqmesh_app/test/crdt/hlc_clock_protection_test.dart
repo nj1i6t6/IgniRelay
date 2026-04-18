@@ -8,7 +8,7 @@
 // 5. resetForTest 正確清空狀態
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ignirelay_app/crdt/hlc.dart';
+import 'package:ignirelay_app/app/crdt/hlc.dart';
 
 void main() {
   setUp(() {

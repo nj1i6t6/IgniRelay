@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ignirelay_app/mesh/mesh_event_handler.dart';
+import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 
 void main() {
   // MeshEventHandler 是 singleton，用帶時間戳的 ID 避免跨測試干擾

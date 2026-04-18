@@ -7,7 +7,7 @@
 
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ignirelay_app/proto/mesh_protocol.pb.dart' as pb;
+import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 
 void main() {
   group('MatchIntent Notification — PubKey Matching', () {

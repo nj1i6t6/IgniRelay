@@ -5,7 +5,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:ignirelay_app/services/location_service.dart';
+import 'package:ignirelay_app/app/services/location_service.dart';
 
 void main() {
   group('LocationService — Static Utilities', () {

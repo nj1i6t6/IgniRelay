@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../l10n/generated/app_localizations.dart';
-import '../services/match_repository.dart';
-import 'supply_category_data.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/services/match_repository.dart';
+import 'package:ignirelay_app/app/data/supply_category_data.dart';
 
 /// Tab 2: 我的需求 (My Requests)
 class MatchTabRequests extends StatelessWidget {

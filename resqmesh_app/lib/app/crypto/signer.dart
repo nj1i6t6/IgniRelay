@@ -1,7 +1,7 @@
 import 'package:cryptography/cryptography.dart';
 import 'dart:typed_data';
 import 'dart:convert';
-import 'identity_manager.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 
 class Signer {
   static final algorithm = Ed25519();

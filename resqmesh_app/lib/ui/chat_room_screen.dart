@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import '../l10n/generated/app_localizations.dart';
-import '../services/chat_service.dart';
-import '../crypto/identity_manager.dart';
-import '../mesh/mesh_event_handler.dart';
-import '../mesh/mesh_transport.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/services/chat_service.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
+import 'package:ignirelay_app/platform/mesh_transport.dart';
 
 /// Individual chat room screen with message list and input.
 class ChatRoomScreen extends StatefulWidget {

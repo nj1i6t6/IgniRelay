@@ -1,13 +1,13 @@
 import 'dart:typed_data';
-import '../db/database_helper.dart';
-import '../geo/village_geofence.dart';
-import '../mesh/event_manager.dart';
-import '../mesh/event_types.dart';
-import '../crypto/identity_manager.dart';
-import '../proto/mesh_protocol.pb.dart' as pb;
-import 'location_service.dart';
-import 'negotiation_manager.dart';
-import 'negotiation_repo.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/geo/village_geofence.dart';
+import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/app/mesh/event_types.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
+import 'package:ignirelay_app/app/services/location_service.dart';
+import 'package:ignirelay_app/app/services/negotiation_manager.dart';
+import 'package:ignirelay_app/app/services/negotiation_repo.dart';
 
 /// 媒合相關資料查詢 (Repository 層)
 /// 負責 DB 讀取和 Protobuf 解碼，不含業務邏輯

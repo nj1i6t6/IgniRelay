@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../mesh/native_bridge.dart';
-import '../l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/platform/native_bridge.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 
 /// 電池優化引導 Dialog
 /// 首次使用時引導用戶：

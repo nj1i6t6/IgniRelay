@@ -4,7 +4,7 @@
 // 確保 valueOf() 不回傳 null（之前 8–13 缺失導致 chatMessage 被編碼為 type=0）
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ignirelay_app/proto/mesh_protocol.pbenum.dart';
+import 'package:ignirelay_app/app/proto/mesh_protocol.pbenum.dart';
 
 void main() {
   group('EventType enum — Bug 1 regression', () {

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // IgniRelay 烽傳物資類型三級分類資料

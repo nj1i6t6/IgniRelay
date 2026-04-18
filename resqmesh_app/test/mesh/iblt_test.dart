@@ -5,7 +5,7 @@
 
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ignirelay_app/mesh/iblt.dart';
+import 'package:ignirelay_app/app/mesh/iblt.dart';
 
 void main() {
   group('IBLT — Construction & Serialization', () {

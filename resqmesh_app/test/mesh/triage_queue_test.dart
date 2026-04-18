@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ignirelay_app/mesh/triage_queue.dart';
+import 'package:ignirelay_app/app/mesh/triage_queue.dart';
 
 void main() {
   late TriageQueue queue;

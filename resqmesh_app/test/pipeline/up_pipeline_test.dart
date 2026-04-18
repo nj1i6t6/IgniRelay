@@ -12,12 +12,12 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:ignirelay_app/crypto/identity_manager.dart';
-import 'package:ignirelay_app/crypto/signer.dart';
-import 'package:ignirelay_app/db/database_helper.dart';
-import 'package:ignirelay_app/mesh/mesh_event_handler.dart';
-import 'package:ignirelay_app/mesh/mesh_transport.dart';
-import 'package:ignirelay_app/proto/mesh_protocol.pb.dart' as pb;
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/crypto/signer.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
+import 'package:ignirelay_app/platform/mesh_transport.dart';
+import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 
 // 每次呼叫回傳帶毫秒時間戳的唯一 event ID
 String _uid(String prefix) =>

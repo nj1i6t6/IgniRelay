@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../l10n/generated/app_localizations.dart';
-import '../crypto/identity_manager.dart';
-import '../db/database_helper.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
 
 class TriageInputWidget extends StatefulWidget {
   final Function(int urgencyLevel, String description,

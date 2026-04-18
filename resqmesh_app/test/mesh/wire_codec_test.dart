@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ignirelay_app/mesh/mesh_event_handler.dart';
+import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 
 void main() {
   group('Wire Codec — Protobuf roundtrip', () {

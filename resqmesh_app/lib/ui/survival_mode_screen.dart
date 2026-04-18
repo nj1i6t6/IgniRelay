@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
-import '../mesh/mesh_transport.dart';
-import '../mesh/mesh_event_handler.dart';
-import '../mesh/native_bridge.dart';
-import '../mesh/event_manager.dart';
-import '../mesh/tier_manager.dart';
-import '../db/database_helper.dart';
-import '../l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/platform/mesh_transport.dart';
+import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
+import 'package:ignirelay_app/platform/native_bridge.dart';
+import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/app/mesh/tier_manager.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 
 class SurvivalModeScreen extends StatefulWidget {
   const SurvivalModeScreen({super.key});

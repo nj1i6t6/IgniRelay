@@ -8,9 +8,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:ignirelay_app/services/chat_service.dart';
-import 'package:ignirelay_app/db/database_helper.dart';
-import 'package:ignirelay_app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/services/chat_service.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 
 void main() {
   setUpAll(() async {

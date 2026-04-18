@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 import 'package:fixnum/fixnum.dart';
 import 'package:uuid/uuid.dart';
-import '../proto/mesh_protocol.pb.dart';
-import '../crdt/hlc.dart';
-import '../crypto/identity_manager.dart';
-import '../crypto/signer.dart';
+import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart';
+import 'package:ignirelay_app/app/crdt/hlc.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/crypto/signer.dart';
 
 /// 統一的 Protobuf 事件序列化 / 反序列化工具
 /// 取代原本的 String 拼接方式，使用真正的 Protobuf 二進位編碼

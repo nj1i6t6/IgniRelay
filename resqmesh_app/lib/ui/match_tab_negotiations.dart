@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import '../l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 
 /// Tab 3: 進行中 (Active Negotiations)
 class MatchTabNegotiations extends StatelessWidget {
