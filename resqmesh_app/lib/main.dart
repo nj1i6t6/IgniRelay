@@ -41,6 +41,10 @@ class IgniRelayApp extends StatefulWidget {
     context.findAncestorStateOfType<_IgniRelayAppState>()?.setLocale(locale);
   }
 
+  static void setThemeMode(BuildContext context, ThemeMode mode) {
+    context.findAncestorStateOfType<_IgniRelayAppState>()?.setThemeMode(mode);
+  }
+
   @override
   State<IgniRelayApp> createState() => _IgniRelayAppState();
 }

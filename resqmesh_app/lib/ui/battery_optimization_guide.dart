@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:ignirelay_app/platform/native_bridge.dart';
+import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 
 /// 電池優化引導 Dialog
@@ -23,7 +23,7 @@ class BatteryOptimizationGuide {
     if (alreadyDone) return true;
 
     // 檢查是否已經豁免
-    final exempt = await NativeBridge.isBatteryOptimizationExempt();
+    final exempt = await DeviceInfoController.instance.isBatteryOptimizationExempt();
     if (exempt) {
       await prefs.setBool(_prefKey, true);
       return true;
@@ -89,7 +89,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
   }
 
   Future<void> _loadManufacturer() async {
-    final m = await NativeBridge.getManufacturer();
+    final m = await DeviceInfoController.instance.manufacturer();
     if (mounted) setState(() => _manufacturer = m);
   }
 
@@ -238,11 +238,11 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
             onPressed: _exemptDone
                 ? null
                 : () async {
-                    await NativeBridge.requestBatteryOptimizationExemption();
+                    await DeviceInfoController.instance.requestBatteryOptimizationExemption();
                     // 等待用戶操作後回來
                     await Future.delayed(const Duration(seconds: 2));
                     final exempt =
-                        await NativeBridge.isBatteryOptimizationExempt();
+                        await DeviceInfoController.instance.isBatteryOptimizationExempt();
                     if (mounted) {
                       setState(() => _exemptDone = exempt);
                     }
@@ -295,7 +295,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
             onPressed: _manufacturerDone
                 ? null
                 : () async {
-                    await NativeBridge.openManufacturerPowerSettings();
+                    await DeviceInfoController.instance.openManufacturerPowerSettings();
                     if (mounted) {
                       setState(() => _manufacturerDone = true);
                     }

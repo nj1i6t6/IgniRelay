@@ -6,7 +6,9 @@ import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:ignirelay_app/platform/mesh_transport.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
-import 'package:ignirelay_app/platform/native_bridge.dart';
+import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
+import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
+import 'package:ignirelay_app/app/controllers/mesh_runtime_controller.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/tier_manager.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
@@ -61,7 +63,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   Future<void> _checkCapabilities() async {
     int battery = -1;
     try {
-      battery = await NativeBridge.getBatteryLevel();
+      battery = await DeviceInfoController.instance.batteryLevel();
     } catch (_) {
       battery = -1;
     }
@@ -118,7 +120,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   void _startGattListener() {
     // 監聽 Kotlin GATT Server 透過 EventChannel 送來的原始資料
     // 使用 NativeBridge 共享 stream，避免重複 receiveBroadcastStream() 衝突
-    _gattSub = NativeBridge.nativeEventStream.listen((event) {
+    _gattSub = BleScanController.instance.rawEventStream.listen((event) {
       if (!mounted) return;
       if (event is Map) {
         final type = event['type'];
@@ -152,20 +154,20 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   Future<void> _toggleDataMule() async {
     if (_isDataMule) {
       try {
-        await NativeBridge.stopAllServices();
+        await MeshRuntimeController.instance.stopAllServices();
       } catch (_) {}
       setState(() => _isDataMule = false);
     } else {
       // 確保前景服務先啟動，避免 race condition 導致閃退
       try {
-        await NativeBridge.startMeshForegroundService();
+        await MeshRuntimeController.instance.startForegroundService();
       } catch (_) {}
 
       // 帶重試機制（首次安裝後服務可能需要時間綁定）
       bool success = false;
       for (int attempt = 0; attempt < 3; attempt++) {
         try {
-          success = await NativeBridge.startAndroidDataMuleMode();
+          success = await MeshRuntimeController.instance.startDataMuleMode();
           if (success) break;
         } catch (_) {
           success = false;
@@ -220,7 +222,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
         }
         // 確保前景服務啟動，防止背景被系統殺掉
         try {
-          await NativeBridge.startMeshForegroundService();
+          await MeshRuntimeController.instance.startForegroundService();
         } catch (_) {}
         await _transport.initialize();
         await _transport.start();
@@ -252,7 +254,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       // 裝置資訊（方便跨設備比對日誌）
       String manufacturer = 'unknown';
       try {
-        manufacturer = await NativeBridge.getManufacturer();
+        manufacturer = await DeviceInfoController.instance.manufacturer();
       } catch (_) {}
 
       buf.writeln('--- Device Info ---');
@@ -272,7 +274,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       // 持久 GATT Server 狀態（不依賴 log buffer，確保不會被擠掉）
       if (Platform.isAndroid) {
         try {
-          final gattStatus = await NativeBridge.getGattServerStatus();
+          final gattStatus = await MeshRuntimeController.instance.gattServerStatus();
           buf.writeln('--- GATT Server Status ---');
           buf.writeln('serviceReady: ${gattStatus['ready']}');
           buf.writeln('serviceStatus: ${gattStatus['status']}');

@@ -15,13 +15,13 @@ import 'package:ignirelay_app/ui/design/igni_tokens.dart';
 import 'package:ignirelay_app/ui/design/igni_typography.dart';
 import 'package:ignirelay_app/ui/map_screen.dart';
 import 'package:ignirelay_app/ui/match_screen.dart';
-import 'package:ignirelay_app/ui/profile_page.dart';
+import 'package:ignirelay_app/ui/profile/profile_screen.dart';
 import 'package:ignirelay_app/ui/shell/igni_bottom_tab_bar.dart';
 
 /// 烽傳 Ignirelay 主 App 殼（4 分頁）。
 ///
 /// 取代舊的 [MainTabController]（5 tabs）。分頁：地圖 / 聊天 / 媒合 / 我。
-/// 生存模式在 Stage 4a 併入「我」；Stage 3 暫時由 ProfilePage 內的入口點進入。
+/// 生存模式在 Stage 4a 併入「我」分頁（IgniProfileScreen），保留完整控制面板作為 SubPage。
 ///
 /// 職責：
 ///   - IndexedStack 管理 4 個 tab 頁面
@@ -49,7 +49,7 @@ class _MainShellState extends State<MainShell> {
       MapScreen(),
       ChatListScreen(),
       MatchScreen(),
-      ProfilePage(),
+      IgniProfileScreen(),
     ];
     _listenForSosAlerts();
   }
