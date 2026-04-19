@@ -11,6 +11,9 @@ import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/ui/design/igni_colors.dart';
+import 'package:ignirelay_app/ui/design/igni_tokens.dart';
+import 'package:ignirelay_app/ui/design/igni_typography.dart';
 import 'package:ignirelay_app/ui/supply_registration.dart';
 import 'package:ignirelay_app/ui/resource_request_sheet.dart';
 import 'package:ignirelay_app/ui/navigation_screen.dart';
@@ -223,147 +226,160 @@ class _MatchScreenState extends State<MatchScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return Scaffold(
-      backgroundColor: const Color(0xFF0d0d1a),
-      appBar: AppBar(
-        title: Text(S.of(context)!.matchTitle, style: const TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF1a1a2e),
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: false,
-          indicatorColor: Colors.redAccent,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white38,
-          labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-          unselectedLabelStyle: const TextStyle(fontSize: 12),
-          tabs: [
-            _buildTab(S.of(context)!.matchTabSupplies, Icons.inventory_2, _mySupplies.length),
-            _buildTab(S.of(context)!.matchTabRequests, Icons.campaign, _myRequests.length),
-            _buildTab(S.of(context)!.matchTabNegotiations, Icons.sync, _activeNegotiations.length),
-            _buildTab(S.of(context)!.matchTabCommunity, Icons.people, _communityItems.length),
-          ],
-        ),
-      ),
-      body: _loading && _mySupplies.isEmpty
-          ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
-          : Column(
+    final p = context.igni;
+    final s = S.of(context)!;
+
+    return Stack(
+      children: [
+        Container(
+          color: p.bg0,
+          child: SafeArea(
+            bottom: false,
+            child: Column(
               children: [
-                if (_gpsWarning != null) _buildGpsWarningBanner(),
-                if (_error != null) _buildErrorBanner(),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
+                // ── 頁首 ──
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    IgniSpacing.xl,
+                    IgniSpacing.xl2,
+                    IgniSpacing.xl,
+                    IgniSpacing.sm,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      MatchTabSupplies(
-                        mySupplies: _mySupplies,
-                        mySupplyPublishes: _mySupplyPublishes,
-                        onRefresh: _loadAll,
-                        onShowSnack: _showSnack,
-                        onCancelSupply: _handleCancelSupply,
-                        buildEmptyState: _buildEmptyState,
-                      ),
-                      MatchTabRequests(
-                        myRequests: _myRequests,
-                        activeNegotiations: _activeNegotiations,
-                        onRefresh: _loadAll,
-                        onShowSnack: _showSnack,
-                        onAcceptNegotiation: _acceptNegotiation,
-                        onDeclineNegotiation: _declineNegotiation,
-                        onCancelRequest: _handleCancelRequest,
-                        buildEmptyState: _buildEmptyState,
-                        formatCountdown: _formatCountdown,
-                        isExpiringSoon: _isExpiringSoon,
-                        urgencyColor: _urgencyColor,
-                        urgencyLabel: _urgencyLabel,
-                        urgencyIcon: _urgencyIcon,
-                      ),
-                      MatchTabNegotiations(
-                        activeNegotiations: _activeNegotiations,
-                        myPubKey: _myPubKey,
-                        staleNegotiationIds: _negotiationManager.staleNegotiationIds,
-                        onRefresh: _loadAll,
-                        onShowSnack: _showSnack,
-                        onAcceptNegotiation: _acceptNegotiation,
-                        onDeclineNegotiation: _declineNegotiation,
-                        onCancelNegotiation: _handleCancelNegotiation,
-                        onOpenNavigation: _openNavigationForNeg,
-                        buildEmptyState: _buildEmptyState,
-                        formatCountdown: _formatCountdown,
-                        isExpiringSoon: _isExpiringSoon,
-                      ),
-                      MatchTabCommunity(
-                        communityItems: _communityItems,
-                        onRefresh: _loadAll,
-                        onShowSnack: _showSnack,
-                        onCommunityAction: _handleCommunityAction,
-                        buildEmptyState: _buildEmptyState,
-                        urgencyColor: _urgencyColor,
-                        urgencyLabel: _urgencyLabel,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(s.matchTitle,
+                                style: IgniTypography.display(p.text0)),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${_communityItems.length} 項社區資源',
+                              style: IgniTypography.monoSmall(p.text2),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
+                // ── Tabs ──
+                _MatchTabStrip(
+                  controller: _tabController,
+                  items: [
+                    _TabMeta(s.matchTabSupplies, Icons.inventory_2_outlined,
+                        _mySupplies.length),
+                    _TabMeta(s.matchTabRequests, Icons.campaign_outlined,
+                        _myRequests.length,
+                        highlight: _myRequests.isNotEmpty),
+                    _TabMeta(s.matchTabNegotiations, Icons.sync,
+                        _activeNegotiations.length),
+                    _TabMeta(s.matchTabCommunity, Icons.people_alt_outlined,
+                        _communityItems.length),
+                  ],
+                ),
+                if (_gpsWarning != null) _buildGpsWarningBanner(),
+                if (_error != null) _buildErrorBanner(),
+                Expanded(
+                  child: _loading && _mySupplies.isEmpty
+                      ? Center(
+                          child: CircularProgressIndicator(color: p.brand),
+                        )
+                      : TabBarView(
+                          controller: _tabController,
+                          children: [
+                            MatchTabSupplies(
+                              mySupplies: _mySupplies,
+                              mySupplyPublishes: _mySupplyPublishes,
+                              onRefresh: _loadAll,
+                              onShowSnack: _showSnack,
+                              onCancelSupply: _handleCancelSupply,
+                              buildEmptyState: _buildEmptyState,
+                            ),
+                            MatchTabRequests(
+                              myRequests: _myRequests,
+                              activeNegotiations: _activeNegotiations,
+                              onRefresh: _loadAll,
+                              onShowSnack: _showSnack,
+                              onAcceptNegotiation: _acceptNegotiation,
+                              onDeclineNegotiation: _declineNegotiation,
+                              onCancelRequest: _handleCancelRequest,
+                              buildEmptyState: _buildEmptyState,
+                              formatCountdown: _formatCountdown,
+                              isExpiringSoon: _isExpiringSoon,
+                              urgencyColor: _urgencyColor,
+                              urgencyLabel: _urgencyLabel,
+                              urgencyIcon: _urgencyIcon,
+                            ),
+                            MatchTabNegotiations(
+                              activeNegotiations: _activeNegotiations,
+                              myPubKey: _myPubKey,
+                              staleNegotiationIds:
+                                  _negotiationManager.staleNegotiationIds,
+                              onRefresh: _loadAll,
+                              onShowSnack: _showSnack,
+                              onAcceptNegotiation: _acceptNegotiation,
+                              onDeclineNegotiation: _declineNegotiation,
+                              onCancelNegotiation: _handleCancelNegotiation,
+                              onOpenNavigation: _openNavigationForNeg,
+                              buildEmptyState: _buildEmptyState,
+                              formatCountdown: _formatCountdown,
+                              isExpiringSoon: _isExpiringSoon,
+                            ),
+                            MatchTabCommunity(
+                              communityItems: _communityItems,
+                              onRefresh: _loadAll,
+                              onShowSnack: _showSnack,
+                              onCommunityAction: _handleCommunityAction,
+                              buildEmptyState: _buildEmptyState,
+                              urgencyColor: _urgencyColor,
+                              urgencyLabel: _urgencyLabel,
+                            ),
+                          ],
+                        ),
+                ),
               ],
             ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FloatingActionButton.extended(
-              heroTag: 'supply',
-              backgroundColor: Colors.green[700],
-              onPressed: () {
-                Navigator.of(context)
-                    .push(MaterialPageRoute(
-                        builder: (_) => const SupplyRegistrationScreen()))
-                    .then((_) => _loadAll());
-              },
-              icon: const Icon(Icons.add_box, color: Colors.white),
-              label: Text(S.of(context)!.matchFabRegisterSupply, style: const TextStyle(color: Colors.white)),
-            ),
-            const SizedBox(height: 12),
-            FloatingActionButton.extended(
-              heroTag: 'request',
-              backgroundColor: Colors.redAccent,
-              onPressed: () {
-                Navigator.of(context)
-                    .push(MaterialPageRoute(
-                        builder: (_) => const ResourceRequestScreen()))
-                    .then((_) => _loadAll());
-              },
-              icon: const Icon(Icons.volunteer_activism, color: Colors.white),
-              label: Text(S.of(context)!.matchFabPublishRequest, style: const TextStyle(color: Colors.white)),
-            ),
-          ],
+          ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildTab(String label, IconData icon, int count) {
-    return Tab(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14),
-          const SizedBox(width: 4),
-          Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
-          if (count > 0) ...[
-            const SizedBox(width: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              decoration: BoxDecoration(
-                color: Colors.redAccent.withValues(alpha: 0.8),
-                borderRadius: BorderRadius.circular(8),
+        // ── Floating actions（雙按鈕：需求 outline / 供給 brand glow）──
+        Positioned(
+          right: IgniSpacing.xl,
+          bottom: IgniSpacing.bottomTabBarHeight + IgniSpacing.xl,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _OutlineFab(
+                color: p.sos,
+                bg: p.bg1,
+                icon: Icons.campaign_outlined,
+                label: s.matchFabPublishRequest,
+                onTap: () {
+                  Navigator.of(context)
+                      .push(MaterialPageRoute(
+                          builder: (_) => const ResourceRequestScreen()))
+                      .then((_) => _loadAll());
+                },
               ),
-              child: Text('$count',
-                  style: const TextStyle(fontSize: 10, color: Colors.white)),
-            ),
-          ],
-        ],
-      ),
+              const SizedBox(height: IgniSpacing.sm),
+              _BrandFab(
+                color: p.brand,
+                icon: Icons.add,
+                label: s.matchFabRegisterSupply,
+                onTap: () {
+                  Navigator.of(context)
+                      .push(MaterialPageRoute(
+                          builder: (_) => const SupplyRegistrationScreen()))
+                      .then((_) => _loadAll());
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -372,63 +388,62 @@ class _MatchScreenState extends State<MatchScreen>
   // ---------------------------------------------------------------------------
 
   Widget _buildGpsWarningBanner() {
+    final p = context.igni;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      color: Colors.orange[900]!.withValues(alpha: 0.85),
+      padding: const EdgeInsets.symmetric(
+          horizontal: IgniSpacing.lg, vertical: IgniSpacing.sm),
+      color: p.warnSoft,
       child: Row(
         children: [
-          const Icon(Icons.location_off, color: Colors.orangeAccent, size: 20),
-          const SizedBox(width: 10),
+          Icon(Icons.location_off, color: p.warn, size: 18),
+          const SizedBox(width: IgniSpacing.sm),
           Expanded(
             child: Text(
               _gpsWarning ?? '',
-              style: const TextStyle(color: Colors.white, fontSize: 12),
+              style: IgniTypography.bodySmall(p.text1),
             ),
           ),
-          if (_locationService.permDeniedForever)
-            TextButton(
-              onPressed: () => Geolocator.openAppSettings(),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(S.of(context)!.matchGpsOpenSettings,
-                  style: const TextStyle(color: Colors.orangeAccent, fontSize: 12)),
-            )
-          else
-            TextButton(
-              onPressed: () => Geolocator.openLocationSettings(),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(S.of(context)!.matchGpsEnableLocation,
-                  style: const TextStyle(color: Colors.orangeAccent, fontSize: 12)),
+          TextButton(
+            onPressed: _locationService.permDeniedForever
+                ? Geolocator.openAppSettings
+                : Geolocator.openLocationSettings,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: IgniSpacing.sm),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
+            child: Text(
+              _locationService.permDeniedForever
+                  ? S.of(context)!.matchGpsOpenSettings
+                  : S.of(context)!.matchGpsEnableLocation,
+              style: IgniTypography.labelSmall(p.warn),
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildErrorBanner() {
+    final p = context.igni;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      color: Colors.red[900]!.withValues(alpha: 0.6),
+      padding: const EdgeInsets.symmetric(
+          horizontal: IgniSpacing.lg, vertical: IgniSpacing.sm),
+      color: p.sosSoft,
       child: Row(
         children: [
-          const Icon(Icons.error_outline, color: Colors.redAccent, size: 18),
-          const SizedBox(width: 8),
+          Icon(Icons.error_outline, color: p.sos, size: 18),
+          const SizedBox(width: IgniSpacing.sm),
           Expanded(
             child: Text(S.of(context)!.matchLoadError(_error ?? ''),
-                style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                style: IgniTypography.bodySmall(p.text1)),
           ),
           TextButton(
             onPressed: _loadAll,
-            child: Text(S.of(context)!.matchRetry, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+            child: Text(S.of(context)!.matchRetry,
+                style: IgniTypography.labelSmall(p.sos)),
           ),
         ],
       ),
@@ -611,6 +626,7 @@ class _MatchScreenState extends State<MatchScreen>
   // ===========================================================================
 
   Widget _buildEmptyState(IconData icon, String title, String subtitle) {
+    final p = context.igni;
     // Must use ListView/CustomScrollView for RefreshIndicator to work
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -621,13 +637,27 @@ class _MatchScreenState extends State<MatchScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: Colors.white24, size: 56),
-                const SizedBox(height: 14),
-                Text(title, style: const TextStyle(color: Colors.white38, fontSize: 15)),
-                const SizedBox(height: 6),
-                Text(subtitle,
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: p.bg2,
+                    borderRadius: const BorderRadius.all(IgniRadii.xl),
+                  ),
+                  child: Icon(icon, color: p.text3, size: 28),
+                ),
+                const SizedBox(height: IgniSpacing.md),
+                Text(title, style: IgniTypography.titleMedium(p.text1)),
+                const SizedBox(height: IgniSpacing.xs),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: IgniSpacing.xl2),
+                  child: Text(
+                    subtitle,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white24, fontSize: 12)),
+                    style: IgniTypography.bodySmall(p.text2),
+                  ),
+                ),
               ],
             ),
           ),
@@ -693,5 +723,234 @@ class _MatchScreenState extends State<MatchScreen>
     final now = DateTime.now().millisecondsSinceEpoch;
     final diffMs = expiresAtMs - now;
     return diffMs < 300000; // Less than 5 minutes
+  }
+}
+
+// ─────────────────────────── Tab strip ───────────────────────────
+
+class _TabMeta {
+  _TabMeta(this.label, this.icon, this.count, {this.highlight = false});
+  final String label;
+  final IconData icon;
+  final int count;
+  final bool highlight;
+}
+
+class _MatchTabStrip extends StatefulWidget {
+  const _MatchTabStrip({required this.controller, required this.items});
+  final TabController controller;
+  final List<_TabMeta> items;
+
+  @override
+  State<_MatchTabStrip> createState() => _MatchTabStripState();
+}
+
+class _MatchTabStripState extends State<_MatchTabStrip> {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onTabChange);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onTabChange);
+    super.dispose();
+  }
+
+  void _onTabChange() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.igni;
+    final idx = widget.controller.index;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: p.border0)),
+      ),
+      padding: const EdgeInsets.symmetric(
+          horizontal: IgniSpacing.lg, vertical: 4),
+      child: Row(
+        children: List.generate(widget.items.length, (i) {
+          final t = widget.items[i];
+          final active = idx == i;
+          final pillBg = t.highlight
+              ? p.sos
+              : (active ? p.brandSoft : p.bg2);
+          final pillFg = t.highlight
+              ? Colors.white
+              : (active ? p.brand : p.text2);
+          return Expanded(
+            child: InkWell(
+              onTap: () => widget.controller.animateTo(i),
+              borderRadius: const BorderRadius.all(IgniRadii.sm),
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            t.label,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight:
+                                  active ? FontWeight.w600 : FontWeight.w500,
+                              color: active ? p.text0 : p.text2,
+                            ),
+                          ),
+                        ),
+                        if (t.count > 0) ...[
+                          const SizedBox(width: 5),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: pillBg,
+                              borderRadius:
+                                  const BorderRadius.all(IgniRadii.xs),
+                            ),
+                            child: Text(
+                              '${t.count}',
+                              style: IgniTypography.monoSmall(pillFg)
+                                  .copyWith(fontSize: 10),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (active)
+                    Positioned(
+                      left: 18,
+                      right: 18,
+                      bottom: -5,
+                      child: Container(
+                        height: 2,
+                        decoration: BoxDecoration(
+                          color: p.brand,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────── Floating actions ───────────────────────────
+
+class _BrandFab extends StatelessWidget {
+  const _BrandFab({
+    required this.color,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+  final Color color;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: const BorderRadius.all(IgniRadii.pill),
+          boxShadow: IgniShadows.brandGlow(color),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: const BorderRadius.all(IgniRadii.pill),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 18, vertical: 14),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OutlineFab extends StatelessWidget {
+  const _OutlineFab({
+    required this.color,
+    required this.bg,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+  final Color color;
+  final Color bg;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: const BorderRadius.all(IgniRadii.pill),
+          border: Border.all(color: color, width: 1.5),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: const BorderRadius.all(IgniRadii.pill),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 14, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: color, size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
