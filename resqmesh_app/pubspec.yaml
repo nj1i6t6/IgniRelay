@@ -16,6 +16,8 @@ dependencies:
 
   # ── UI & Maps ─────────────────────────────────────────────
   flutter_map: ^7.0.2
+  # Marker clustering (Stage 2 dep-check; Stage 4d 會實際啟用叢集)
+  flutter_map_marker_cluster: ^1.4.0
   # Vector tile rendering for bundled MBTiles (OpenMapTiles schema)
   vector_map_tiles: ^8.0.0
   vector_map_tiles_mbtiles: ^1.2.0
