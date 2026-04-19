@@ -9,13 +9,13 @@ import 'package:ignirelay_app/app/emergency/emergency_mode_controller.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
-import 'package:ignirelay_app/ui/chat_list_screen.dart';
-import 'package:ignirelay_app/ui/design/igni_colors.dart';
-import 'package:ignirelay_app/ui/design/igni_tokens.dart';
-import 'package:ignirelay_app/ui/design/igni_typography.dart';
-import 'package:ignirelay_app/ui/map_screen.dart';
-import 'package:ignirelay_app/ui/match_screen.dart';
-import 'package:ignirelay_app/ui/profile/profile_screen.dart';
+import 'package:ignirelay_app/ui/screens/chat/chat_list_screen.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
+import 'package:ignirelay_app/ui/theme/igni_typography.dart';
+import 'package:ignirelay_app/ui/screens/map/map_screen.dart';
+import 'package:ignirelay_app/ui/screens/match/match_screen.dart';
+import 'package:ignirelay_app/ui/screens/me/profile_screen.dart';
 import 'package:ignirelay_app/ui/shell/igni_bottom_tab_bar.dart';
 
 /// 烽傳 Ignirelay 主 App 殼（4 分頁）。

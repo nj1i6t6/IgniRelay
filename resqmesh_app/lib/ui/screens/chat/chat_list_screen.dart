@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 import 'package:ignirelay_app/app/services/chat_service.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
-import 'package:ignirelay_app/ui/chat_join_screen.dart';
-import 'package:ignirelay_app/ui/chat_room_screen.dart';
-import 'package:ignirelay_app/ui/design/igni_colors.dart';
-import 'package:ignirelay_app/ui/design/igni_tokens.dart';
-import 'package:ignirelay_app/ui/design/igni_typography.dart';
+import 'package:ignirelay_app/ui/screens/chat/chat_join_screen.dart';
+import 'package:ignirelay_app/ui/screens/chat/chat_room_screen.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
+import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 
 /// 烽傳 Ignirelay 聊天室列表分頁（Stage 4b）。
 ///

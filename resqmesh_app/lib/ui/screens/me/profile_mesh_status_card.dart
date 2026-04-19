@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
-import 'package:ignirelay_app/ui/design/igni_colors.dart';
-import 'package:ignirelay_app/ui/design/igni_tokens.dart';
-import 'package:ignirelay_app/ui/design/igni_typography.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
+import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 import 'package:ignirelay_app/ui/widgets/igni_card.dart';
 
 /// 精簡 Mesh 狀態卡（顯示於「我」分頁）。

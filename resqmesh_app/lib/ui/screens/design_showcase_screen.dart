@@ -2,10 +2,10 @@
 
 import 'package:flutter/material.dart';
 
-import 'package:ignirelay_app/ui/design/app_theme.dart';
-import 'package:ignirelay_app/ui/design/igni_colors.dart';
-import 'package:ignirelay_app/ui/design/igni_tokens.dart';
-import 'package:ignirelay_app/ui/design/igni_typography.dart';
+import 'package:ignirelay_app/ui/theme/app_theme.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
+import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 import 'package:ignirelay_app/ui/widgets/igni_button.dart';
 import 'package:ignirelay_app/ui/widgets/igni_card.dart';
 import 'package:ignirelay_app/ui/widgets/igni_chip.dart';

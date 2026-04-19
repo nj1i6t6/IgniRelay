@@ -128,7 +128,7 @@ resqmesh_app/lib/
 - **驗收**：`git branch --show-current` 為新分支；計畫檔可讀
 - **commit**：`refactor(stage-0): 建立 Refactoring-0.2.0 分支與作業計畫`
 
-### Stage 1 — 分層與 import lint（commit #2）
+### Stage 1 — 分層與 import lint（commit #2）✅ 已完成（含 stage-1-followup 補丁）
 
 - **目標**：建立 platform / app / ui 三層邊界，行為零變化
 - **交付**：

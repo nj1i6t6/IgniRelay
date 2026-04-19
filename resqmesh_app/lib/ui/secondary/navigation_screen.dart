@@ -17,8 +17,8 @@ import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/services/match_service.dart';
-import 'package:ignirelay_app/ui/physical_handoff.dart';
-import 'package:ignirelay_app/ui/ignirelay_theme.dart';
+import 'package:ignirelay_app/ui/secondary/physical_handoff.dart';
+import 'package:ignirelay_app/ui/theme/ignirelay_theme.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 

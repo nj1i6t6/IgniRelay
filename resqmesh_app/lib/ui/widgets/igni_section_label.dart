@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'package:ignirelay_app/ui/design/igni_colors.dart';
-import 'package:ignirelay_app/ui/design/igni_tokens.dart';
-import 'package:ignirelay_app/ui/design/igni_typography.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
+import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 
 /// 分段標題（如「信任等級」「設定」），對應原型 11px uppercase letter-spaced 小字。
 class IgniSectionLabel extends StatelessWidget {

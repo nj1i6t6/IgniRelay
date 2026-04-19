@@ -11,17 +11,17 @@ import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
-import 'package:ignirelay_app/ui/design/igni_colors.dart';
-import 'package:ignirelay_app/ui/design/igni_tokens.dart';
-import 'package:ignirelay_app/ui/design/igni_typography.dart';
-import 'package:ignirelay_app/ui/supply_registration.dart';
-import 'package:ignirelay_app/ui/resource_request_sheet.dart';
-import 'package:ignirelay_app/ui/navigation_screen.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
+import 'package:ignirelay_app/ui/theme/igni_typography.dart';
+import 'package:ignirelay_app/ui/secondary/supply_registration.dart';
+import 'package:ignirelay_app/ui/sheets/resource_request_sheet.dart';
+import 'package:ignirelay_app/ui/secondary/navigation_screen.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
-import 'package:ignirelay_app/ui/match_tab_supplies.dart';
-import 'package:ignirelay_app/ui/match_tab_requests.dart';
-import 'package:ignirelay_app/ui/match_tab_negotiations.dart';
-import 'package:ignirelay_app/ui/match_tab_community.dart';
+import 'package:ignirelay_app/ui/screens/match/match_tab_supplies.dart';
+import 'package:ignirelay_app/ui/screens/match/match_tab_requests.dart';
+import 'package:ignirelay_app/ui/screens/match/match_tab_negotiations.dart';
+import 'package:ignirelay_app/ui/screens/match/match_tab_community.dart';
 
 // =============================================================================
 // MatchScreen — 4-tab layout following three-layer architecture
