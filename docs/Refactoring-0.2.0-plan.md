@@ -143,7 +143,7 @@ resqmesh_app/lib/
   - 模擬器跑 App，4 個分頁、SOS、聊天、媒合、據點、導航 golden path 不 regression
 - **commit**：`refactor(stage-1): 分 platform/app/ui 三層並加 import lint`
 
-### Stage 2 — Design System（commit #3）
+### Stage 2 — Design System（commit #3）✅ 已完成（含 stage-2-followup 補丁）
 
 - **目標**：tokens + 主題 + 共用 widget + 急難模式骨架
 - **交付**：

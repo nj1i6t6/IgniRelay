@@ -127,7 +127,7 @@ void _writeBaseline(List<_Violation> violations) {
     '',
     ...({for (final v in violations) v.fingerprint}.toList()..sort()),
   ];
-  File(_baselinePath).writeAsStringSync(lines.join('\n') + '\n');
+  File(_baselinePath).writeAsStringSync('${lines.join('\n')}\n');
 }
 
 void main(List<String> args) {

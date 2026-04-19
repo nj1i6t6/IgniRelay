@@ -9,6 +9,7 @@ import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/emergency/emergency_mode_controller.dart';
 import 'package:ignirelay_app/ui/secondary/battery_optimization_guide.dart';
 import 'package:ignirelay_app/ui/theme/app_theme.dart';
+import 'package:ignirelay_app/ui/theme/igni_accent.dart';
 import 'package:ignirelay_app/ui/secondary/onboarding_screen.dart';
 import 'package:ignirelay_app/ui/screens/design_showcase_screen.dart';
 import 'package:ignirelay_app/ui/shell/main_shell.dart';
@@ -45,6 +46,15 @@ class IgniRelayApp extends StatefulWidget {
     context.findAncestorStateOfType<_IgniRelayAppState>()?.setThemeMode(mode);
   }
 
+  static void setAccent(BuildContext context, IgniAccent accent) {
+    context.findAncestorStateOfType<_IgniRelayAppState>()?.setAccent(accent);
+  }
+
+  static IgniAccent accentOf(BuildContext context) {
+    return context.findAncestorStateOfType<_IgniRelayAppState>()?._accent ??
+        IgniAccent.amber;
+  }
+
   @override
   State<IgniRelayApp> createState() => _IgniRelayAppState();
 }
@@ -52,6 +62,7 @@ class IgniRelayApp extends StatefulWidget {
 class _IgniRelayAppState extends State<IgniRelayApp> {
   Locale? _locale;
   ThemeMode _themeMode = ThemeMode.dark;
+  IgniAccent _accent = IgniAccent.amber;
 
   @override
   void initState() {
@@ -63,10 +74,12 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
     final prefs = await SharedPreferences.getInstance();
     final code = prefs.getString('app_language');
     final themeStr = prefs.getString('app_theme_mode');
+    final accentStr = prefs.getString('app_accent');
     if (!mounted) return;
     setState(() {
       if (code != null) _locale = Locale(code);
       _themeMode = _parseThemeMode(themeStr);
+      _accent = IgniAccent.parse(accentStr);
     });
   }
 
@@ -92,6 +105,12 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('app_language', locale.languageCode);
     if (mounted) setState(() => _locale = locale);
+  }
+
+  void setAccent(IgniAccent accent) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('app_accent', accent.storageKey);
+    if (mounted) setState(() => _accent = accent);
   }
 
   @override
@@ -122,8 +141,10 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
               }
               return const Locale('en');
             },
-            theme: AppTheme.light(),
-            darkTheme: inEmergency ? AppTheme.emergency() : AppTheme.dark(),
+            theme: AppTheme.light(accent: _accent),
+            darkTheme: inEmergency
+                ? AppTheme.emergency()
+                : AppTheme.dark(accent: _accent),
             themeMode: themeMode,
             routes: {
               // dev-only 設計系統預覽頁；release build 也可進入（對 UX 無害）。

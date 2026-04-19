@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 
+import 'package:ignirelay_app/ui/theme/igni_accent.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 
-/// 產出三組 [ThemeData]：dark / light / emergency。
+/// 產出三組 [ThemeData]：dark / light / emergency，並支援 accent 切換。
 ///
-/// Stage 2：僅建立並暴露，尚未在 main.dart 切換；Stage 3 起會套入 App 殼。
+/// Stage 2 補強：`AppTheme.dark(accent: ...)` 可替換 brand 四件組。急難模式固定
+/// 忽略 accent（保持 warn 飽和色辨識）。
 class AppTheme {
   const AppTheme._();
 
-  static ThemeData dark() => _build(IgniPalette.dark, Brightness.dark);
-  static ThemeData light() => _build(IgniPalette.light, Brightness.light);
+  static ThemeData dark({IgniAccent accent = IgniAccent.amber}) =>
+      _build(applyAccent(IgniPalette.dark, accent), Brightness.dark);
+  static ThemeData light({IgniAccent accent = IgniAccent.amber}) =>
+      _build(applyAccent(IgniPalette.light, accent), Brightness.light);
   static ThemeData emergency() =>
       _build(IgniPalette.emergency, Brightness.dark);
 

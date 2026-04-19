@@ -3,14 +3,23 @@
 import 'package:flutter/material.dart';
 
 import 'package:ignirelay_app/ui/theme/app_theme.dart';
+import 'package:ignirelay_app/ui/theme/igni_accent.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
+import 'package:ignirelay_app/ui/widgets/glass_card.dart';
+import 'package:ignirelay_app/ui/widgets/glass_icon_btn.dart';
+import 'package:ignirelay_app/ui/widgets/hairline.dart';
 import 'package:ignirelay_app/ui/widgets/igni_button.dart';
 import 'package:ignirelay_app/ui/widgets/igni_card.dart';
 import 'package:ignirelay_app/ui/widgets/igni_chip.dart';
 import 'package:ignirelay_app/ui/widgets/igni_section_label.dart';
 import 'package:ignirelay_app/ui/widgets/igni_sub_page_header.dart';
+import 'package:ignirelay_app/ui/widgets/mono_text.dart';
+import 'package:ignirelay_app/ui/widgets/pulse_effect.dart';
+import 'package:ignirelay_app/ui/widgets/ripple_effect.dart';
+import 'package:ignirelay_app/ui/widgets/slide_up_sheet.dart';
+import 'package:ignirelay_app/ui/widgets/status_chip.dart';
 
 /// 設計系統預覽頁（dev-only）。
 ///
@@ -27,12 +36,13 @@ class DesignShowcaseScreen extends StatefulWidget {
 
 class _DesignShowcaseScreenState extends State<DesignShowcaseScreen> {
   _Mode _mode = _Mode.dark;
+  IgniAccent _accent = IgniAccent.amber;
 
   @override
   Widget build(BuildContext context) {
     final theme = switch (_mode) {
-      _Mode.dark => AppTheme.dark(),
-      _Mode.light => AppTheme.light(),
+      _Mode.dark => AppTheme.dark(accent: _accent),
+      _Mode.light => AppTheme.light(accent: _accent),
       _Mode.emergency => AppTheme.emergency(),
     };
 
@@ -52,6 +62,10 @@ class _DesignShowcaseScreenState extends State<DesignShowcaseScreen> {
                     mode: _mode,
                     onChanged: (m) => setState(() => _mode = m),
                   ),
+                ),
+                _AccentSwitcher(
+                  accent: _accent,
+                  onChanged: (a) => setState(() => _accent = a),
                 ),
                 Expanded(
                   child: ListView(
@@ -73,6 +87,8 @@ class _DesignShowcaseScreenState extends State<DesignShowcaseScreen> {
                       _CardsSection(),
                       SizedBox(height: IgniSpacing.xl2),
                       _HazardSection(),
+                      SizedBox(height: IgniSpacing.xl2),
+                      _SharedWidgetsSection(),
                     ],
                   ),
                 ),
@@ -370,6 +386,247 @@ class _CardsSection extends StatelessWidget {
             Text('可點擊卡片 — InkWell ripple',
                 style: IgniTypography.bodyMedium(p.text1)),
           ]),
+        ),
+      ],
+    );
+  }
+}
+
+class _AccentSwitcher extends StatelessWidget {
+  const _AccentSwitcher({required this.accent, required this.onChanged});
+  final IgniAccent accent;
+  final ValueChanged<IgniAccent> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.igni;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        IgniSpacing.lg,
+        0,
+        IgniSpacing.lg,
+        IgniSpacing.md,
+      ),
+      child: Row(
+        children: [
+          Text('Accent', style: IgniTypography.sectionHeader(p.text2)),
+          const SizedBox(width: IgniSpacing.md),
+          ...IgniAccent.values.map((a) {
+            final active = accent == a;
+            return Padding(
+              padding: const EdgeInsets.only(right: IgniSpacing.sm),
+              child: GestureDetector(
+                onTap: () => onChanged(a),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: IgniSpacing.md,
+                    vertical: IgniSpacing.xs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: active ? p.brandSoft : p.bg2,
+                    borderRadius: const BorderRadius.all(IgniRadii.pill),
+                    border: Border.all(
+                      color: active ? p.brandBorder : p.border1,
+                    ),
+                  ),
+                  child: Text(
+                    a.label,
+                    style: IgniTypography.labelSmall(
+                      active ? p.brand : p.text2,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _SharedWidgetsSection extends StatelessWidget {
+  const _SharedWidgetsSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.igni;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const IgniSectionLabel('共用 widget · Stage 2'),
+
+        // Glass buttons + GlassCard
+        GlassCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('GlassCard / GlassIconBtn',
+                  style: IgniTypography.titleMedium(p.text0)),
+              const SizedBox(height: IgniSpacing.sm),
+              Row(children: [
+                GlassIconBtn(icon: Icons.layers, onPressed: () {}),
+                const SizedBox(width: IgniSpacing.sm),
+                GlassIconBtn(
+                    icon: Icons.my_location,
+                    onPressed: () {},
+                    selected: true),
+                const SizedBox(width: IgniSpacing.sm),
+                GlassIconBtn(
+                    icon: Icons.warning_amber,
+                    onPressed: () {},
+                    danger: true),
+              ]),
+            ],
+          ),
+        ),
+        const SizedBox(height: IgniSpacing.sm),
+
+        // StatusChip
+        IgniCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('StatusChip', style: IgniTypography.titleMedium(p.text0)),
+              const SizedBox(height: IgniSpacing.sm),
+              Wrap(
+                spacing: IgniSpacing.sm,
+                runSpacing: IgniSpacing.sm,
+                children: const [
+                  StatusChip(
+                      label: '廣播中',
+                      tone: StatusTone.ok,
+                      icon: Icons.wifi_tethering),
+                  StatusChip(
+                      label: 'SOS',
+                      tone: StatusTone.sos,
+                      icon: Icons.warning_amber),
+                  StatusChip(
+                      label: '警示',
+                      tone: StatusTone.warn,
+                      icon: Icons.error_outline),
+                  StatusChip(
+                      label: '同步',
+                      tone: StatusTone.info,
+                      icon: Icons.sync),
+                  StatusChip(
+                      label: 'L1 驗證',
+                      tone: StatusTone.brand,
+                      icon: Icons.verified_user),
+                  StatusChip(label: '離線', tone: StatusTone.neutral),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: IgniSpacing.sm),
+
+        // MonoText + Hairline
+        IgniCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('MonoText / Hairline',
+                  style: IgniTypography.titleMedium(p.text0)),
+              const SizedBox(height: IgniSpacing.sm),
+              MonoText('23.5564°N 120.4472°E', fontSize: 13, color: p.text1),
+              const SizedBox(height: IgniSpacing.xs),
+              MonoText('2026-04-19T14:03:22Z', color: p.text2),
+              const SizedBox(height: IgniSpacing.sm),
+              const Hairline(),
+              const SizedBox(height: IgniSpacing.sm),
+              const Hairline(strong: true, indent: 24),
+            ],
+          ),
+        ),
+        const SizedBox(height: IgniSpacing.sm),
+
+        // Pulse + Ripple
+        IgniCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('PulseEffect / RippleEffect',
+                  style: IgniTypography.titleMedium(p.text0)),
+              const SizedBox(height: IgniSpacing.md),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  PulseEffect(
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: p.sos,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.warning_amber,
+                          color: Colors.white, size: 24),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 80,
+                    height: 80,
+                    child: RippleEffect(
+                      color: p.brand,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: p.brand,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.wifi,
+                            color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: IgniSpacing.sm),
+
+        // SlideUpSheet trigger
+        IgniCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('SlideUpSheet',
+                  style: IgniTypography.titleMedium(p.text0)),
+              const SizedBox(height: IgniSpacing.sm),
+              IgniButton(
+                label: '開啟 Sheet 範例',
+                icon: Icons.unfold_more,
+                onPressed: () {
+                  SlideUpSheet.show<void>(
+                    context: context,
+                    title: '範例 Sheet',
+                    builder: (ctx) {
+                      final pp = ctx.igni;
+                      return Padding(
+                        padding: const EdgeInsets.all(IgniSpacing.lg),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '這是 SlideUpSheet 的內容區塊。',
+                              style: IgniTypography.bodyMedium(pp.text1),
+                            ),
+                            const SizedBox(height: IgniSpacing.md),
+                            const Hairline(),
+                            const SizedBox(height: IgniSpacing.md),
+                            const MonoText('fingerprint: abc123def456'),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ],
     );
