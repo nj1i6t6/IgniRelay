@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:mbtiles/mbtiles.dart';
@@ -17,6 +18,8 @@ import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/event_types.dart';
 import 'package:ignirelay_app/app/mesh/poi_query.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/ui/design/igni_colors.dart';
+import 'package:ignirelay_app/ui/design/igni_typography.dart';
 import 'package:ignirelay_app/ui/ignirelay_sprites.dart';
 import 'package:ignirelay_app/ui/ignirelay_theme.dart';
 import 'package:ignirelay_app/ui/triage_input.dart';
@@ -1673,19 +1676,33 @@ class _MapScreenState extends State<MapScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final p = context.igni;
     return Scaffold(
+      backgroundColor: p.bg0,
       appBar: AppBar(
-        title: Text(S.of(context)!.mapTitle,
-            style: const TextStyle(color: Colors.white, fontSize: 16)),
-        backgroundColor: Colors.black87,
+        backgroundColor: p.bg1,
+        foregroundColor: p.text0,
+        elevation: 0,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(S.of(context)!.mapTitle,
+                style: IgniTypography.titleMedium(p.text0)),
+            Text(
+              '${_eventMarkers.length} EVENTS · ${_hazardCenterMarkers.length} HAZARDS',
+              style: IgniTypography.monoSmall(p.text2),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.layers, color: Colors.white),
+            icon: Icon(Icons.layers, color: p.text1),
             onPressed: _showLayerControlSheet,
             tooltip: S.of(context)!.mapLayerControlTooltip,
           ),
           IconButton(
-            icon: const Icon(Icons.legend_toggle, color: Colors.white),
+            icon: Icon(Icons.legend_toggle, color: p.text1),
             onPressed: () => setState(() => _showLegend = !_showLegend),
             tooltip: S.of(context)!.mapLegendTooltip,
           ),
@@ -1696,7 +1713,7 @@ class _MapScreenState extends State<MapScreen>
                 angle: _refreshSpinCtrl.value * 2 * 3.14159265,
                 child: child,
               ),
-              child: const Icon(Icons.refresh, color: Colors.white),
+              child: Icon(Icons.refresh, color: p.text1),
             ),
             onPressed: _refreshWithSpin,
             tooltip: S.of(context)!.mapRefreshTooltip,
@@ -1883,8 +1900,25 @@ class _MapScreenState extends State<MapScreen>
               MarkerLayer(markers: _hazardCenterMarkers),
             // 4.5 預覽中心點
             if (previewMarkers.isNotEmpty) MarkerLayer(markers: previewMarkers),
-            // 5. Mesh 事件標記
-            if (_eventMarkers.isNotEmpty) MarkerLayer(markers: _eventMarkers),
+            // 5. Mesh 事件標記（含 marker clustering）
+            if (_eventMarkers.isNotEmpty)
+              MarkerClusterLayerWidget(
+                options: MarkerClusterLayerOptions(
+                  maxClusterRadius: 60,
+                  size: const Size(44, 44),
+                  alignment: Alignment.center,
+                  spiderfyCluster: false,
+                  zoomToBoundsOnClick: true,
+                  padding: const EdgeInsets.all(32),
+                  markers: _eventMarkers,
+                  polygonOptions: const PolygonOptions(
+                    color: Color(0x22E8803B),
+                    borderColor: Color(0x55E8803B),
+                    borderStrokeWidth: 1,
+                  ),
+                  builder: (ctx, markers) => _ClusterBubble(count: markers.length),
+                ),
+              ),
             // 6. 用戶位置
             if (locationMarkers.isNotEmpty)
               MarkerLayer(markers: locationMarkers),
@@ -2327,5 +2361,42 @@ class _EventMarkerIconState extends State<_EventMarkerIcon>
       );
     }
     return marker;
+  }
+}
+
+/// ─── Marker cluster bubble ───
+/// Stage 4d 新增：為 mesh 事件標記群聚時顯示的氣泡；採 brand 色配合
+/// 原型主視覺，顯示該群聚內的標記數量。
+class _ClusterBubble extends StatelessWidget {
+  const _ClusterBubble({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    const brand = Color(0xFFE8803B);
+    final label = count > 99 ? '99+' : '$count';
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: brand,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x55E8803B),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 }
