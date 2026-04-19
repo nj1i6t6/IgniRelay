@@ -6,9 +6,12 @@ import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
-import 'package:ignirelay_app/ui/onboarding_screen.dart';
+import 'package:ignirelay_app/app/emergency/emergency_mode_controller.dart';
 import 'package:ignirelay_app/ui/battery_optimization_guide.dart';
-import 'package:ignirelay_app/ui/main_tab_controller.dart';
+import 'package:ignirelay_app/ui/design/app_theme.dart';
+import 'package:ignirelay_app/ui/onboarding_screen.dart';
+import 'package:ignirelay_app/ui/screens/design_showcase_screen.dart';
+import 'package:ignirelay_app/ui/shell/main_shell.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
@@ -44,19 +47,41 @@ class IgniRelayApp extends StatefulWidget {
 
 class _IgniRelayAppState extends State<IgniRelayApp> {
   Locale? _locale;
+  ThemeMode _themeMode = ThemeMode.dark;
 
   @override
   void initState() {
     super.initState();
-    _loadLocale();
+    _loadPrefs();
   }
 
-  Future<void> _loadLocale() async {
+  Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     final code = prefs.getString('app_language');
-    if (code != null && mounted) {
-      setState(() => _locale = Locale(code));
+    final themeStr = prefs.getString('app_theme_mode');
+    if (!mounted) return;
+    setState(() {
+      if (code != null) _locale = Locale(code);
+      _themeMode = _parseThemeMode(themeStr);
+    });
+  }
+
+  static ThemeMode _parseThemeMode(String? s) {
+    switch (s) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      case 'system':
+      default:
+        return ThemeMode.dark;
     }
+  }
+
+  void setThemeMode(ThemeMode mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('app_theme_mode', mode.name);
+    if (mounted) setState(() => _themeMode = mode);
   }
 
   void setLocale(Locale locale) async {
@@ -69,37 +94,40 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
   Widget build(BuildContext context) {
     return Provider<MeshTransport>.value(
       value: widget.transport,
-      child: MaterialApp(
-        title: '烽傳 IgniRelay',
-        debugShowCheckedModeBanner: false,
-        locale: _locale,
-        supportedLocales: S.supportedLocales,
-        localizationsDelegates: const [
-          S.delegate,
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        localeResolutionCallback: (locale, supportedLocales) {
-          if (_locale != null) return _locale;
-          if (locale != null && locale.languageCode == 'zh') {
-            return const Locale('zh');
-          }
-          return const Locale('en');
+      child: AnimatedBuilder(
+        animation: EmergencyModeController.instance,
+        builder: (context, _) {
+          final inEmergency = EmergencyModeController.instance.isEmergency;
+          // 急難模式一律套用高對比主題，忽略 light/dark 偏好以保肌肉記憶。
+          final themeMode = inEmergency ? ThemeMode.dark : _themeMode;
+          return MaterialApp(
+            title: '烽傳 IgniRelay',
+            debugShowCheckedModeBanner: false,
+            locale: _locale,
+            supportedLocales: S.supportedLocales,
+            localizationsDelegates: const [
+              S.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            localeResolutionCallback: (locale, supportedLocales) {
+              if (_locale != null) return _locale;
+              if (locale != null && locale.languageCode == 'zh') {
+                return const Locale('zh');
+              }
+              return const Locale('en');
+            },
+            theme: AppTheme.light(),
+            darkTheme: inEmergency ? AppTheme.emergency() : AppTheme.dark(),
+            themeMode: themeMode,
+            routes: {
+              // dev-only 設計系統預覽頁；release build 也可進入（對 UX 無害）。
+              '/design-showcase': (_) => const DesignShowcaseScreen(),
+            },
+            home: const _StartupRouter(),
+          );
         },
-        theme: ThemeData.dark().copyWith(
-          primaryColor: Colors.red[900],
-          scaffoldBackgroundColor: Colors.black,
-          colorScheme: const ColorScheme.dark(
-            primary: Colors.redAccent,
-            secondary: Colors.cyanAccent,
-            surface: Color(0xFF1a1a2e),
-          ),
-          snackBarTheme: const SnackBarThemeData(
-            behavior: SnackBarBehavior.floating,
-          ),
-        ),
-        home: const _StartupRouter(),
       ),
     );
   }
@@ -304,17 +332,17 @@ class _StartupRouterState extends State<_StartupRouter> {
   @override
   Widget build(BuildContext context) {
     if (!_initialized) {
+      final theme = Theme.of(context);
       return Scaffold(
-        backgroundColor: Colors.black,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const CircularProgressIndicator(color: Colors.redAccent),
+              CircularProgressIndicator(color: theme.colorScheme.primary),
               const SizedBox(height: 16),
               Text(
                 S.of(context)?.mainStartupLoading ?? '烽傳 啟動中...',
-                style: const TextStyle(color: Colors.white54),
+                style: theme.textTheme.bodyMedium,
               ),
             ],
           ),
@@ -328,6 +356,6 @@ class _StartupRouterState extends State<_StartupRouter> {
       );
     }
 
-    return const MainTabController();
+    return const MainShell();
   }
 }

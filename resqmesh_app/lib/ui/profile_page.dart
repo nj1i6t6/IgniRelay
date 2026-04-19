@@ -7,6 +7,7 @@ import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/main.dart';
 import 'package:ignirelay_app/ui/battery_optimization_guide.dart';
 import 'package:ignirelay_app/ui/medical_card_screen.dart';
+import 'package:ignirelay_app/ui/survival_mode_screen.dart';
 
 /// 身分 / 信任 Profile 頁面
 class ProfilePage extends StatefulWidget {
@@ -284,6 +285,25 @@ class _ProfilePageState extends State<ProfilePage>
                 _hasMedicalCard ? S.of(context)!.profileMedicalCardEdit : S.of(context)!.profileMedicalCardCreate,
                 style: const TextStyle(fontSize: 13),
               ),
+            ),
+
+            const SizedBox(height: 8),
+
+            // Stage 3 暫時入口：生存模式已退出底欄，Stage 4a 會併入「我」頁面。
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.orangeAccent,
+                side: const BorderSide(color: Colors.orangeAccent),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+              onPressed: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const SurvivalModeScreen()));
+              },
+              icon: const Icon(Icons.shield_outlined, size: 18),
+              label: const Text('生存模式 / Mesh 狀態',
+                  style: TextStyle(fontSize: 13)),
             ),
 
             const SizedBox(height: 16),
