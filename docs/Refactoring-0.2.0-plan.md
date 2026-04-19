@@ -107,7 +107,7 @@ resqmesh_app/lib/
 - `lib/ui/**` 禁止 import `lib/platform/**`
 - `lib/app/**` 禁止 import `lib/ui/**`
 - `package:flutter/*` 等 pub 依賴不受影響（規則以 `lib/**` 路徑前綴匹配，不會誤擋 SDK）
-- 違反 → build fail
+- 違反 → build fail（由 `tool/check_layers.dart` 強制；既有 4 筆違規寫入 `tool/layer_violations_baseline.txt` grandfather，Stage 4a/4d/5 清除時同步縮減 baseline；Stage 7 於 CI 加 `--strict` 鎖死）
 
 ## 四、階段執行表（11 commits）
 

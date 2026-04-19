@@ -5,20 +5,29 @@
 //   - lib/app/**  禁止 import lib/ui/**
 //
 // 使用：
-//   dart run tool/check_layers.dart         （報告違規，exit 1 若有）
-//   dart run tool/check_layers.dart --warn  （僅警告，exit 0）
+//   dart run tool/check_layers.dart                   檢查並與 baseline 比對，
+//                                                    新增違規即 exit 1
+//   dart run tool/check_layers.dart --warn            僅印出，不 fail
+//   dart run tool/check_layers.dart --strict          忽略 baseline，任何違規都 fail
+//   dart run tool/check_layers.dart --update-baseline 以當前狀態重寫 baseline
 //
-// 本工具在 Stage 4a-4d / Stage 5 期間會觀察到逐漸遞減的違規數，
-// Stage 5 結束應為 0，Stage 7 之後可改為 CI 強制。
+// Baseline 檔：tool/layer_violations_baseline.txt
+// 每行格式 `<rule>\t<file>\t<importUri>`（file 與 line 無關，避免搬檔即破壞 baseline）。
+//
+// 契約：計畫 Refactoring-0.2.0-plan.md L110「違反 → build fail」。
+// Stage 1 時既有 4 筆違規已寫入 baseline，Stage 4a/4d/5 清除時須同步移除 baseline 條目
+// （或跑 `--update-baseline` 重建）。Stage 5 結束後 baseline 應為空，Stage 7 之後可在
+// CI 加上 `--strict` 作為最終閘門。
 
 import 'dart:io';
 
 const _package = 'ignirelay_app';
+const _baselinePath = 'tool/layer_violations_baseline.txt';
 
 class _Rule {
   final String name;
-  final String sourcePrefix; // 例如 'lib/ui/'
-  final String forbiddenPrefix; // 例如 'lib/platform/'
+  final String sourcePrefix;
+  final String forbiddenPrefix;
 
   const _Rule({
     required this.name,
@@ -61,9 +70,11 @@ class _Violation {
 
   _Violation(this.file, this.line, this.importUri, this.rule);
 
+  /// 用來與 baseline 比對的指紋，刻意排除行號避免搬檔誤觸。
+  String get fingerprint => '${rule.name}\t$file\t$importUri';
+
   @override
-  String toString() =>
-      '$file:$line  [${rule.name}]  imports $importUri';
+  String toString() => '$file:$line  [${rule.name}]  imports $importUri';
 }
 
 List<_Violation> _scan(Directory libDir) {
@@ -74,7 +85,6 @@ List<_Violation> _scan(Directory libDir) {
     final relPath = entity.path
         .replaceAll('\\', '/')
         .substring(entity.path.lastIndexOf('lib'));
-    // Normalize to forward slashes relative to project root
     final normalized = relPath.replaceAll('\\', '/');
     final matchingRules =
         _rules.where((r) => normalized.startsWith(r.sourcePrefix));
@@ -98,8 +108,33 @@ List<_Violation> _scan(Directory libDir) {
   return violations;
 }
 
+Set<String> _readBaseline() {
+  final f = File(_baselinePath);
+  if (!f.existsSync()) return <String>{};
+  return f
+      .readAsLinesSync()
+      .map((l) => l.trim())
+      .where((l) => l.isNotEmpty && !l.startsWith('#'))
+      .toSet();
+}
+
+void _writeBaseline(List<_Violation> violations) {
+  final lines = <String>[
+    '# 烽傳 Ignirelay layer-boundary baseline',
+    '# 由 `dart run tool/check_layers.dart --update-baseline` 產生',
+    '# 格式：<rule>\\t<file>\\t<importUri>（行號刻意不記錄）',
+    '# Stage 5 結束應清空，Stage 7 於 CI 加 --strict 鎖死',
+    '',
+    ...({for (final v in violations) v.fingerprint}.toList()..sort()),
+  ];
+  File(_baselinePath).writeAsStringSync(lines.join('\n') + '\n');
+}
+
 void main(List<String> args) {
   final warnOnly = args.contains('--warn');
+  final strict = args.contains('--strict');
+  final update = args.contains('--update-baseline');
+
   final lib = Directory('lib');
   if (!lib.existsSync()) {
     stderr.writeln('error: lib/ not found (run from resqmesh_app/)');
@@ -107,14 +142,58 @@ void main(List<String> args) {
   }
 
   final violations = _scan(lib);
+
+  if (update) {
+    _writeBaseline(violations);
+    stdout.writeln(
+        '[check_layers] baseline updated: ${violations.length} entry(ies) -> $_baselinePath');
+    exit(0);
+  }
+
   if (violations.isEmpty) {
     stdout.writeln('[check_layers] ok — no boundary violations');
     exit(0);
   }
 
-  stdout.writeln('[check_layers] ${violations.length} violation(s):');
+  final baseline = strict ? <String>{} : _readBaseline();
+  final newViolations = <_Violation>[];
+  final grandfathered = <_Violation>[];
   for (final v in violations) {
-    stdout.writeln('  $v');
+    if (baseline.contains(v.fingerprint)) {
+      grandfathered.add(v);
+    } else {
+      newViolations.add(v);
+    }
+  }
+
+  if (grandfathered.isNotEmpty) {
+    stdout.writeln(
+        '[check_layers] ${grandfathered.length} grandfathered (from baseline):');
+    for (final v in grandfathered) {
+      stdout.writeln('  - $v');
+    }
+  }
+
+  if (newViolations.isEmpty) {
+    stdout.writeln('[check_layers] ok — no new violations');
+    // 偵測 baseline 中已消滅的條目，提醒更新
+    final liveFps = {for (final v in violations) v.fingerprint};
+    final stale = baseline.where((b) => !liveFps.contains(b)).toList();
+    if (stale.isNotEmpty) {
+      stdout.writeln(
+          '[check_layers] hint: ${stale.length} baseline entry(ies) no longer present; '
+          'run with --update-baseline to shrink baseline:');
+      for (final s in stale) {
+        stdout.writeln('  - $s');
+      }
+    }
+    exit(0);
+  }
+
+  stdout.writeln(
+      '[check_layers] ${newViolations.length} NEW violation(s) (not in baseline):');
+  for (final v in newViolations) {
+    stdout.writeln('  ! $v');
   }
 
   if (warnOnly) {
