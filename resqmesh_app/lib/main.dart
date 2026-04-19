@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -147,8 +148,10 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
                 : AppTheme.dark(accent: _accent),
             themeMode: themeMode,
             routes: {
-              // dev-only 設計系統預覽頁；release build 也可進入（對 UX 無害）。
-              '/design-showcase': (_) => const DesignShowcaseScreen(),
+              // 設計系統預覽頁：計畫 §Stage 2「Debug-only」要求，release build
+              // 不註冊此路由以免誤入。kDebugMode 與 kProfileMode 皆視為「非正式」環境。
+              if (kDebugMode || kProfileMode)
+                '/design-showcase': (_) => const DesignShowcaseScreen(),
             },
             home: const _StartupRouter(),
           );

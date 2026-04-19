@@ -21,10 +21,12 @@ import 'package:ignirelay_app/ui/widgets/ripple_effect.dart';
 import 'package:ignirelay_app/ui/widgets/slide_up_sheet.dart';
 import 'package:ignirelay_app/ui/widgets/status_chip.dart';
 
-/// 設計系統預覽頁（dev-only）。
+/// 設計系統預覽頁（Debug / Profile build 限定）。
 ///
-/// 路由 `/design-showcase`；Stage 3 起由 main.dart 在 debug build 下掛載。
-/// 提供顏色、排版、按鈕、卡片、chip、hazard category 的完整視覺 QA。
+/// 路由 `/design-showcase`；main.dart 僅在 kDebugMode || kProfileMode 時註冊，
+/// release build 不可進入。提供顏色、排版、按鈕、卡片、chip、hazard 類別、
+/// accent 切換，與 Stage 2 共用 widget（GlassCard / GlassIconBtn / StatusChip /
+/// MonoText / Hairline / PulseEffect / RippleEffect / SlideUpSheet）的完整視覺 QA。
 ///
 /// 右上角切換 dark / light / emergency，不靠 MaterialApp 的 theme，直接 Theme wrapper。
 class DesignShowcaseScreen extends StatefulWidget {

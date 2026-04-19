@@ -87,9 +87,11 @@ resqmesh_app/lib/
     data/                  純資料字典（例：supply_category_data）
   ui/                      純 UI
     theme/
-      tokens.dart
+      igni_tokens.dart     spacing / radii / shadow / motion
+      igni_colors.dart     IgniPalette + ThemeExtension
+      igni_typography.dart sans / mono / 階層 TextStyle
+      igni_accent.dart     amber / teal / blue accent 切換
       app_theme.dart       dark / light / emergency 三套
-      accents.dart
     widgets/               共用：GlassIconBtn / GlassCard / StatusChip / MonoText / ...
     screens/
       map/  chat/  match/  me/   主分頁（拆成子元件檔）
@@ -147,14 +149,14 @@ resqmesh_app/lib/
 
 - **目標**：tokens + 主題 + 共用 widget + 急難模式骨架
 - **交付**：
-  - `ui/theme/tokens.dart` 完整色票、字級、間距、shadow
+  - `ui/theme/igni_tokens.dart` + `igni_colors.dart` + `igni_typography.dart` 完整色票、字級、間距、shadow
   - `AppTheme.dark()` / `.light()` / `.emergency()` 三套 ThemeData
   - Accent 可切（amber / teal / blue）
   - 共用 widget：`GlassIconBtn`、`GlassCard`、`StatusChip`、`MonoText`、`Hairline`、`SlideUpSheet`、`PulseEffect`、`RippleEffect`
   - Debug-only `/design-showcase` 路由
   - 急難模式 controller（手動開關 + 自動觸發條件判斷骨架）
   - **相容性驗證**：試裝 `flutter_map_marker_cluster`，確認與現行 `flutter_map ^7.0.2` 相容；若不相容，在本階段結束時決定 Stage 4d 走自寫 cluster 路線
-- **驗收**：Android 模擬器跑 `/design-showcase`，三主題切換正常；尚未影響主畫面；clustering 相容性已確認
+- **驗收**：Android 模擬器 debug build 進 `/design-showcase`（release build 不註冊此路由），三主題切換正常；AppTheme 本階段可掛入 main.dart 但不改變主畫面功能流程（主畫面改版在 Stage 4a-4d）；clustering 相容性已確認
 - **commit**：`refactor(stage-2): 建立 Design System 與急難模式架構`
 
 ### Stage 3 — App 殼與 4 分頁路由（commit #4）
