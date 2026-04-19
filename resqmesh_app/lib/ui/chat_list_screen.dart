@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
-import 'package:ignirelay_app/app/services/chat_service.dart';
-import 'package:ignirelay_app/ui/chat_room_screen.dart';
-import 'package:ignirelay_app/ui/chat_join_screen.dart';
 
-/// Chat room list screen showing all joined rooms.
+import 'package:ignirelay_app/app/services/chat_service.dart';
+import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/ui/chat_join_screen.dart';
+import 'package:ignirelay_app/ui/chat_room_screen.dart';
+import 'package:ignirelay_app/ui/design/igni_colors.dart';
+import 'package:ignirelay_app/ui/design/igni_tokens.dart';
+import 'package:ignirelay_app/ui/design/igni_typography.dart';
+
+/// 烽傳 Ignirelay 聊天室列表分頁（Stage 4b）。
+///
+/// 對應原型 [ChatScreen.jsx] 中的房間列表區段：
+///   - 置頂標題區，mono 副標顯示 N ROOMS · M UNREAD
+///   - 垂直清單（圖示色塊 + 名稱 + 時間 + 最後訊息預覽 + 未讀徽章）
+///   - 右下 FAB（brand 發光陰影），進入 ChatJoinScreen
+///   - 長按提供離開選項（沿用既有流程）
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
 
@@ -15,8 +25,8 @@ class ChatListScreen extends StatefulWidget {
 class _ChatListScreenState extends State<ChatListScreen>
     with AutomaticKeepAliveClientMixin {
   final ChatService _chatService = ChatService();
-  List<Map<String, dynamic>> _rooms = [];
-  Map<String, int> _unreadCounts = {};
+
+  List<_RoomTile> _tiles = [];
   bool _loading = true;
 
   @override
@@ -29,235 +39,121 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   Future<void> _loadRooms() async {
-    setState(() => _loading = true);
+    if (!_loading) setState(() => _loading = true);
     try {
       final rooms = await _chatService.getJoinedRooms();
-      final counts = <String, int>{};
+      final tiles = <_RoomTile>[];
       for (final room in rooms) {
         final roomId = room['room_id'] as String;
-        counts[roomId] = await _chatService.getUnreadCount(roomId);
+        final unread = await _chatService.getUnreadCount(roomId);
+        final last = await _chatService.getLastMessage(roomId);
+        tiles.add(_RoomTile(
+          roomId: roomId,
+          roomName: room['room_name'] as String? ?? roomId,
+          roomType: room['room_type'] as String? ?? 'custom',
+          adminOnly: (room['admin_only'] as int? ?? 0) == 1,
+          rateLimitSeconds: room['rate_limit_seconds'] as int? ?? 180,
+          unread: unread,
+          lastContent: last?.content,
+          lastHlc: last?.hlcTimestamp,
+        ));
       }
-      if (mounted) {
-        setState(() {
-          _rooms = rooms;
-          _unreadCounts = counts;
-          _loading = false;
-        });
-      }
-    } catch (e) {
+      // 排序：未讀優先 → 最新訊息優先 → 加入時間倒序（DB 本身已是 joined_at DESC）
+      tiles.sort((a, b) {
+        if ((a.unread > 0) != (b.unread > 0)) {
+          return b.unread.compareTo(a.unread);
+        }
+        return (b.lastHlc ?? 0).compareTo(a.lastHlc ?? 0);
+      });
+      if (!mounted) return;
+      setState(() {
+        _tiles = tiles;
+        _loading = false;
+      });
+    } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  String _roomTypeLabel(String type, S l10n) {
-    switch (type) {
-      case 'nation':
-        return l10n.chatListRoomNational;
-      case 'county':
-        return l10n.chatListRoomCounty;
-      case 'township':
-        return l10n.chatListRoomTownship;
-      case 'village':
-        return l10n.chatListRoomVillage;
-      case 'custom':
-        return l10n.chatListRoomCustom;
-      default:
-        return type;
-    }
+  Future<void> _autoJoin() async {
+    final roomId = await _chatService.autoJoinVillageRoom();
+    if (!mounted) return;
+    final s = S.of(context)!;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(roomId != null ? s.chatListAutoJoinSuccess : s.chatListAutoJoinFail),
+    ));
+    if (roomId != null) _loadRooms();
   }
 
-  IconData _roomTypeIcon(String type) {
-    switch (type) {
-      case 'nation':
-        return Icons.flag;
-      case 'county':
-        return Icons.account_balance;
-      case 'township':
-        return Icons.location_city;
-      case 'village':
-        return Icons.home;
-      case 'custom':
-        return Icons.group;
-      default:
-        return Icons.chat;
-    }
+  Future<void> _openJoin() async {
+    final joined = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const ChatJoinScreen()),
+    );
+    if (joined == true) _loadRooms();
   }
 
-  Color _roomTypeColor(String type) {
-    switch (type) {
-      case 'nation':
-        return Colors.red;
-      case 'county':
-        return Colors.orange;
-      case 'township':
-        return Colors.blue;
-      case 'village':
-        return Colors.green;
-      case 'custom':
-        return Colors.purple;
-      default:
-        return Colors.grey;
-    }
+  Future<void> _openRoom(_RoomTile t) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatRoomScreen(
+          roomId: t.roomId,
+          roomName: t.roomName,
+          roomType: t.roomType,
+          adminOnly: t.adminOnly,
+          rateLimitSeconds: t.rateLimitSeconds,
+        ),
+      ),
+    );
+    _loadRooms();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(S.of(context)!.chatListTitle),
+  Future<void> _confirmLeave(_RoomTile t) async {
+    final s = S.of(context)!;
+    final p = context.igni;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.chatListLeaveTitle),
+        content: Text(s.chatListLeaveContent(t.roomName)),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadRooms,
-            tooltip: S.of(context)!.chatListRefreshTooltip,
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(s.chatListLeaveCancel),
           ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _rooms.isEmpty
-              ? _buildEmptyState()
-              : RefreshIndicator(
-                  onRefresh: _loadRooms,
-                  child: ListView.builder(
-                    itemCount: _rooms.length,
-                    itemBuilder: (ctx, i) => _buildRoomTile(_rooms[i]),
-                  ),
-                ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          final joined = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => const ChatJoinScreen()),
-          );
-          if (joined == true) _loadRooms();
-        },
-        tooltip: S.of(context)!.chatListFabTooltip,
-        child: const Icon(Icons.add),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    final l10n = S.of(context)!;
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey[400]),
-          const SizedBox(height: 16),
-          Text(l10n.chatListEmptyTitle,
-              style: TextStyle(fontSize: 18, color: Colors.grey[600])),
-          const SizedBox(height: 8),
-          Text(l10n.chatListEmptySubtitle,
-              style: TextStyle(color: Colors.grey[500])),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () async {
-              final roomId = await _chatService.autoJoinVillageRoom();
-              if (roomId != null && mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(S.of(context)!.chatListAutoJoinSuccess)),
-                );
-                _loadRooms();
-              } else if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(S.of(context)!.chatListAutoJoinFail)),
-                );
-              }
-            },
-            icon: const Icon(Icons.my_location),
-            label: Text(l10n.chatListAutoJoin),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(s.chatListLeaveConfirm,
+                style: IgniTypography.labelLarge(p.sos)),
           ),
         ],
       ),
     );
+    if (confirm == true) {
+      await _chatService.leaveRoom(t.roomId);
+      _loadRooms();
+    }
   }
 
-  Widget _buildRoomTile(Map<String, dynamic> room) {
-    final roomId = room['room_id'] as String;
-    final roomName = room['room_name'] as String? ?? roomId;
-    final roomType = room['room_type'] as String? ?? 'custom';
-    final adminOnly = (room['admin_only'] as int? ?? 0) == 1;
-    final unread = _unreadCounts[roomId] ?? 0;
-
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: _roomTypeColor(roomType).withOpacity(0.2),
-        child: Icon(_roomTypeIcon(roomType), color: _roomTypeColor(roomType)),
-      ),
-      title: Text(roomName, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        adminOnly
-            ? '${_roomTypeLabel(roomType, S.of(context)!)} · ${S.of(context)!.chatListAdminBadge}'
-            : _roomTypeLabel(roomType, S.of(context)!),
-        style: TextStyle(color: Colors.grey[500], fontSize: 12),
-      ),
-      trailing: unread > 0
-          ? Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text('$unread',
-                  style: const TextStyle(color: Colors.white, fontSize: 12)),
-            )
-          : null,
-      onTap: () async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ChatRoomScreen(
-              roomId: roomId,
-              roomName: roomName,
-              roomType: roomType,
-              adminOnly: adminOnly,
-              rateLimitSeconds: room['rate_limit_seconds'] as int? ?? 180,
-            ),
-          ),
-        );
-        _loadRooms(); // Refresh unread counts
-      },
-      onLongPress: () => _showRoomOptions(roomId, roomName),
-    );
-  }
-
-  void _showRoomOptions(String roomId, String roomName) {
+  void _showRoomActions(_RoomTile t) {
+    final s = S.of(context)!;
+    final p = context.igni;
     showModalBottomSheet(
       context: context,
+      backgroundColor: p.bg1,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: IgniRadii.xl),
+      ),
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.exit_to_app, color: Colors.red),
-              title: Text(S.of(context)!.chatListLeaveTitle,
-                  style: const TextStyle(color: Colors.red)),
-              onTap: () async {
+              leading: Icon(Icons.exit_to_app, color: p.sos),
+              title: Text(s.chatListLeaveTitle,
+                  style: IgniTypography.bodyMedium(p.sos)),
+              onTap: () {
                 Navigator.pop(ctx);
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (c) => AlertDialog(
-                    title: Text(S.of(context)!.chatListLeaveTitle),
-                    content: Text(S.of(context)!.chatListLeaveContent(roomName)),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(c, false),
-                          child: Text(S.of(context)!.chatListLeaveCancel)),
-                      TextButton(
-                        onPressed: () => Navigator.pop(c, true),
-                        child: Text(S.of(context)!.chatListLeaveConfirm,
-                            style: const TextStyle(color: Colors.red)),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirm == true) {
-                  await _chatService.leaveRoom(roomId);
-                  _loadRooms();
-                }
+                _confirmLeave(t);
               },
             ),
           ],
@@ -265,4 +161,387 @@ class _ChatListScreenState extends State<ChatListScreen>
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final s = S.of(context)!;
+    final p = context.igni;
+    final unreadTotal = _tiles.fold<int>(0, (sum, t) => sum + t.unread);
+
+    return Container(
+      color: p.bg0,
+      child: Stack(
+        children: [
+          SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                // ── 頁首 ──
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    IgniSpacing.xl,
+                    IgniSpacing.xl2,
+                    IgniSpacing.xl,
+                    IgniSpacing.md,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(s.chatListTitle,
+                          style: IgniTypography.display(p.text0)),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_tiles.length} ROOMS · $unreadTotal UNREAD',
+                        style: IgniTypography.monoSmall(p.text2),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: _loading
+                      ? Center(
+                          child: CircularProgressIndicator(color: p.brand),
+                        )
+                      : _tiles.isEmpty
+                          ? _EmptyState(onAutoJoin: _autoJoin)
+                          : RefreshIndicator(
+                              color: p.brand,
+                              onRefresh: _loadRooms,
+                              child: ListView.builder(
+                                padding: const EdgeInsets.only(
+                                  left: IgniSpacing.lg,
+                                  right: IgniSpacing.lg,
+                                  bottom: IgniSpacing.bottomTabBarHeight +
+                                      IgniSpacing.xl2,
+                                ),
+                                itemCount: _tiles.length,
+                                itemBuilder: (ctx, i) {
+                                  final t = _tiles[i];
+                                  return _RoomRow(
+                                    tile: t,
+                                    isLast: i == _tiles.length - 1,
+                                    onTap: () => _openRoom(t),
+                                    onLongPress: () => _showRoomActions(t),
+                                  );
+                                },
+                              ),
+                            ),
+                ),
+              ],
+            ),
+          ),
+          // ── FAB ──
+          Positioned(
+            right: IgniSpacing.xl,
+            bottom: IgniSpacing.bottomTabBarHeight + IgniSpacing.xl,
+            child: Semantics(
+              button: true,
+              label: s.chatListFabTooltip,
+              child: Material(
+                color: Colors.transparent,
+                child: Ink(
+                  decoration: BoxDecoration(
+                    color: p.brand,
+                    borderRadius: const BorderRadius.all(IgniRadii.xl),
+                    boxShadow: IgniShadows.brandGlow(p.brand),
+                  ),
+                  child: InkWell(
+                    borderRadius: const BorderRadius.all(IgniRadii.xl),
+                    onTap: _openJoin,
+                    child: const SizedBox(
+                      width: 54,
+                      height: 54,
+                      child: Icon(Icons.add, color: Colors.white, size: 26),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// ───────────────────────── Room row ─────────────────────────
+class _RoomRow extends StatelessWidget {
+  const _RoomRow({
+    required this.tile,
+    required this.isLast,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  final _RoomTile tile;
+  final bool isLast;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.igni;
+    final accent = _typeColor(p, tile.roomType);
+    final typeIcon = _typeIcon(tile.roomType);
+
+    return InkWell(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      borderRadius: const BorderRadius.all(IgniRadii.md),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: IgniSpacing.sm, vertical: 14),
+        decoration: BoxDecoration(
+          border: isLast
+              ? null
+              : Border(bottom: BorderSide(color: p.border0)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.14),
+                borderRadius: const BorderRadius.all(IgniRadii.lg),
+                border: Border.all(color: accent.withValues(alpha: 0.28)),
+              ),
+              child: Icon(typeIcon, size: 22, color: accent),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          tile.roomName,
+                          style: IgniTypography.bodyLarge(p.text0)
+                              .copyWith(fontWeight: FontWeight.w600),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: IgniSpacing.sm),
+                      Text(
+                        _formatTime(tile.lastHlc),
+                        style: IgniTypography.monoSmall(p.text2),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      if (tile.adminOnly) ...[
+                        _OfficialBadge(accent: p.brand),
+                        const SizedBox(width: 6),
+                      ],
+                      Expanded(
+                        child: Text(
+                          tile.lastContent?.isNotEmpty == true
+                              ? tile.lastContent!
+                              : _fallbackSubtitle(context, tile.roomType),
+                          style: IgniTypography.bodySmall(p.text2),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (tile.unread > 0) ...[
+              const SizedBox(width: IgniSpacing.sm),
+              _UnreadBadge(count: tile.unread, color: p.brand),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _fallbackSubtitle(BuildContext context, String type) {
+    final s = S.of(context)!;
+    switch (type) {
+      case 'nation':
+        return s.chatListRoomNational;
+      case 'county':
+        return s.chatListRoomCounty;
+      case 'township':
+        return s.chatListRoomTownship;
+      case 'village':
+        return s.chatListRoomVillage;
+      default:
+        return s.chatListRoomCustom;
+    }
+  }
+
+  Color _typeColor(IgniPalette p, String type) {
+    switch (type) {
+      case 'nation':
+        return p.sos;
+      case 'county':
+        return p.brand;
+      case 'township':
+        return p.info;
+      case 'village':
+        return p.ok;
+      default:
+        return p.text2;
+    }
+  }
+
+  IconData _typeIcon(String type) {
+    switch (type) {
+      case 'nation':
+        return Icons.flag_outlined;
+      case 'county':
+        return Icons.account_balance_outlined;
+      case 'township':
+        return Icons.location_city_outlined;
+      case 'village':
+        return Icons.home_outlined;
+      default:
+        return Icons.chat_outlined;
+    }
+  }
+
+  String _formatTime(int? ms) {
+    if (ms == null || ms <= 0) return '';
+    final dt = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+    final now = DateTime.now();
+    final sameDay =
+        dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    if (sameDay) {
+      final hh = dt.hour.toString().padLeft(2, '0');
+      final mm = dt.minute.toString().padLeft(2, '0');
+      return '$hh:$mm';
+    }
+    final yesterday = now.subtract(const Duration(days: 1));
+    if (dt.year == yesterday.year &&
+        dt.month == yesterday.month &&
+        dt.day == yesterday.day) {
+      return '昨天';
+    }
+    return '${dt.month}/${dt.day}';
+  }
+}
+
+class _OfficialBadge extends StatelessWidget {
+  const _OfficialBadge({required this.accent});
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        border: Border.all(color: accent.withValues(alpha: 0.6)),
+        borderRadius: const BorderRadius.all(IgniRadii.xs),
+      ),
+      child: Text(
+        '官方',
+        style: IgniTypography.monoSmall(accent)
+            .copyWith(fontSize: 9.5, letterSpacing: 1.0),
+      ),
+    );
+  }
+}
+
+class _UnreadBadge extends StatelessWidget {
+  const _UnreadBadge({required this.count, required this.color});
+  final int count;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count > 99 ? '99+' : '$count';
+    return Container(
+      constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+      padding: const EdgeInsets.symmetric(horizontal: 7),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: const BorderRadius.all(Radius.circular(11)),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+/// ───────────────────────── Empty state ─────────────────────────
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.onAutoJoin});
+  final VoidCallback onAutoJoin;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context)!;
+    final p = context.igni;
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: IgniSpacing.xl),
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        const SizedBox(height: 64),
+        Icon(Icons.chat_bubble_outline, size: 64, color: p.text3),
+        const SizedBox(height: IgniSpacing.md),
+        Text(
+          s.chatListEmptyTitle,
+          textAlign: TextAlign.center,
+          style: IgniTypography.titleMedium(p.text1),
+        ),
+        const SizedBox(height: IgniSpacing.sm),
+        Text(
+          s.chatListEmptySubtitle,
+          textAlign: TextAlign.center,
+          style: IgniTypography.bodyMedium(p.text2),
+        ),
+        const SizedBox(height: IgniSpacing.xl2),
+        Center(
+          child: TextButton.icon(
+            onPressed: onAutoJoin,
+            icon: Icon(Icons.my_location, color: p.brand),
+            label: Text(
+              s.chatListAutoJoin,
+              style: IgniTypography.labelLarge(p.brand),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RoomTile {
+  const _RoomTile({
+    required this.roomId,
+    required this.roomName,
+    required this.roomType,
+    required this.adminOnly,
+    required this.rateLimitSeconds,
+    required this.unread,
+    this.lastContent,
+    this.lastHlc,
+  });
+
+  final String roomId;
+  final String roomName;
+  final String roomType;
+  final bool adminOnly;
+  final int rateLimitSeconds;
+  final int unread;
+  final String? lastContent;
+  final int? lastHlc;
 }

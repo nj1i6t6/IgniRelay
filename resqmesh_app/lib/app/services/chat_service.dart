@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -334,6 +334,26 @@ class ChatService {
         DateTime.now().millisecondsSinceEpoch - (48 * 60 * 60 * 1000);
     return db.delete('Chat_Messages',
         where: 'hlc_timestamp < ?', whereArgs: [cutoff]);
+  }
+
+  /// Get the most recent message preview for a room (content + hlc ms).
+  /// Returns null when the room has no messages.
+  Future<({String content, int hlcTimestamp})?> getLastMessage(
+      String roomId) async {
+    final db = await _dbHelper.database;
+    final rows = await db.query(
+      'Chat_Messages',
+      columns: ['content', 'hlc_timestamp'],
+      where: 'room_id = ?',
+      whereArgs: [roomId],
+      orderBy: 'hlc_timestamp DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return (
+      content: (rows.first['content'] as String?) ?? '',
+      hlcTimestamp: (rows.first['hlc_timestamp'] as int?) ?? 0,
+    );
   }
 
   /// Get total unread count across all rooms
