@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:ignirelay_app/ui/theme/igni_accent.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/ui/theme/igni_density.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 
@@ -12,14 +13,21 @@ import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 class AppTheme {
   const AppTheme._();
 
-  static ThemeData dark({IgniAccent accent = IgniAccent.amber}) =>
-      _build(applyAccent(IgniPalette.dark, accent), Brightness.dark);
-  static ThemeData light({IgniAccent accent = IgniAccent.amber}) =>
-      _build(applyAccent(IgniPalette.light, accent), Brightness.light);
-  static ThemeData emergency() =>
-      _build(IgniPalette.emergency, Brightness.dark);
+  static ThemeData dark({
+    IgniAccent accent = IgniAccent.amber,
+    IgniDensity density = IgniDensity.standard,
+  }) =>
+      _build(applyAccent(IgniPalette.dark, accent), Brightness.dark, density);
+  static ThemeData light({
+    IgniAccent accent = IgniAccent.amber,
+    IgniDensity density = IgniDensity.standard,
+  }) =>
+      _build(applyAccent(IgniPalette.light, accent), Brightness.light, density);
+  static ThemeData emergency({IgniDensity density = IgniDensity.standard}) =>
+      _build(IgniPalette.emergency, Brightness.dark, density);
 
-  static ThemeData _build(IgniPalette p, Brightness brightness) {
+  static ThemeData _build(
+      IgniPalette p, Brightness brightness, IgniDensity density) {
     final colorScheme = ColorScheme(
       brightness: brightness,
       primary: p.brand,
@@ -40,6 +48,7 @@ class AppTheme {
     return ThemeData(
       brightness: brightness,
       useMaterial3: true,
+      visualDensity: density.visualDensity,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: p.bg0,
       canvasColor: p.bg0,

@@ -12,6 +12,7 @@ import 'package:ignirelay_app/main.dart';
 import 'package:ignirelay_app/ui/secondary/battery_optimization_guide.dart';
 import 'package:ignirelay_app/ui/theme/igni_accent.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/ui/theme/igni_density.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 import 'package:ignirelay_app/ui/secondary/medical_card_screen.dart';
@@ -474,10 +475,20 @@ class _QuickAction extends StatelessWidget {
 }
 
 /// ───────────────────────── Tier list ─────────────────────────
-class _TierList extends StatelessWidget {
+///
+/// Stage 4a 交付項：信任等級改為圖示優先，L0-L3 文字與描述預設收合，
+/// 點擊展開才顯示；升級按鈕在收合狀態仍可見以保留既有升級流程。
+class _TierList extends StatefulWidget {
   const _TierList({required this.currentLevel, required this.onVerifyPhone});
   final int currentLevel;
   final VoidCallback onVerifyPhone;
+
+  @override
+  State<_TierList> createState() => _TierListState();
+}
+
+class _TierListState extends State<_TierList> {
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -489,57 +500,137 @@ class _TierList extends StatelessWidget {
       (2, 'L2', s.onboardingBadgeL2, s.profileBadgeDescL2, false),
       (3, 'L3', s.onboardingBadgeL3, s.profileBadgeDescL3, true),
     ];
+    final canUpgradeNow =
+        widget.currentLevel == 0 && !tiers[1].$5; // L0→L1 仍可升級
+
     return IgniCard(
       padding: EdgeInsets.zero,
       child: Column(
-        children: List.generate(tiers.length, (i) {
-          final (lvl, id, name, desc, locked) = tiers[i];
-          final done = currentLevel > lvl;
-          final active = currentLevel == lvl;
-          final canUpgrade = currentLevel == lvl - 1 && !locked && lvl == 1;
-          return Opacity(
-            opacity: locked ? 0.5 : 1.0,
-            child: Container(
+        children: [
+          // ── 收合列：四個圖示排一橫列 + 展開箭頭 ──
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
               padding: const EdgeInsets.symmetric(
                   horizontal: IgniSpacing.md, vertical: 13),
-              decoration: BoxDecoration(
-                border: i < tiers.length - 1
-                    ? Border(bottom: BorderSide(color: p.border0))
-                    : null,
-              ),
               child: Row(
                 children: [
-                  _TierDot(done: done, active: active, color: p),
-                  const SizedBox(width: IgniSpacing.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '$id · $name',
-                          style: IgniTypography.bodyMedium(
-                            active ? p.brand : p.text0,
-                          ).copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(desc, style: IgniTypography.bodySmall(p.text2)),
-                      ],
+                  for (int i = 0; i < tiers.length; i++) ...[
+                    if (i > 0) const SizedBox(width: IgniSpacing.sm),
+                    Opacity(
+                      opacity: tiers[i].$5 ? 0.5 : 1.0,
+                      child: _TierDot(
+                        done: widget.currentLevel > tiers[i].$1,
+                        active: widget.currentLevel == tiers[i].$1,
+                        color: p,
+                      ),
                     ),
-                  ),
-                  if (locked)
-                    Text(s.profileTrustNotOpen,
-                        style: IgniTypography.monoSmall(p.text3)),
-                  if (canUpgrade)
+                  ],
+                  const Spacer(),
+                  if (canUpgradeNow && !_expanded)
                     TextButton(
-                      onPressed: onVerifyPhone,
+                      onPressed: widget.onVerifyPhone,
                       child: Text(s.profileTrustPhoneVerify,
                           style: IgniTypography.labelSmall(p.brand)),
                     ),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: p.text2,
+                  ),
                 ],
               ),
             ),
-          );
-        }),
+          ),
+          // ── 展開內容：原本的逐列詳述 ──
+          if (_expanded) ...[
+            Divider(height: 1, color: p.border0),
+            for (int i = 0; i < tiers.length; i++)
+              _TierDetailRow(
+                lvl: tiers[i].$1,
+                id: tiers[i].$2,
+                name: tiers[i].$3,
+                desc: tiers[i].$4,
+                locked: tiers[i].$5,
+                currentLevel: widget.currentLevel,
+                showBottomBorder: i < tiers.length - 1,
+                onVerifyPhone: widget.onVerifyPhone,
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TierDetailRow extends StatelessWidget {
+  const _TierDetailRow({
+    required this.lvl,
+    required this.id,
+    required this.name,
+    required this.desc,
+    required this.locked,
+    required this.currentLevel,
+    required this.showBottomBorder,
+    required this.onVerifyPhone,
+  });
+
+  final int lvl;
+  final String id;
+  final String name;
+  final String desc;
+  final bool locked;
+  final int currentLevel;
+  final bool showBottomBorder;
+  final VoidCallback onVerifyPhone;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.igni;
+    final s = S.of(context)!;
+    final done = currentLevel > lvl;
+    final active = currentLevel == lvl;
+    final canUpgrade = currentLevel == lvl - 1 && !locked && lvl == 1;
+    return Opacity(
+      opacity: locked ? 0.5 : 1.0,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: IgniSpacing.md, vertical: 13),
+        decoration: BoxDecoration(
+          border: showBottomBorder
+              ? Border(bottom: BorderSide(color: p.border0))
+              : null,
+        ),
+        child: Row(
+          children: [
+            _TierDot(done: done, active: active, color: p),
+            const SizedBox(width: IgniSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$id · $name',
+                    style: IgniTypography.bodyMedium(
+                      active ? p.brand : p.text0,
+                    ).copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(desc, style: IgniTypography.bodySmall(p.text2)),
+                ],
+              ),
+            ),
+            if (locked)
+              Text(s.profileTrustNotOpen,
+                  style: IgniTypography.monoSmall(p.text3)),
+            if (canUpgrade)
+              TextButton(
+                onPressed: onVerifyPhone,
+                child: Text(s.profileTrustPhoneVerify,
+                    style: IgniTypography.labelSmall(p.brand)),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -611,6 +702,11 @@ class _SettingsCardState extends State<_SettingsCard> {
             icon: Icons.palette_outlined,
             label: '主題色',
             trailing: _AccentPicker(),
+          ),
+          _SettingsRow(
+            icon: Icons.density_medium,
+            label: '密度',
+            trailing: _DensityPicker(),
           ),
           _SettingsRow(
             icon: Icons.translate,
@@ -783,6 +879,48 @@ class _AccentPicker extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: IgniAccent.values.map(dot).toList(),
+    );
+  }
+}
+
+/// 密度切換：舒適 / 標準 / 緊湊（計畫 Stage 4a 交付項）。
+///
+/// 存於 `SharedPreferences('app_density')`，進入時由 main.dart 回讀，
+/// 經 `AppTheme.*(density:)` 套入 `ThemeData.visualDensity`。
+class _DensityPicker extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final p = context.igni;
+    final current = IgniRelayApp.densityOf(context);
+
+    Widget seg(IgniDensity d) {
+      final active = d == current;
+      return GestureDetector(
+        onTap: () => IgniRelayApp.setDensity(context, d),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: active ? p.bg1 : Colors.transparent,
+            borderRadius: const BorderRadius.all(IgniRadii.xs),
+          ),
+          child: Text(
+            d.label,
+            style: IgniTypography.monoSmall(active ? p.text0 : p.text2),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: p.bg2,
+        borderRadius: const BorderRadius.all(IgniRadii.sm),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: IgniDensity.values.map(seg).toList(),
+      ),
     );
   }
 }
