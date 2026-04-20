@@ -3,6 +3,5 @@
 # 格式：<rule>\t<file>\t<importUri>（行號刻意不記錄）
 # Stage 5 結束應清空，Stage 7 於 CI 加 --strict 鎖死
 
-ui-cannot-import-platform	lib/ui/screens/chat/chat_room_screen.dart	package:ignirelay_app/platform/mesh_transport.dart
 ui-cannot-import-platform	lib/ui/secondary/navigation_screen.dart	package:ignirelay_app/platform/native_bridge.dart
 ui-cannot-import-platform	lib/ui/secondary/physical_handoff.dart	package:ignirelay_app/platform/native_bridge.dart

@@ -432,22 +432,23 @@ class _RoomRow extends StatelessWidget {
   }
 }
 
+/// 官方頻道徽章 — Stage 4b 改為圖示優先（verified shield）。
+///
+/// 列表項目的橫向空間有限，原本「官方」兩字的文字徽章佔用過多寬度。
+/// 改以 Material `verified` 圖示表示官方認證，語意清楚且跨語系自然。
 class _OfficialBadge extends StatelessWidget {
   const _OfficialBadge({required this.accent});
   final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-      decoration: BoxDecoration(
-        border: Border.all(color: accent.withValues(alpha: 0.6)),
-        borderRadius: const BorderRadius.all(IgniRadii.xs),
-      ),
-      child: Text(
-        '官方',
-        style: IgniTypography.monoSmall(accent)
-            .copyWith(fontSize: 9.5, letterSpacing: 1.0),
+    return Tooltip(
+      message: '官方',
+      child: Icon(
+        Icons.verified,
+        size: 14,
+        color: accent,
+        semanticLabel: '官方',
       ),
     );
   }

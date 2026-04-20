@@ -5,7 +5,9 @@ import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
-import 'package:ignirelay_app/platform/mesh_transport.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
+import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 
 /// Individual chat room screen with message list and input.
 class ChatRoomScreen extends StatefulWidget {
@@ -164,21 +166,24 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     return Scaffold(
+      backgroundColor: p.bg0,
       appBar: AppBar(
+        backgroundColor: p.bg0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.roomName, style: const TextStyle(fontSize: 16)),
+            Text(widget.roomName, style: IgniTypography.titleMedium(p.text0)),
             Text(
               S.of(context)!.chatRoomMessageCount(_messages.length),
-              style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+              style: IgniTypography.monoSmall(p.text2),
             ),
           ],
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: Icon(Icons.refresh, color: p.text1),
             onPressed: _loadMessages,
           ),
         ],
@@ -192,31 +197,42 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 : _messages.isEmpty
                     ? Center(
                         child: Text(S.of(context)!.chatRoomEmpty,
-                            style: const TextStyle(color: Colors.grey)))
+                            style: IgniTypography.bodyMedium(p.text2)))
                     : ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                            horizontal: IgniSpacing.sm,
+                            vertical: IgniSpacing.xs),
                         itemCount: _messages.length,
-                        itemBuilder: (ctx, i) =>
-                            _buildMessageBubble(_messages[i]),
+                        itemBuilder: (ctx, i) {
+                          final msg = _messages[i];
+                          // 連續同發言者合併：只有首則顯示 sender label。
+                          final prev = i > 0 ? _messages[i - 1] : null;
+                          final curSender =
+                              _pubKeyBlobToHex(msg['sender_pub_key']);
+                          final prevSender = prev == null
+                              ? null
+                              : _pubKeyBlobToHex(prev['sender_pub_key']);
+                          final showSender = curSender != prevSender;
+                          return _buildMessageBubble(msg, showSender: showSender);
+                        },
                       ),
           ),
           // Reply indicator
           if (_replyToEventId != null)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              color: Colors.grey[200],
+              padding: const EdgeInsets.symmetric(
+                  horizontal: IgniSpacing.md, vertical: IgniSpacing.xs),
+              color: p.bg2,
               child: Row(
                 children: [
-                  const Icon(Icons.reply, size: 16, color: Colors.grey),
-                  const SizedBox(width: 8),
+                  Icon(Icons.reply, size: 16, color: p.text2),
+                  const SizedBox(width: IgniSpacing.sm),
                   Expanded(
                       child: Text(S.of(context)!.chatRoomReply,
-                          style: TextStyle(
-                              fontSize: 12, color: Colors.grey[600]))),
+                          style: IgniTypography.bodySmall(p.text2))),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 16),
+                    icon: Icon(Icons.close, size: 16, color: p.text2),
                     onPressed: () =>
                         setState(() => _replyToEventId = null),
                   ),
@@ -230,12 +246,19 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     );
   }
 
-  Widget _buildMessageBubble(Map<String, dynamic> msg) {
+  Widget _buildMessageBubble(Map<String, dynamic> msg,
+      {required bool showSender}) {
+    final p = context.igni;
     final senderHex = _pubKeyBlobToHex(msg['sender_pub_key']);
     final isMe = senderHex == _myPubKeyHex;
     final content = msg['content'] as String? ?? '';
     final hlc = msg['hlc_timestamp'] as int? ?? 0;
     final eventId = msg['event_id'] as String? ?? '';
+
+    // 同發言者連續訊息：縮小垂直間距，不再重複顯示 sender 標籤。
+    final topMargin = showSender ? IgniSpacing.sm : 2.0;
+    final bubbleColor = isMe ? p.brandSoft : p.bg2;
+    final textColor = p.text0;
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -244,36 +267,38 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           setState(() => _replyToEventId = eventId);
         },
         child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 2),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          margin: EdgeInsets.only(top: topMargin, bottom: 2),
+          padding: const EdgeInsets.symmetric(
+              horizontal: IgniSpacing.md, vertical: IgniSpacing.sm),
           constraints: BoxConstraints(
               maxWidth: MediaQuery.of(context).size.width * 0.75),
           decoration: BoxDecoration(
-            color: isMe ? Colors.blue[100] : Colors.grey[200],
+            color: bubbleColor,
+            border: Border.all(color: p.border1),
             borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(12),
-              topRight: const Radius.circular(12),
-              bottomLeft: Radius.circular(isMe ? 12 : 2),
-              bottomRight: Radius.circular(isMe ? 2 : 12),
+              topLeft: const Radius.circular(14),
+              topRight: const Radius.circular(14),
+              bottomLeft: Radius.circular(isMe ? 14 : 4),
+              bottomRight: Radius.circular(isMe ? 4 : 14),
             ),
           ),
           child: Column(
             crossAxisAlignment:
                 isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
-              if (!isMe)
-                Text(
-                  _shortenPubKey(senderHex, context),
-                  style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.bold),
+              if (!isMe && showSender)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    _shortenPubKey(senderHex, context),
+                    style: IgniTypography.monoSmall(p.text2),
+                  ),
                 ),
-              Text(content, style: const TextStyle(fontSize: 14)),
+              Text(content, style: IgniTypography.bodyMedium(textColor)),
               const SizedBox(height: 2),
               Text(
                 _formatTime(hlc),
-                style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                style: IgniTypography.monoSmall(p.text3),
               ),
             ],
           ),
@@ -283,28 +308,27 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 
   Widget _buildInputBar() {
+    final p = context.igni;
     // Bug 12 Fix: admin-only 頻道完全禁止一般用戶發言
     // TODO: 未來可根據 IdentityManager.getIdentityLevel() >= 3 判斷是否為管理員
     if (widget.adminOnly) {
       return Container(
         padding: EdgeInsets.only(
-          left: 16, right: 16, top: 12,
-          bottom: MediaQuery.of(context).padding.bottom + 12,
+          left: IgniSpacing.lg, right: IgniSpacing.lg, top: IgniSpacing.md,
+          bottom: MediaQuery.of(context).padding.bottom + IgniSpacing.md,
         ),
         decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          boxShadow: [
-            BoxShadow(color: Colors.black12, blurRadius: 4, offset: const Offset(0, -1))
-          ],
+          color: p.bg1,
+          border: Border(top: BorderSide(color: p.border1)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.lock_outline, size: 16, color: Colors.grey[500]),
-            const SizedBox(width: 8),
+            Icon(Icons.lock_outline, size: 16, color: p.text2),
+            const SizedBox(width: IgniSpacing.sm),
             Text(
               S.of(context)!.chatRoomAdminLock,
-              style: TextStyle(color: Colors.grey[500], fontSize: 13),
+              style: IgniTypography.bodySmall(p.text2),
             ),
           ],
         ),
@@ -314,19 +338,14 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     final canSend = _cooldownRemaining == 0;
     return Container(
       padding: EdgeInsets.only(
-        left: 8,
-        right: 8,
-        top: 8,
-        bottom: MediaQuery.of(context).padding.bottom + 8,
+        left: IgniSpacing.sm,
+        right: IgniSpacing.sm,
+        top: IgniSpacing.sm,
+        bottom: MediaQuery.of(context).padding.bottom + IgniSpacing.sm,
       ),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black12,
-              blurRadius: 4,
-              offset: const Offset(0, -1))
-        ],
+        color: p.bg1,
+        border: Border(top: BorderSide(color: p.border1)),
       ),
       child: Row(
         children: [
@@ -337,21 +356,18 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               minLines: 1,
               decoration: InputDecoration(
                 hintText: S.of(context)!.chatRoomInputHint,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20)),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 isDense: true,
               ),
               onSubmitted: (_) => canSend ? _sendMessage() : null,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: IgniSpacing.sm),
           canSend
               ? IconButton(
                   onPressed: _sendMessage,
-                  icon: const Icon(Icons.send, color: Colors.blue),
+                  icon: Icon(Icons.send, color: p.brand),
                 )
+              // Cooldown（廣播冷卻）使用 semantic.ok 降飽和版，避免誤判為錯誤狀態
               : SizedBox(
                   width: 40,
                   height: 40,
@@ -362,9 +378,11 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                         value:
                             1 - (_cooldownRemaining / widget.rateLimitSeconds),
                         strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(p.ok),
+                        backgroundColor: p.okSoft,
                       ),
                       Text('$_cooldownRemaining',
-                          style: const TextStyle(fontSize: 10)),
+                          style: IgniTypography.monoSmall(p.text1)),
                     ],
                   ),
                 ),

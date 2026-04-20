@@ -5,6 +5,9 @@ import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/geo/village_geofence.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
+import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 
 /// Screen for joining chat rooms via GPS auto-detect, manual location, or invite code.
 class ChatJoinScreen extends StatefulWidget {
@@ -210,181 +213,207 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
+    final s = S.of(context)!;
     return Scaffold(
-      appBar: AppBar(title: Text(S.of(context)!.chatJoinTitle)),
+      backgroundColor: p.bg0,
+      appBar: AppBar(
+        backgroundColor: p.bg0,
+        title: Text(s.chatJoinTitle),
+      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(IgniSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // ── GPS 自動加入 ──
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(S.of(context)!.chatJoinAutoSection,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Text(S.of(context)!.chatJoinAutoDesc,
-                        style: const TextStyle(color: Colors.grey)),
-                    if (_statusMessage != null) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const SizedBox(
-                            width: 14, height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(_statusMessage!, style: const TextStyle(fontSize: 13)),
-                        ],
+            _Section(
+              title: s.chatJoinAutoSection,
+              desc: s.chatJoinAutoDesc,
+              children: [
+                if (_statusMessage != null) ...[
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(p.brand),
+                        ),
                       ),
+                      const SizedBox(width: IgniSpacing.sm),
+                      Text(_statusMessage!,
+                          style: IgniTypography.bodySmall(p.text1)),
                     ],
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _joining ? null : _autoJoinVillage,
-                        icon: const Icon(Icons.my_location),
-                        label: _joining
-                            ? const SizedBox(
-                                width: 16, height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2))
-                            : Text(S.of(context)!.chatJoinAutoButton),
-                      ),
-                    ),
-                  ],
+                  ),
+                  const SizedBox(height: IgniSpacing.sm),
+                ],
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _joining ? null : _autoJoinVillage,
+                    icon: const Icon(Icons.my_location),
+                    label: _joining
+                        ? const SizedBox(
+                            width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : Text(s.chatJoinAutoButton),
+                  ),
                 ),
-              ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: IgniSpacing.lg),
 
             // ── 手動設定所在區域 ──
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            _Section(
+              title: s.chatJoinManualSection,
+              desc: s.chatJoinManualDesc,
+              children: [
+                Row(
                   children: [
-                    Text(S.of(context)!.chatJoinManualSection,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Text(S.of(context)!.chatJoinManualDesc,
-                        style: const TextStyle(color: Colors.grey)),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _searchController,
-                            decoration: InputDecoration(
-                              hintText: S.of(context)!.chatJoinSearchHint,
-                              border: const OutlineInputBorder(),
-                              prefixIcon: const Icon(Icons.search),
-                              isDense: true,
-                            ),
-                            onSubmitted: (_) => _searchVillage(),
-                          ),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: s.chatJoinSearchHint,
+                          prefixIcon: const Icon(Icons.search),
+                          isDense: true,
                         ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          onPressed: _searching ? null : _searchVillage,
-                          child: _searching
-                              ? const SizedBox(
-                                  width: 16, height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2))
-                              : Text(S.of(context)!.chatJoinSearchButton),
-                        ),
-                      ],
-                    ),
-                    if (_searchResults.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Text(S.of(context)!.chatJoinSearchResults(_searchResults.length),
-                          style: const TextStyle(fontSize: 13, color: Colors.grey)),
-                      const SizedBox(height: 8),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 250),
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: _searchResults.length,
-                          itemBuilder: (ctx, i) {
-                            final v = _searchResults[i];
-                            return ListTile(
-                              dense: true,
-                              title: Text(v.fullName),
-                              subtitle: Text(S.of(context)!.chatJoinSearchVillcode(v.villcode), style: const TextStyle(fontSize: 11)),
-                              trailing: const Icon(Icons.add_circle_outline, size: 20),
-                              onTap: _joining ? null : () => _joinWithVillage(v),
-                            );
-                          },
-                        ),
+                        onSubmitted: (_) => _searchVillage(),
                       ),
-                    ],
+                    ),
+                    const SizedBox(width: IgniSpacing.sm),
+                    ElevatedButton(
+                      onPressed: _searching ? null : _searchVillage,
+                      child: _searching
+                          ? const SizedBox(
+                              width: 16, height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : Text(s.chatJoinSearchButton),
+                    ),
                   ],
                 ),
-              ),
+                if (_searchResults.isNotEmpty) ...[
+                  const SizedBox(height: IgniSpacing.md),
+                  Text(s.chatJoinSearchResults(_searchResults.length),
+                      style: IgniTypography.monoSmall(p.text2)),
+                  const SizedBox(height: IgniSpacing.sm),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 250),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _searchResults.length,
+                      itemBuilder: (ctx, i) {
+                        final v = _searchResults[i];
+                        return ListTile(
+                          dense: true,
+                          title: Text(v.fullName,
+                              style: IgniTypography.bodyMedium(p.text0)),
+                          subtitle: Text(
+                              s.chatJoinSearchVillcode(v.villcode),
+                              style: IgniTypography.monoSmall(p.text2)),
+                          trailing: Icon(Icons.add_circle_outline,
+                              size: 20, color: p.brand),
+                          onTap: _joining ? null : () => _joinWithVillage(v),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: IgniSpacing.lg),
 
             // ── 邀請碼 ──
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(S.of(context)!.chatJoinInviteSection,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Text(S.of(context)!.chatJoinInviteDesc,
-                        style: const TextStyle(color: Colors.grey)),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _codeController,
-                      decoration: InputDecoration(
-                        hintText: S.of(context)!.chatJoinInviteHint,
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.vpn_key),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _joining ? null : _joinByCode,
-                        icon: const Icon(Icons.login),
-                        label: Text(S.of(context)!.chatJoinInviteButton),
-                      ),
-                    ),
-                  ],
+            _Section(
+              title: s.chatJoinInviteSection,
+              desc: s.chatJoinInviteDesc,
+              children: [
+                TextField(
+                  controller: _codeController,
+                  decoration: InputDecoration(
+                    hintText: s.chatJoinInviteHint,
+                    prefixIcon: const Icon(Icons.vpn_key),
+                  ),
                 ),
-              ),
+                const SizedBox(height: IgniSpacing.md),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _joining ? null : _joinByCode,
+                    icon: const Icon(Icons.login),
+                    label: Text(s.chatJoinInviteButton),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: IgniSpacing.lg),
 
             // ── 說明 ──
-            Card(
-              color: Colors.blue.withOpacity(0.1),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(S.of(context)!.chatJoinInfoSection, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Text(S.of(context)!.chatJoinInfoVillage),
-                    Text(S.of(context)!.chatJoinInfoAdmin),
-                    Text(S.of(context)!.chatJoinInfoCustom),
-                    Text(S.of(context)!.chatJoinInfoMesh),
-                    Text(S.of(context)!.chatJoinInfoSwitch),
-                  ],
-                ),
+            Container(
+              padding: const EdgeInsets.all(IgniSpacing.lg),
+              decoration: BoxDecoration(
+                color: p.infoSoft,
+                border: Border.all(color: p.info.withValues(alpha: 0.35)),
+                borderRadius: const BorderRadius.all(IgniRadii.md),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(s.chatJoinInfoSection,
+                      style: IgniTypography.labelLarge(p.text0)),
+                  const SizedBox(height: IgniSpacing.sm),
+                  Text(s.chatJoinInfoVillage,
+                      style: IgniTypography.bodySmall(p.text1)),
+                  Text(s.chatJoinInfoAdmin,
+                      style: IgniTypography.bodySmall(p.text1)),
+                  Text(s.chatJoinInfoCustom,
+                      style: IgniTypography.bodySmall(p.text1)),
+                  Text(s.chatJoinInfoMesh,
+                      style: IgniTypography.bodySmall(p.text1)),
+                  Text(s.chatJoinInfoSwitch,
+                      style: IgniTypography.bodySmall(p.text1)),
+                ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 加入頁的通用區段容器：標題 + 描述 + children。
+class _Section extends StatelessWidget {
+  const _Section({
+    required this.title,
+    required this.desc,
+    required this.children,
+  });
+
+  final String title;
+  final String desc;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.igni;
+    return Container(
+      padding: const EdgeInsets.all(IgniSpacing.lg),
+      decoration: BoxDecoration(
+        color: p.bg1,
+        border: Border.all(color: p.border1),
+        borderRadius: const BorderRadius.all(IgniRadii.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: IgniTypography.titleMedium(p.text0)),
+          const SizedBox(height: IgniSpacing.xs),
+          Text(desc, style: IgniTypography.bodySmall(p.text2)),
+          const SizedBox(height: IgniSpacing.md),
+          ...children,
+        ],
       ),
     );
   }

@@ -180,7 +180,7 @@ resqmesh_app/lib/
 - **驗收**：模擬器可切 Data Mule / BLE、看狀態、匯出 log；`grep "NativeBridge\." lib/ui/screens/me lib/ui/secondary/medical_card* lib/ui/secondary/survival_mode_screen.dart lib/ui/secondary/battery_optimization_guide.dart` 為 0（涵蓋本階段交付明列的所有 4a 範圍檔）
 - **commit**：`refactor(stage-4a): 重構「我」分頁並吸收生存模式`
 
-### Stage 4b — 「聊天」分頁（commit #6）
+### Stage 4b — 「聊天」分頁（commit #6）✅ 已完成（含 stage-4b 補丁）
 
 - **目標**：list / room / join 三畫面新 UI；並產出全域集合洩漏盤點給 Stage 6 使用
 - **交付**：

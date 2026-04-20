@@ -15,6 +15,10 @@ import 'package:ignirelay_app/app/mesh/mesh_router.dart';
 import 'package:ignirelay_app/platform/mesh_transport.dart';
 import 'package:ignirelay_app/app/mesh/event_types.dart';
 
+// Re-export so UI 層可以只 import 本檔（app layer）即可取用 MeshDataReceived 型別，
+// 不需要觸碰 platform/ 以符合 Stage 4b 分層規則。
+export 'package:ignirelay_app/platform/mesh_transport.dart' show MeshDataReceived;
+
 /// Wire payload 解碼結果
 class WirePayload {
   final String eventId;
