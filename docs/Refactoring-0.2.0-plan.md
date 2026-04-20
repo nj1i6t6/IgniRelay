@@ -182,24 +182,32 @@ resqmesh_app/lib/
 
 ### Stage 4b — 「聊天」分頁（commit #6）
 
-- **目標**：list / room / join 三畫面新 UI
+- **目標**：list / room / join 三畫面新 UI；並產出全域集合洩漏盤點給 Stage 6 使用
 - **交付**：
   - 對接既有 `ChatService`（不動邏輯）
   - 訊息氣泡：連續同發言者合併、只第一則顯示 avatar
   - 信任標籤改圖示優先
   - 「廣播中」標籤用 `semantic.ok` 降飽和版
-- **驗收**：模擬器走完加入（GPS / 村里 / 邀請碼）→ 收發訊息 → 未讀/已讀 → 離開房間
-- **commit**：`refactor(stage-4b): 重構「聊天」分頁`
+  - **集合洩漏盤點 artifact**：產出 `resqmesh_app/docs/leak_inventory.md`，列出全專案可疑的只增不減 `Set` / `Map` / `List`（含檔名、行號、生命週期、建議 TTL 策略、建議處理時點）。本階段**僅盤點不修**，供 Stage 4c / 6 按各自範圍認領。已知熱點：`BleManager` 長駐 singleton 集合（`ble_manager.dart:46/63/746`）
+- **驗收**：
+  - 模擬器走完加入（GPS / 村里 / 邀請碼）→ 收發訊息 → 未讀/已讀 → 離開房間
+  - `resqmesh_app/docs/leak_inventory.md` 存在且至少涵蓋 `BleManager`、`transport peer set`、`chat message cache`、`match repository` 四個來源的檢查結論（確認為 leak 或排除並標註原因）
+- **commit**：`refactor(stage-4b): 重構「聊天」分頁 + 集合洩漏盤點`
 
 ### Stage 4c — 「媒合」分頁（commit #7）
 
-- **目標**：四子分頁（requests / supplies / negotiations / community）新 UI
+- **目標**：四子分頁（requests / supplies / negotiations / community）新 UI + 物資狀態機防呆
 - **交付**：
   - 對接 `MatchRepository` / `NegotiationManager`（不動邏輯）
   - 選中態統一：accent 外框 + accent-soft 淺底
   - Sheet 多步時加 Step indicator（1/3 之類）
-- **驗收**：模擬器跑發佈需求 → 發佈供給 → 接受協商 → 進入導航入口
-- **commit**：`refactor(stage-4c): 重構「媒合」分頁`
+  - **物資狀態機 FSM 防呆**：在 `NegotiationManager` / 相關 service 加入 `canTransition(from, to)`（不改 DB schema、不改通訊協議，純 service 層防呆）；非法跳轉直接丟棄並寫 `debugPrint` / logger 攔截記錄
+  - **FSM 單測**：
+    - 合法/非法轉換矩陣（覆蓋 offered → accepted → in_transit → delivered 等主路徑 + 已知非法邊）
+    - 「**非法跳轉發生時，狀態欄位不回寫錯誤值**」— 這是防呆重點，必須有專門測試保護
+    - 攔截事件有被記錄（測試可讀取 log sink 驗證）
+- **驗收**：模擬器跑發佈需求 → 發佈供給 → 接受協商 → 進入導航入口；FSM 單測全綠
+- **commit**：`refactor(stage-4c): 重構「媒合」分頁 + 物資狀態機防呆`
 
 ### Stage 4d — 「地圖」分頁（commit #8）
 
@@ -217,40 +225,61 @@ resqmesh_app/lib/
 
 ### Stage 5 — 次要畫面（commit #9）
 
-- **目標**：據點供給、分級通報、onboarding 等剩餘次要畫面套新視覺；全域驗證 UI 零 `NativeBridge` 直呼
+- **目標**：據點供給、分級通報、onboarding 等剩餘次要畫面套新視覺；全域驗證 UI 零 `NativeBridge` 直呼；為 controller 建立可測邊界
 - **交付**：
   - 按「烽傳」視覺語言重繪剩餘次要畫面（醫療卡於 4a、導航/實體交接於 4d 已處理）
-  - 清除任何殘餘 `NativeBridge` 直呼
+  - 清除任何殘餘 `NativeBridge` 直呼（UI 層全面清零）
   - 導航進交接時 role 不再硬編碼 provider，依上下文決定 requester / provider
+  - **限縮版 `NativeBridgeFacade` 介面 + DI**：
+    - **介面覆蓋面限縮**：只抽 Stage 5 觸及 controller（`ble_scan_controller`、`mesh_runtime_controller`、`handoff_controller` 等此階段會動到的部分）實際使用的 method，不一次全包 BLE / Wi-Fi Direct / NFC / battery 全部 static
+    - **驗收範圍不限縮**：UI 全域零 `NativeBridge` 直呼仍然成立（未抽進 facade 的其他 static，UI 不得繞過 controller 直呼，改走 controller routing）
+    - 建立 `test/fakes/fake_native_bridge.dart`；至少一個 controller 單測使用它、納入既有 `flutter test` 流程；**不新增 CI 配置**（遵守 §六「不做 CI/CD 配置」）
 - **驗收**：
-  - `grep -r "NativeBridge\." lib/ui/` 結果為 0（全域驗證）
+  - `grep -r "NativeBridge\." lib/ui/` 結果為 0（全域驗證；**此條仍為 Stage 5 硬驗收，不因 facade 限縮而放寬**）
+  - `flutter test` 包含至少一個使用 `FakeNativeBridge` 的 controller 測試且綠燈
   - 模擬器跑：onboarding → 發需求 → 發供給 → 進導航 → 進實體交接（PIN / BLE / DROP_OFF 三種 UI 正常；實際 handoff 閉環在 Stage 6 修）
-- **commit**：`refactor(stage-5): 重構剩餘次要畫面並驗證 UI 零 NativeBridge 直呼`
+- **commit**：`refactor(stage-5): 重構剩餘次要畫面 + NativeBridgeFacade 可測邊界`
 
 ### Stage 6 — iOS Handoff P0 與通訊層補完（commit #10）
 
-- **目標**：修掉分析文件的 P0，讓 handoff 跨平台閉環
-- **交付**：
-  - 統一 handoff 事件型別（`handshake_data` 或 `handoff_result` 擇一，在 `handoff_controller` 歸一化）
-  - 完成 iOS `sendHandoffPin`（對齊 Android：PIN hash + resourceId 驗證；iOS BlePlugin.swift 的 duplicate case 清掉）
-  - `publishHandshakeComplete` 帶入真實 providerPubKey / requesterPubKey / actualDeliveredQty
-  - iOS 建置：補 `Podfile` 模板、`Podfile.lock` 策略說明、`Generated.xcconfig` git 忽略規則
+- **目標**：修掉分析文件的 P0，讓 handoff 跨平台閉環，補 schema 前向相容能力，清通訊層集合
+- **交付（執行順序固定，不可調換）**：
+  1. **iOS handoff 事件型別對齊**：Dart 端期望 `handoff_result`（`native_bridge.dart:389`），iOS 實際送 `handshake_data`（`BlePlugin.swift:585`）— 擇一為準（建議跟 Android 保持一致），在 `handoff_controller` 歸一化；iOS BlePlugin.swift 的 duplicate case 清掉
+  2. **完成 iOS `sendHandoffPin`**（目前是 TODO，`BlePlugin.swift:232`）：對齊 Android PIN hash + resourceId 驗證邏輯
+  3. **protobuf `HandshakeCompleteData` 加 `schema_version` 欄位**（`mesh_protocol.pb.dart:1959`；預設值 `0` 代表舊 client）：取代「外掛裸 version byte」方案，利用 protobuf 未知欄位向後相容特性；`publishHandshakeComplete` 帶入真實 providerPubKey / requesterPubKey / actualDeliveredQty
+  4. **transport 層集合 TTL 清理**：依 Stage 4b 產出的 `resqmesh_app/docs/leak_inventory.md` 對 transport 範圍的 leak 熱點（`BleManager` 已知三處 + 盤點新增）加 TTL / LRU / 容量上限；**不碰 chat / match 範圍的集合**（那些由各自分頁負責或 Stage 7 處理）
+  5. iOS 建置：補 `Podfile` 模板、`Podfile.lock` 策略說明、`Generated.xcconfig` git 忽略規則
 - **驗收**：
   - Android ↔ Android 模擬器 handoff E2E 走通（我可測）
+  - **schema_version 新舊端雙向相容性實測**：
+    - 新 client 解析不含 `schema_version` 的舊 payload（protobuf 預設為 `0`）→ 不崩、流程可繼續
+    - 舊 client 解析含 `schema_version` 的新 payload（protobuf 未知欄位忽略）→ 不崩、流程可繼續
+    - 兩向各一次實測，記錄於 commit 訊息
+  - transport 集合壓力測試：連續發現/連接若干 peer 後，集合大小有上界而非單調成長
   - iOS 編譯與實機：使用者之後自行在 macOS 驗證；commit 訊息註明「iOS 實機測試待執行」
-- **commit**：`refactor(stage-6): 修補 handoff 跨平台閉環與 iOS P0`
+- **commit**：`refactor(stage-6): handoff 跨平台閉環 + schema_version + transport TTL`
 
 ### Stage 7 — 收尾（commit #11）
 
-- **目標**：品質清理、刪舊碼、文件同步
+- **目標**：品質清理、刪舊碼、文件同步、i18n 安全化、Design System 視覺鎖定
 - **交付**：
   - 刪除所有過渡檔、`// TODO: removed in refactor` 殘留、無用 import
   - `flutter analyze` 清到 < 20 issues
   - `writeDebugLog` 改可 await + 測試通過（解掉原 1 fail）
   - 補 E2E 測試：match → navigation → handoff → complete
+  - **i18n 安全化**：全域搜尋並替換不安全的 `S.of(context)!` / `AppLocalizations.of(context)!` 強制解包（已知熱點 `main.dart:254`）— 改為安全取值（e.g. 加 null check、fallback 字串、或確保上層 `MaterialApp` 已就緒）；**不重建 i18n 架構**，僅消除啟動 / async UI 回呼時序崩潰風險
+  - **Design System Golden 最小集 3×3**：
+    - 3 個元件：`GlassCard`、`StatusChip`（覆蓋 6 種 tone 於同一 scene）、`GlassIconBtn`（default / selected / danger 三態於同一 scene）
+    - 3 個主題：`AppTheme.dark()` / `.light()` / `.emergency()`
+    - 共 9 張 golden baseline；不納入 `SlideUpSheet` / `PulseEffect` / `RippleEffect` 等動畫類（避免維護爆炸）
+  - **Token smoke test**：改任一 semantic token（如 `p.brand` 值）應觸發 golden diff，手動 `flutter test --update-goldens` 才能通過；寫入 `resqmesh_app/docs/golden_workflow.md` 記錄規則
   - 版本號 bump 至 `0.2.0`
-- **驗收**：`flutter test` 全綠、`flutter analyze` < 20、模擬器冷啟動到 SOS 完整路徑無 regression
-- **commit**：`refactor(stage-7): 清理品質、刪舊碼、bump 0.2.0`
+- **驗收**：
+  - `flutter test` 全綠（含 9 張 golden）、`flutter analyze` < 20
+  - 模擬器冷啟動到 SOS 完整路徑無 regression
+  - `grep -rE "S\.of\(context\)!|AppLocalizations\.of\(context\)!" lib/` 結果為 0
+  - Token smoke：手動改一個 token 值跑 `flutter test`，應 fail 於 golden 比對（證明鎖定有效），還原即恢復綠燈
+- **commit**：`refactor(stage-7): 清理品質 + i18n 安全化 + Golden 鎖定 + bump 0.2.0`
 
 ---
 
