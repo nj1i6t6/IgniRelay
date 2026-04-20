@@ -10,6 +10,7 @@ import 'package:ignirelay_app/app/emergency/emergency_mode_controller.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/main.dart';
 import 'package:ignirelay_app/ui/secondary/battery_optimization_guide.dart';
+import 'package:ignirelay_app/ui/theme/igni_accent.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
@@ -607,6 +608,11 @@ class _SettingsCardState extends State<_SettingsCard> {
             trailing: _ThemeToggle(),
           ),
           _SettingsRow(
+            icon: Icons.palette_outlined,
+            label: '主題色',
+            trailing: _AccentPicker(),
+          ),
+          _SettingsRow(
             icon: Icons.translate,
             label: '語言',
             trailing: DropdownButton<String>(
@@ -735,6 +741,48 @@ class _ThemeToggle extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [seg('dark', '深色', isDark), seg('light', '淺色', !isDark)],
       ),
+    );
+  }
+}
+
+/// 主題色切換：amber / teal / blue（accent 四件組由 AppTheme.applyAccent 注入）。
+///
+/// 存於 `SharedPreferences('app_accent')`，進入時由 main.dart 回讀。
+class _AccentPicker extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final p = context.igni;
+    final current = IgniRelayApp.accentOf(context);
+
+    // 直接用 palette 樣板取出 brand 色當色點；避免暴露 _AccentSet。
+    Color brandOf(IgniAccent a) =>
+        applyAccent(IgniPalette.dark, a).brand;
+
+    Widget dot(IgniAccent a) {
+      final selected = a == current;
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: GestureDetector(
+          onTap: () => IgniRelayApp.setAccent(context, a),
+          child: Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              color: brandOf(a),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: selected ? p.text0 : p.border1,
+                width: selected ? 2 : 1,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: IgniAccent.values.map(dot).toList(),
     );
   }
 }

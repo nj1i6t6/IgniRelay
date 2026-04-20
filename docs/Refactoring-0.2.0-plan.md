@@ -163,10 +163,10 @@ resqmesh_app/lib/
 
 - **目標**：新殼上線，舊畫面暫時嵌在新殼內可切換
 - **交付**：
-  - 新 `MainTabController`（4 分頁、玻璃 TabBar、badge、SOS 與 tab 留 16pt 間距）
+  - 新 `MainShell`（原計畫暫名 `MainTabController`；實作採 `MainShell`，4 分頁、玻璃 TabBar、badge、SOS 與 tab 留 16pt 間距）
   - 4 個 Screen 先為「過渡殼」：內容暫時直接嵌舊畫面
   - 「我」分頁加上主題 / accent / 急難模式設定入口
-  - `Sheets` 共用底部抽屜框架
+  - `Sheets` 共用底部抽屜框架（Stage 3 只建 `SlideUpSheet` 框架；主畫面逐步遷移留給 Stage 4a-4d，map_screen 的 showModalBottomSheet 清算落在 Stage 4d 拆檔時一併完成）
 - **驗收**：模擬器 App 啟動後是新殼，底欄 4 分頁，「我」可切主題/急難模式並看到變化
 - **commit**：`refactor(stage-3): 套用新 App 殼與 4 分頁底欄`
 
