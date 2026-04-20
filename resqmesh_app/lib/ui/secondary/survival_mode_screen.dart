@@ -6,9 +6,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
 import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
-// Stage 4a-fix：透過 controller 取用 transport，UI 層不再 import
-// `lib/platform/mesh_transport.dart`；TransportState / TransportStats 由
-// mesh_runtime_controller 重新導出。
+// Stage 4a-fix：透過 controller 取用 transport，UI 層不直接依賴
+// platform 層；TransportState / TransportStats 由 mesh_runtime_controller
+// 重新導出。
 import 'package:ignirelay_app/app/controllers/mesh_runtime_controller.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/tier_manager.dart';

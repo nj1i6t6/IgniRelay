@@ -177,7 +177,7 @@ resqmesh_app/lib/
   - 整合 profile + 醫療卡入口 + 主題 / accent / 密度 / 急難模式設定 + 生存模式子頁（連線狀態、Data Mule、BLE 診斷、Debug log 匯出）
   - 本分頁範圍內 UI 無 `NativeBridge` 直呼，全走 `mesh_runtime_controller` / `device_info_controller`（包含原 `survival_mode_screen`、`battery_optimization_guide`）
   - 信任等級改圖示優先，L0-L3 字樣藏進點擊展開
-- **驗收**：模擬器可切 Data Mule / BLE、看狀態、匯出 log；`grep "NativeBridge\." lib/ui/screens/me lib/ui/secondary/medical_card*` 為 0
+- **驗收**：模擬器可切 Data Mule / BLE、看狀態、匯出 log；`grep "NativeBridge\." lib/ui/screens/me lib/ui/secondary/medical_card* lib/ui/secondary/survival_mode_screen.dart lib/ui/secondary/battery_optimization_guide.dart` 為 0（涵蓋本階段交付明列的所有 4a 範圍檔）
 - **commit**：`refactor(stage-4a): 重構「我」分頁並吸收生存模式`
 
 ### Stage 4b — 「聊天」分頁（commit #6）
