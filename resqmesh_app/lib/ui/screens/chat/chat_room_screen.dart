@@ -255,54 +255,73 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     final hlc = msg['hlc_timestamp'] as int? ?? 0;
     final eventId = msg['event_id'] as String? ?? '';
 
-    // 同發言者連續訊息：縮小垂直間距，不再重複顯示 sender 標籤。
+    // 同發言者連續訊息：縮小垂直間距，avatar 僅第一則顯示。
     final topMargin = showSender ? IgniSpacing.sm : 2.0;
     final bubbleColor = isMe ? p.brandSoft : p.bg2;
     final textColor = p.text0;
 
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPress: () {
-          setState(() => _replyToEventId = eventId);
-        },
-        child: Container(
-          margin: EdgeInsets.only(top: topMargin, bottom: 2),
-          padding: const EdgeInsets.symmetric(
-              horizontal: IgniSpacing.md, vertical: IgniSpacing.sm),
-          constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.75),
-          decoration: BoxDecoration(
-            color: bubbleColor,
-            border: Border.all(color: p.border1),
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(14),
-              topRight: const Radius.circular(14),
-              bottomLeft: Radius.circular(isMe ? 14 : 4),
-              bottomRight: Radius.circular(isMe ? 4 : 14),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment:
-                isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-            children: [
-              if (!isMe && showSender)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Text(
-                    _shortenPubKey(senderHex, context),
-                    style: IgniTypography.monoSmall(p.text2),
-                  ),
-                ),
-              Text(content, style: IgniTypography.bodyMedium(textColor)),
-              const SizedBox(height: 2),
-              Text(
-                _formatTime(hlc),
-                style: IgniTypography.monoSmall(p.text3),
-              ),
-            ],
+    final bubble = GestureDetector(
+      onLongPress: () {
+        setState(() => _replyToEventId = eventId);
+      },
+      child: Container(
+        margin: EdgeInsets.only(top: topMargin, bottom: 2),
+        padding: const EdgeInsets.symmetric(
+            horizontal: IgniSpacing.md, vertical: IgniSpacing.sm),
+        constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.70),
+        decoration: BoxDecoration(
+          color: bubbleColor,
+          border: Border.all(color: p.border1),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(14),
+            topRight: const Radius.circular(14),
+            bottomLeft: Radius.circular(isMe ? 14 : 4),
+            bottomRight: Radius.circular(isMe ? 4 : 14),
           ),
         ),
+        child: Column(
+          crossAxisAlignment:
+              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            if (!isMe && showSender)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text(
+                  _shortenPubKey(senderHex, context),
+                  style: IgniTypography.monoSmall(p.text2),
+                ),
+              ),
+            Text(content, style: IgniTypography.bodyMedium(textColor)),
+            const SizedBox(height: 2),
+            Text(
+              _formatTime(hlc),
+              style: IgniTypography.monoSmall(p.text3),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (isMe) {
+      return Align(alignment: Alignment.centerRight, child: bubble);
+    }
+    // 非自己訊息：連續同發言者的第一則顯示 avatar，其餘以等寬 SizedBox
+    // 保留左側對齊縮排。
+    return Padding(
+      padding: const EdgeInsets.only(right: 40),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: topMargin),
+            child: showSender
+                ? _SenderAvatar(senderHex: senderHex)
+                : const SizedBox(width: 32, height: 32),
+          ),
+          const SizedBox(width: IgniSpacing.sm),
+          Flexible(child: bubble),
+        ],
       ),
     );
   }
@@ -387,6 +406,50 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   ),
                 ),
         ],
+      ),
+    );
+  }
+}
+
+/// 聊天訊息的發言者 avatar：以 sender pubkey hex 前 2 字為縮寫，
+/// 底色由 hex 前 6 碼雜湊映射到 IgniPalette 的 hazard 色盤，
+/// 以降飽和度呈現，避免搶過訊息本體。
+class _SenderAvatar extends StatelessWidget {
+  const _SenderAvatar({required this.senderHex});
+  final String senderHex;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.igni;
+    final initials = senderHex.length >= 2
+        ? senderHex.substring(0, 2).toUpperCase()
+        : '··';
+    final palette = <Color>[
+      p.hazardWater,
+      p.hazardFood,
+      p.hazardMed,
+      p.hazardShelter,
+      p.hazardTool,
+    ];
+    int seed = 0;
+    for (final c in senderHex.codeUnits.take(6)) {
+      seed = (seed * 31 + c) & 0x7FFFFFFF;
+    }
+    final bg = palette[seed % palette.length].withValues(alpha: 0.22);
+    final fg = palette[seed % palette.length];
+    return Container(
+      width: 32,
+      height: 32,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: bg,
+        shape: BoxShape.circle,
+        border: Border.all(color: fg.withValues(alpha: 0.45), width: 1),
+      ),
+      child: Text(
+        initials,
+        style: IgniTypography.monoSmall(fg)
+            .copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }

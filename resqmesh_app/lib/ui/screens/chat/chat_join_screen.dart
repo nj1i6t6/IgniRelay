@@ -75,10 +75,12 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() {
-        _joining = false;
-        _statusMessage = null;
-      });
+      if (mounted) {
+        setState(() {
+          _joining = false;
+          _statusMessage = null;
+        });
+      }
     }
   }
 
