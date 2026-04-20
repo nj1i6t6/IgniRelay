@@ -170,7 +170,7 @@ resqmesh_app/lib/
 - **驗收**：模擬器 App 啟動後是新殼，底欄 4 分頁，「我」可切主題/急難模式並看到變化
 - **commit**：`refactor(stage-3): 套用新 App 殼與 4 分頁底欄`
 
-### Stage 4a — 「我」分頁（commit #5）
+### Stage 4a — 「我」分頁（commit #5） ✅ 已完成（含 stage-4a-fix 補丁）
 
 - **目標**：第一個完整新畫面
 - **交付**：

@@ -23,6 +23,7 @@ import 'package:ignirelay_app/platform/transport_factory.dart';
 import 'package:ignirelay_app/platform/native_bridge.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
+import 'package:ignirelay_app/app/controllers/mesh_runtime_controller.dart';
 import 'package:ignirelay_app/app/crdt/hlc.dart';
 
 void main() {
@@ -32,7 +33,10 @@ void main() {
     defaultValue: 1712102400000, // 2024-04-03 fallback
   );
   HLC.setAppBuildTimestamp(buildTimestamp);
-  runApp(IgniRelayApp(transport: TransportFactory.create()));
+  final transport = TransportFactory.create();
+  // UI 層透過 MeshRuntimeController 操作 transport，不直接持有實例。
+  MeshRuntimeController.instance.attachTransport(transport);
+  runApp(IgniRelayApp(transport: transport));
 }
 
 class IgniRelayApp extends StatefulWidget {

@@ -2,12 +2,13 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:ignirelay_app/platform/mesh_transport.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
 import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
+// Stage 4a-fix：透過 controller 取用 transport，UI 層不再 import
+// `lib/platform/mesh_transport.dart`；TransportState / TransportStats 由
+// mesh_runtime_controller 重新導出。
 import 'package:ignirelay_app/app/controllers/mesh_runtime_controller.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/tier_manager.dart';
@@ -43,14 +44,14 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   final List<String> _gattServerLogs = [];
   StreamSubscription? _gattSub;
 
-  late final MeshTransport _transport;
+  final MeshRuntimeController _mesh = MeshRuntimeController.instance;
   StreamSubscription? _bleSub;
+  StreamSubscription<TransportState>? _transportStateSub;
   Timer? _statsTimer;
 
   @override
   void initState() {
     super.initState();
-    _transport = Provider.of<MeshTransport>(context, listen: false);
     _checkCapabilities();
     _loadStats();
     DatabaseHelper().purgeDebugLogs(); // 清理 24h 前的日誌
@@ -97,10 +98,10 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
 
   void _startMeshListening() {
     // Transport 已在 main 啟動時自動開始，這裡同步 UI 狀態
-    _isBleActive = _transport.isActive;
+    _isBleActive = _mesh.transportActive;
 
     // 監聽 transport 狀態變化，同步 BLE 按鈕顯示
-    _transport.onStateChanged.listen((state) {
+    _transportStateSub = _mesh.transportStateChanges.listen((state) {
       if (!mounted) return;
       setState(() {
         _isBleActive = state == TransportState.running;
@@ -195,7 +196,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   Future<void> _toggleBle() async {
     if (_isBleActive) {
       try {
-        await _transport.stop();
+        await _mesh.stopTransport();
       } catch (_) {}
       setState(() => _isBleActive = false);
     } else {
@@ -222,10 +223,9 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
         }
         // 確保前景服務啟動，防止背景被系統殺掉
         try {
-          await MeshRuntimeController.instance.startForegroundService();
+          await _mesh.startForegroundService();
         } catch (_) {}
-        await _transport.initialize();
-        await _transport.start();
+        await _mesh.startTransport();
         setState(() => _isBleActive = true);
       } catch (e) {
         debugPrint('[BLE Toggle] start failed: $e');
@@ -244,7 +244,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
 
   Future<void> _exportLogs() async {
     try {
-      final s = _transport.stats;
+      final s = _mesh.transportStats;
       final buf = StringBuffer();
       buf.writeln('=== IgniRelay Debug Log ===');
       buf.writeln('Time: ${DateTime.now().toIso8601String()}');
@@ -264,7 +264,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
 
       buf.writeln('--- Transport State ---');
       buf.writeln('syncProtocol: v2 (WriteBloom+NotifyDiff)');
-      buf.writeln('active: ${_transport.isActive}');
+      buf.writeln('active: ${_mesh.transportActive}');
       buf.writeln('connectedPeers: ${s.connectedPeers}');
       buf.writeln('seenEvents: ${s.seenEventsCount}');
       buf.writeln('sent: ${s.sentCount}');
@@ -274,7 +274,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       // 持久 GATT Server 狀態（不依賴 log buffer，確保不會被擠掉）
       if (Platform.isAndroid) {
         try {
-          final gattStatus = await MeshRuntimeController.instance.gattServerStatus();
+          final gattStatus = await _mesh.gattServerStatus();
           buf.writeln('--- GATT Server Status ---');
           buf.writeln('serviceReady: ${gattStatus['ready']}');
           buf.writeln('serviceStatus: ${gattStatus['status']}');
@@ -530,7 +530,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   }
 
   Widget _buildDebugPanel() {
-    final s = _transport.stats;
+    final s = _mesh.transportStats;
     final logs = s.debugLogs;
     final gattLogs = _gattServerLogs;
 
@@ -565,7 +565,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
           // Transport State
           const Text('Transport State', style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          _debugRow('active', '${_transport.isActive}'),
+          _debugRow('active', '${_mesh.transportActive}'),
           _debugRow('connected peers', '${s.connectedPeers}'),
           _debugRow('seenEvents (mem)', '${s.seenEventsCount}'),
           _debugRow('sent total', '${s.sentCount}'),
@@ -683,6 +683,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   void dispose() {
     _bleSub?.cancel();
     _gattSub?.cancel();
+    _transportStateSub?.cancel();
     _statsTimer?.cancel();
     super.dispose();
   }

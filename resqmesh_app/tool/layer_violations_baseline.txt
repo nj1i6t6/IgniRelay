@@ -6,4 +6,3 @@
 ui-cannot-import-platform	lib/ui/screens/chat/chat_room_screen.dart	package:ignirelay_app/platform/mesh_transport.dart
 ui-cannot-import-platform	lib/ui/secondary/navigation_screen.dart	package:ignirelay_app/platform/native_bridge.dart
 ui-cannot-import-platform	lib/ui/secondary/physical_handoff.dart	package:ignirelay_app/platform/native_bridge.dart
-ui-cannot-import-platform	lib/ui/secondary/survival_mode_screen.dart	package:ignirelay_app/platform/mesh_transport.dart
