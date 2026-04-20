@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 /// Tab 3: 進行中 (Active Negotiations)
 class MatchTabNegotiations extends StatelessWidget {
@@ -35,8 +36,10 @@ class MatchTabNegotiations extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     return RefreshIndicator(
-      color: Colors.redAccent,
+      color: p.brand,
+      backgroundColor: p.bg2,
       onRefresh: onRefresh,
       child: activeNegotiations.isEmpty
           ? buildEmptyState(Icons.sync, S.of(context)!.negEmptyTitle, S.of(context)!.negEmptySubtitle)
@@ -49,6 +52,7 @@ class MatchTabNegotiations extends StatelessWidget {
   }
 
   Widget _buildNegotiationCard(BuildContext context, Map<String, dynamic> neg) {
+    final p = context.igni;
     final negId = neg['negotiation_id'] as String? ?? '';
     final status = neg['status'] as String? ?? 'PENDING';
     final offeredQty = (neg['offered_qty'] as num?)?.toDouble() ?? 0;
@@ -62,28 +66,28 @@ class MatchTabNegotiations extends StatelessWidget {
         _bytesEqual(myPubKey!, providerKey);
     final counterpartLabel = isProvider ? S.of(context)!.negRoleRequester : S.of(context)!.negRoleProvider;
 
-    // Status styling
+    // Status styling — 語意色 tokens
     Color statusColor;
     IconData statusIcon;
     String statusLabel;
     switch (status) {
       case 'PENDING':
-        statusColor = Colors.amber;
+        statusColor = p.warn;
         statusIcon = Icons.hourglass_empty;
         statusLabel = S.of(context)!.negStatusPending;
         break;
       case 'ACCEPTED':
-        statusColor = Colors.green;
+        statusColor = p.ok;
         statusIcon = Icons.check_circle;
         statusLabel = S.of(context)!.negStatusAccepted;
         break;
       case 'NAVIGATING':
-        statusColor = Colors.blue;
+        statusColor = p.info;
         statusIcon = Icons.navigation;
         statusLabel = S.of(context)!.negStatusNavigating;
         break;
       default:
-        statusColor = Colors.grey;
+        statusColor = p.text3;
         statusIcon = Icons.help_outline;
         statusLabel = status;
     }
@@ -94,12 +98,12 @@ class MatchTabNegotiations extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 5),
-      color: const Color(0xFF1a1a2e),
+      color: p.bg2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
             color: isStale
-                ? Colors.red.withValues(alpha: 0.5)
+                ? p.sos.withValues(alpha: 0.5)
                 : statusColor.withValues(alpha: 0.3)),
       ),
       child: Padding(
@@ -124,35 +128,35 @@ class MatchTabNegotiations extends StatelessWidget {
                 const Spacer(),
                 if (matchScore != null && matchScore > 0)
                   Text('${matchScore.toStringAsFixed(0)} ${S.of(context)!.negScoreUnit}',
-                      style: const TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold)),
+                      style: TextStyle(color: p.warn, fontSize: 11, fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 10),
             // Qty and role info
             Row(
               children: [
-                const Icon(Icons.swap_horiz, color: Colors.white38, size: 16),
+                Icon(Icons.swap_horiz, color: p.text3, size: 16),
                 const SizedBox(width: 6),
                 Text(S.of(context)!.negQtyUnit(qty.toInt()),
-                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+                    style: TextStyle(color: p.text0, fontSize: 15, fontWeight: FontWeight.bold)),
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: (isProvider ? Colors.green : Colors.orange).withValues(alpha: 0.15),
+                    color: (isProvider ? p.ok : p.brand).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
                     isProvider ? S.of(context)!.negRoleMeProvider : S.of(context)!.negRoleMeRequester,
                     style: TextStyle(
-                        color: isProvider ? Colors.greenAccent : Colors.orangeAccent,
+                        color: isProvider ? p.ok : p.brand,
                         fontSize: 10,
                         fontWeight: FontWeight.bold),
                   ),
                 ),
                 const Spacer(),
                 Text(counterpartLabel,
-                    style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                    style: TextStyle(color: p.text3, fontSize: 11)),
               ],
             ),
             const SizedBox(height: 8),
@@ -161,12 +165,12 @@ class MatchTabNegotiations extends StatelessWidget {
               children: [
                 Icon(Icons.timer,
                     size: 14,
-                    color: isExpiringSoon(expiresAt) ? Colors.redAccent : Colors.white38),
+                    color: isExpiringSoon(expiresAt) ? p.sos : p.text3),
                 const SizedBox(width: 4),
                 Text(
                   countdown,
                   style: TextStyle(
-                    color: isExpiringSoon(expiresAt) ? Colors.redAccent : Colors.white38,
+                    color: isExpiringSoon(expiresAt) ? p.sos : p.text3,
                     fontSize: 11,
                     fontWeight: isExpiringSoon(expiresAt) ? FontWeight.bold : FontWeight.normal,
                   ),
@@ -176,11 +180,11 @@ class MatchTabNegotiations extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.red.withValues(alpha: 0.2),
+                      color: p.sosSoft,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(S.of(context)!.negStaleLabel,
-                        style: TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                        style: TextStyle(color: p.sos, fontSize: 10, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ],
@@ -195,29 +199,29 @@ class MatchTabNegotiations extends StatelessWidget {
                   TextButton(
                     onPressed: () => onAcceptNegotiation(neg),
                     style: TextButton.styleFrom(
-                      backgroundColor: Colors.green.withValues(alpha: 0.2),
+                      backgroundColor: p.okSoft,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     ),
-                    child: Text(S.of(context)!.requestsAcceptButton, style: const TextStyle(color: Colors.greenAccent, fontSize: 12)),
+                    child: Text(S.of(context)!.requestsAcceptButton, style: TextStyle(color: p.ok, fontSize: 12)),
                   ),
                   const SizedBox(width: 8),
                   TextButton(
                     onPressed: () => onDeclineNegotiation(negId, neg),
                     style: TextButton.styleFrom(
-                      backgroundColor: Colors.red.withValues(alpha: 0.15),
+                      backgroundColor: p.sosSoft,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     ),
-                    child: Text(S.of(context)!.requestsDeclineButton, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+                    child: Text(S.of(context)!.requestsDeclineButton, style: TextStyle(color: p.sos, fontSize: 12)),
                   ),
                 ],
                 // Navigate button for ACCEPTED/NAVIGATING
                 if (status == 'ACCEPTED' || status == 'NAVIGATING') ...[
                   TextButton.icon(
                     onPressed: () => onOpenNavigation(neg),
-                    icon: const Icon(Icons.map, size: 16, color: Colors.cyanAccent),
-                    label: Text(S.of(context)!.negViewMapButton, style: const TextStyle(color: Colors.cyanAccent, fontSize: 12)),
+                    icon: Icon(Icons.map, size: 16, color: p.info),
+                    label: Text(S.of(context)!.negViewMapButton, style: TextStyle(color: p.info, fontSize: 12)),
                     style: TextButton.styleFrom(
-                      backgroundColor: Colors.cyan.withValues(alpha: 0.15),
+                      backgroundColor: p.infoSoft,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     ),
                   ),
@@ -227,10 +231,10 @@ class MatchTabNegotiations extends StatelessWidget {
                 TextButton(
                   onPressed: () => _cancelNegotiationDialog(context, neg),
                   style: TextButton.styleFrom(
-                    backgroundColor: Colors.red.withValues(alpha: 0.1),
+                    backgroundColor: p.sos.withValues(alpha: 0.1),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   ),
-                  child: Text(S.of(context)!.negCancelButton, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+                  child: Text(S.of(context)!.negCancelButton, style: TextStyle(color: p.sos, fontSize: 12)),
                 ),
               ],
             ),
@@ -254,12 +258,13 @@ class MatchTabNegotiations extends StatelessWidget {
   }
 
   Future<void> _cancelNegotiationDialog(BuildContext context, Map<String, dynamic> neg) async {
+    final p = context.igni;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
-        title: Text(S.of(ctx)!.negCancelDialogTitle, style: const TextStyle(color: Colors.white)),
-        content: Text(S.of(ctx)!.negCancelDialogContent, style: const TextStyle(color: Colors.white70)),
+        backgroundColor: p.bg2,
+        title: Text(S.of(ctx)!.negCancelDialogTitle, style: TextStyle(color: p.text0)),
+        content: Text(S.of(ctx)!.negCancelDialogContent, style: TextStyle(color: p.text1)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -267,7 +272,7 @@ class MatchTabNegotiations extends StatelessWidget {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(S.of(ctx)!.negCancelDialogConfirm, style: const TextStyle(color: Colors.red)),
+            child: Text(S.of(ctx)!.negCancelDialogConfirm, style: TextStyle(color: p.sos)),
           ),
         ],
       ),

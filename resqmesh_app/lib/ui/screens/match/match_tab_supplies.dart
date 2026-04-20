@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/services/match_repository.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 /// Tab 1: 我的物資 (My Supplies)
 class MatchTabSupplies extends StatelessWidget {
@@ -24,8 +25,10 @@ class MatchTabSupplies extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     return RefreshIndicator(
-      color: Colors.redAccent,
+      color: p.brand,
+      backgroundColor: p.bg2,
       onRefresh: onRefresh,
       child: mySupplies.isEmpty
           ? buildEmptyState(Icons.inventory_2, S.of(context)!.suppliesEmptyTitle, S.of(context)!.suppliesEmptySubtitle)
@@ -38,6 +41,7 @@ class MatchTabSupplies extends StatelessWidget {
   }
 
   Widget _buildSupplyCard(BuildContext context, DecodedSupply supply) {
+    final p = context.igni;
     final readableName = getLocalizedReadableName(supply.resourceType, context);
     final totalQty = supply.quantity.toInt();
     final availQty = supply.availableQty.toInt();
@@ -46,22 +50,22 @@ class MatchTabSupplies extends StatelessWidget {
     Color statusColor;
     String statusLabel;
     if (availQty <= 0) {
-      statusColor = Colors.red;
+      statusColor = p.sos;
       statusLabel = S.of(context)!.suppliesStatusExhausted;
     } else if (committedQty > 0) {
-      statusColor = Colors.orange;
+      statusColor = p.warn;
       statusLabel = S.of(context)!.suppliesStatusPartial;
     } else {
-      statusColor = Colors.green;
+      statusColor = p.ok;
       statusLabel = S.of(context)!.suppliesStatusAvailable;
     }
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      color: const Color(0xFF1a1a2e),
+      color: p.bg2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: Colors.green.withValues(alpha: 0.3)),
+        side: BorderSide(color: p.ok.withValues(alpha: 0.3)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -73,11 +77,10 @@ class MatchTabSupplies extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.15),
+                    color: p.okSoft,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.inventory_2,
-                      color: Colors.greenAccent, size: 20),
+                  child: Icon(Icons.inventory_2, color: p.ok, size: 20),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -85,11 +88,11 @@ class MatchTabSupplies extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(readableName,
-                          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                          style: TextStyle(color: p.text0, fontSize: 14, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 2),
                       Text(
                         supply.deliveryMode == 'DELIVER' ? S.of(context)!.suppliesDeliveryDeliver : S.of(context)!.suppliesDeliveryPickup,
-                        style: const TextStyle(color: Colors.white38, fontSize: 11),
+                        style: TextStyle(color: p.text3, fontSize: 11),
                       ),
                     ],
                   ),
@@ -109,12 +112,12 @@ class MatchTabSupplies extends StatelessWidget {
             // Quantity bar
             Row(
               children: [
-                _buildQtyChip(S.of(context)!.suppliesQtyTotal, '$totalQty ${supply.unit}', Colors.white54),
+                _buildQtyChip(S.of(context)!.suppliesQtyTotal, '$totalQty ${supply.unit}', p.text2),
                 const SizedBox(width: 8),
-                _buildQtyChip(S.of(context)!.suppliesQtyAvailable, '$availQty ${supply.unit}', Colors.greenAccent),
+                _buildQtyChip(S.of(context)!.suppliesQtyAvailable, '$availQty ${supply.unit}', p.ok),
                 const SizedBox(width: 8),
                 if (committedQty > 0)
-                  _buildQtyChip(S.of(context)!.suppliesQtyCommitted, '$committedQty ${supply.unit}', Colors.orange),
+                  _buildQtyChip(S.of(context)!.suppliesQtyCommitted, '$committedQty ${supply.unit}', p.warn),
               ],
             ),
             const SizedBox(height: 8),
@@ -124,8 +127,8 @@ class MatchTabSupplies extends StatelessWidget {
               children: [
                 TextButton.icon(
                   onPressed: () => _cancelSupply(context, supply),
-                  icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.redAccent),
-                  label: Text(S.of(context)!.suppliesCancelButton, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+                  icon: Icon(Icons.cancel_outlined, size: 16, color: p.sos),
+                  label: Text(S.of(context)!.suppliesCancelButton, style: TextStyle(color: p.sos, fontSize: 12)),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: Size.zero,
@@ -158,24 +161,25 @@ class MatchTabSupplies extends StatelessWidget {
   }
 
   Future<void> _cancelSupply(BuildContext context, DecodedSupply supply) async {
+    final p = context.igni;
     final readableName = getLocalizedReadableName(supply.resourceType, context);
 
     // Find the eventId from MyPublish data
-    final pub = mySupplyPublishes.where((p) =>
-        p.title == supply.resourceType).firstOrNull;
+    final pub = mySupplyPublishes.where((pb) =>
+        pb.title == supply.resourceType).firstOrNull;
     if (pub == null) {
-      onShowSnack(S.of(context)!.suppliesNotFoundSnack, Colors.orange);
+      onShowSnack(S.of(context)!.suppliesNotFoundSnack, p.warn);
       return;
     }
 
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
-        title: Text(S.of(ctx)!.suppliesCancelDialogTitle, style: const TextStyle(color: Colors.white)),
+        backgroundColor: p.bg2,
+        title: Text(S.of(ctx)!.suppliesCancelDialogTitle, style: TextStyle(color: p.text0)),
         content: Text(
           S.of(ctx)!.suppliesCancelDialogContent(readableName),
-          style: const TextStyle(color: Colors.white70),
+          style: TextStyle(color: p.text1),
         ),
         actions: [
           TextButton(
@@ -184,7 +188,7 @@ class MatchTabSupplies extends StatelessWidget {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(S.of(ctx)!.suppliesCancelDialogConfirm, style: const TextStyle(color: Colors.red)),
+            child: Text(S.of(ctx)!.suppliesCancelDialogConfirm, style: TextStyle(color: p.sos)),
           ),
         ],
       ),

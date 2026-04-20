@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/services/match_repository.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 /// Tab 4: 社區 (Community)
 class MatchTabCommunity extends StatelessWidget {
@@ -26,8 +27,10 @@ class MatchTabCommunity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     return RefreshIndicator(
-      color: Colors.redAccent,
+      color: p.brand,
+      backgroundColor: p.bg2,
       onRefresh: onRefresh,
       child: communityItems.isEmpty
           ? buildEmptyState(Icons.people, S.of(context)!.communityEmptyTitle, S.of(context)!.communityEmptySubtitle)
@@ -40,6 +43,7 @@ class MatchTabCommunity extends StatelessWidget {
   }
 
   Widget _buildCommunityCard(BuildContext context, CommunityItem item) {
+    final p = context.igni;
     final time = DateTime.fromMillisecondsSinceEpoch(item.timestamp);
     final timeStr =
         '${time.month}/${time.day} ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
@@ -47,14 +51,15 @@ class MatchTabCommunity extends StatelessWidget {
     final isSupply = item.isSupply;
     final urgColor = urgencyColor(item.urgency);
 
-    final typeColor = isSupply ? Colors.tealAccent : Colors.orangeAccent;
+    // supply → ok 綠（有東西可給）；request → brand 琥珀（需求求助）
+    final typeColor = isSupply ? p.ok : p.brand;
     final typeLabel = isSupply ? S.of(context)!.communityTypeSupply : S.of(context)!.communityTypeRequest;
     final typeIcon = isSupply ? Icons.volunteer_activism : Icons.front_hand;
     final actionLabel = isSupply ? S.of(context)!.communityActionNeed : S.of(context)!.communityActionHelp;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      color: const Color(0xFF12122a),
+      color: p.bg1,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
         side: BorderSide(color: typeColor.withValues(alpha: 0.25)),
@@ -102,19 +107,19 @@ class MatchTabCommunity extends StatelessWidget {
                         ),
                         const SizedBox(width: 6),
                         Text(timeStr,
-                            style: const TextStyle(color: Colors.white30, fontSize: 10)),
+                            style: TextStyle(color: p.text3, fontSize: 10)),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
                       '$readableName  ${S.of(context)!.negQtyUnit(item.quantity.toInt())}',
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      style: TextStyle(color: p.text0, fontSize: 13),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     if (item.description.isNotEmpty)
                       Text(item.description,
-                          style: const TextStyle(color: Colors.white54, fontSize: 11),
+                          style: TextStyle(color: p.text2, fontSize: 11),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
                   ],
@@ -137,6 +142,7 @@ class MatchTabCommunity extends StatelessWidget {
   }
 
   Future<void> _showCommunityResponseDialog(BuildContext context, CommunityItem item) async {
+    final p = context.igni;
     final readableName = getLocalizedReadableName(item.resourceType, context);
     final isSupply = item.isSupply;
     final qtyController =
@@ -146,10 +152,10 @@ class MatchTabCommunity extends StatelessWidget {
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF1a1a2e),
+          backgroundColor: p.bg2,
           title: Text(
             isSupply ? S.of(ctx)!.communityDialogConfirmNeed : S.of(ctx)!.communityDialogConfirmSupply,
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(color: p.text0),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -159,25 +165,25 @@ class MatchTabCommunity extends StatelessWidget {
                 isSupply
                     ? S.of(ctx)!.communityDialogSupplyInfo(readableName, item.quantity.toInt())
                     : S.of(ctx)!.communityDialogRequestInfo(readableName, item.quantity.toInt()),
-                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                style: TextStyle(color: p.text1, fontSize: 13),
               ),
               const SizedBox(height: 16),
               Text(
                 isSupply ? S.of(ctx)!.communityDialogHowManyNeed : S.of(ctx)!.communityDialogHowManySupply,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+                style: TextStyle(color: p.text0, fontSize: 14),
               ),
               const SizedBox(height: 8),
               TextField(
                 controller: qtyController,
                 keyboardType: TextInputType.number,
-                style: const TextStyle(color: Colors.white, fontSize: 18),
+                style: TextStyle(color: p.text0, fontSize: 18),
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: Colors.white10,
+                  fillColor: p.bg3,
                   hintText: S.of(ctx)!.communityDialogQtyHint,
-                  hintStyle: const TextStyle(color: Colors.white30),
+                  hintStyle: TextStyle(color: p.text3),
                   suffixText: S.of(ctx)!.communityDialogQtySuffix,
-                  suffixStyle: const TextStyle(color: Colors.white54),
+                  suffixStyle: TextStyle(color: p.text2),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide.none,
@@ -194,8 +200,8 @@ class MatchTabCommunity extends StatelessWidget {
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: FilledButton.styleFrom(
-                backgroundColor: isSupply ? Colors.orangeAccent : Colors.tealAccent,
-                foregroundColor: Colors.black,
+                backgroundColor: isSupply ? p.brand : p.ok,
+                foregroundColor: p.bg0,
               ),
               child: Text(isSupply ? S.of(ctx)!.communityDialogConfirmNeedButton : S.of(ctx)!.communityDialogConfirmSupplyButton),
             ),
@@ -208,7 +214,7 @@ class MatchTabCommunity extends StatelessWidget {
 
     final qty = int.tryParse(qtyController.text) ?? 0;
     if (qty <= 0) {
-      onShowSnack(S.of(context)!.communityDialogQtyError, Colors.red);
+      onShowSnack(S.of(context)!.communityDialogQtyError, p.sos);
       return;
     }
 

@@ -39,6 +39,62 @@ class NegotiationManager {
   static const int handshakeComplete = 16;
   static const int locationUpdate = 14;
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  FSM 防呆（Stage 4c）— service-layer guard
+  //
+  //  合法狀態轉換矩陣。非終態的每個 from 指向一組允許的 to。
+  //  PENDING  → ACCEPTED | DECLINED | CANCELLED | EXPIRED
+  //  ACCEPTED → NAVIGATING | COMPLETED | CANCELLED
+  //  NAVIGATING → COMPLETED | CANCELLED
+  //  COMPLETED / DECLINED / CANCELLED / EXPIRED → terminal（無出邊）
+  //
+  //  不改 DB schema、不改通訊協議；純 service 層，CAS 接受路徑保持原樣
+  //  （PENDING → ACCEPTED 由 casAcceptInTransaction 原子驗證，等同於此表）。
+  // ═══════════════════════════════════════════════════════════════════════════
+  static const Map<String, Set<String>> _fsmTransitions = {
+    'PENDING': {'ACCEPTED', 'DECLINED', 'CANCELLED', 'EXPIRED'},
+    'ACCEPTED': {'NAVIGATING', 'COMPLETED', 'CANCELLED'},
+    'NAVIGATING': {'COMPLETED', 'CANCELLED'},
+    'COMPLETED': <String>{},
+    'DECLINED': <String>{},
+    'CANCELLED': <String>{},
+    'EXPIRED': <String>{},
+  };
+
+  /// 判斷 [from] → [to] 是否為合法狀態轉換。公開供單測與防呆檢查使用。
+  static bool canTransition(String from, String to) {
+    final allowed = _fsmTransitions[from];
+    if (allowed == null) return false;
+    return allowed.contains(to);
+  }
+
+  /// 非法跳轉攔截 hook：測試或觀測可注入以記錄違規事件。
+  /// 簽名：(negotiationId, from, to) → void。
+  static void Function(String negotiationId, String from, String to)?
+      onIllegalTransition;
+
+  /// 內部護欄：在呼叫 [_repo.updateStatus] 前驗證 FSM 合法性；
+  /// 非法則丟棄且不回寫錯誤值，呼叫 [onIllegalTransition]，並寫 debug log。
+  ///
+  /// 以 `@visibleForTesting` 開放測試直接驗證 guard 行為——正式呼叫仍須透過
+  /// 公開 API（acceptNegotiation / cancelNegotiation …）以保留早退檢查。
+  @visibleForTesting
+  Future<bool> guardedUpdateStatus(
+    String negotiationId,
+    String from,
+    String to, {
+    Map<String, dynamic>? extra,
+  }) async {
+    if (!canTransition(from, to)) {
+      debugPrint(
+          '[NegotiationManager] ILLEGAL transition $from → $to (neg=$negotiationId) — dropped');
+      onIllegalTransition?.call(negotiationId, from, to);
+      return false;
+    }
+    await _repo.updateStatus(negotiationId, to, extra: extra);
+    return true;
+  }
+
   void dispose() {
     _controller.close();
   }
@@ -132,7 +188,9 @@ class NegotiationManager {
     if (neg['status'] != 'PENDING') return;
     if (!_isResponder(neg, senderPubKey)) return;
 
-    await _repo.updateStatus(negotiationId, 'DECLINED');
+    final ok = await guardedUpdateStatus(
+        negotiationId, neg['status'] as String, 'DECLINED');
+    if (!ok) return;
     await _reconcileMaterialStatus(neg['resource_id'] as String);
 
     _controller.add(NegotiationDeclined(
@@ -152,7 +210,8 @@ class NegotiationManager {
     }
     if (!_isParticipant(neg, senderPubKey)) return;
 
-    await _repo.updateStatus(negotiationId, 'CANCELLED');
+    final ok = await guardedUpdateStatus(negotiationId, status, 'CANCELLED');
+    if (!ok) return;
     await _reconcileMaterialStatus(neg['resource_id'] as String);
     await _reconcileRequestStatus(neg['request_id'] as String);
 
@@ -167,9 +226,13 @@ class NegotiationManager {
     final neg = await _repo.getById(negotiationId);
     if (neg == null || neg['status'] != 'ACCEPTED') return;
 
-    await _repo.updateStatus(negotiationId, 'NAVIGATING', extra: {
-      'navigating_at': DateTime.now().millisecondsSinceEpoch,
-    });
+    final ok = await guardedUpdateStatus(
+      negotiationId,
+      neg['status'] as String,
+      'NAVIGATING',
+      extra: {'navigating_at': DateTime.now().millisecondsSinceEpoch},
+    );
+    if (!ok) return;
 
     _controller
         .add(NegotiationNavigating(negotiationId: negotiationId));
@@ -193,10 +256,16 @@ class NegotiationManager {
     if (!_isParticipant(neg, senderPubKey)) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    await _repo.updateStatus(negotiationId, 'COMPLETED', extra: {
-      'actual_delivered_qty': actualDeliveredQty,
-      'completed_at': now,
-    });
+    final ok = await guardedUpdateStatus(
+      negotiationId,
+      status,
+      'COMPLETED',
+      extra: {
+        'actual_delivered_qty': actualDeliveredQty,
+        'completed_at': now,
+      },
+    );
+    if (!ok) return;
 
     await _reconcileMaterialStatus(neg['resource_id'] as String);
     await _reconcileRequestStatus(neg['request_id'] as String);
@@ -425,7 +494,9 @@ class NegotiationManager {
     final expired = await _repo.getExpiredPending(now);
     for (final row in expired) {
       final negId = row['negotiation_id'] as String;
-      await _repo.updateStatus(negId, 'EXPIRED');
+      final ok = await guardedUpdateStatus(
+          negId, row['status'] as String? ?? 'PENDING', 'EXPIRED');
+      if (!ok) continue;
       await _reconcileMaterialStatus(row['resource_id'] as String);
       _controller.add(NegotiationExpired(negotiationId: negId));
     }

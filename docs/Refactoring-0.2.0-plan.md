@@ -194,7 +194,7 @@ resqmesh_app/lib/
   - `resqmesh_app/docs/leak_inventory.md` 存在且至少涵蓋 `BleManager`、`transport peer set`、`chat message cache`、`match repository` 四個來源的檢查結論（確認為 leak 或排除並標註原因）
 - **commit**：`refactor(stage-4b): 重構「聊天」分頁 + 集合洩漏盤點`
 
-### Stage 4c — 「媒合」分頁（commit #7）
+### Stage 4c — 「媒合」分頁（commit #7）✅ 已完成
 
 - **目標**：四子分頁（requests / supplies / negotiations / community）新 UI + 物資狀態機防呆
 - **交付**：

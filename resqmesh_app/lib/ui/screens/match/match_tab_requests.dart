@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/services/match_repository.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 /// Tab 2: 我的需求 (My Requests)
 class MatchTabRequests extends StatelessWidget {
@@ -38,8 +39,10 @@ class MatchTabRequests extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     return RefreshIndicator(
-      color: Colors.redAccent,
+      color: p.brand,
+      backgroundColor: p.bg2,
       onRefresh: onRefresh,
       child: myRequests.isEmpty
           ? buildEmptyState(Icons.campaign, S.of(context)!.requestsEmptyTitle, S.of(context)!.requestsEmptySubtitle)
@@ -52,6 +55,7 @@ class MatchTabRequests extends StatelessWidget {
   }
 
   Widget _buildRequestCard(BuildContext context, DecodedRequest request) {
+    final p = context.igni;
     final readableName = getLocalizedReadableName(request.resourceType, context);
     final totalQty = request.quantityNeeded.toInt();
     final remaining = request.remainingNeed.toInt();
@@ -60,13 +64,13 @@ class MatchTabRequests extends StatelessWidget {
     Color statusColor;
     String statusLabel;
     if (request.status == 'MATCHED') {
-      statusColor = Colors.blue;
+      statusColor = p.info;
       statusLabel = S.of(context)!.requestsStatusMatching;
     } else if (remaining <= 0) {
-      statusColor = Colors.green;
+      statusColor = p.ok;
       statusLabel = S.of(context)!.requestsStatusFulfilled;
     } else {
-      statusColor = Colors.amber;
+      statusColor = p.warn;
       statusLabel = S.of(context)!.requestsStatusWaiting;
     }
 
@@ -80,10 +84,10 @@ class MatchTabRequests extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      color: const Color(0xFF1a1a2e),
+      color: p.bg2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: Colors.amber.withValues(alpha: 0.3)),
+        side: BorderSide(color: p.warn.withValues(alpha: 0.3)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -95,7 +99,7 @@ class MatchTabRequests extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.15),
+                    color: p.warnSoft,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
@@ -126,7 +130,7 @@ class MatchTabRequests extends StatelessWidget {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(readableName,
-                                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                                style: TextStyle(color: p.text0, fontSize: 14, fontWeight: FontWeight.bold),
                                 overflow: TextOverflow.ellipsis),
                           ),
                         ],
@@ -135,7 +139,7 @@ class MatchTabRequests extends StatelessWidget {
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
                           child: Text(request.note,
-                              style: const TextStyle(color: Colors.white38, fontSize: 11),
+                              style: TextStyle(color: p.text3, fontSize: 11),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis),
                         ),
@@ -156,19 +160,19 @@ class MatchTabRequests extends StatelessWidget {
             const SizedBox(height: 10),
             Row(
               children: [
-                _buildQtyChip(S.of(context)!.requestsQtyNeeded, '$totalQty ${S.of(context)!.requestsQtyUnit}', Colors.white54),
+                _buildQtyChip(S.of(context)!.requestsQtyNeeded, '$totalQty ${S.of(context)!.requestsQtyUnit}', p.text2),
                 const SizedBox(width: 8),
-                _buildQtyChip(S.of(context)!.requestsQtyRemaining, '$remaining ${S.of(context)!.requestsQtyUnit}', remaining > 0 ? Colors.amber : Colors.greenAccent),
+                _buildQtyChip(S.of(context)!.requestsQtyRemaining, '$remaining ${S.of(context)!.requestsQtyUnit}', remaining > 0 ? p.warn : p.ok),
                 const SizedBox(width: 8),
                 if (fulfilled > 0)
-                  _buildQtyChip(S.of(context)!.requestsQtyFulfilled, '$fulfilled ${S.of(context)!.requestsQtyUnit}', Colors.greenAccent),
+                  _buildQtyChip(S.of(context)!.requestsQtyFulfilled, '$fulfilled ${S.of(context)!.requestsQtyUnit}', p.ok),
               ],
             ),
             // Incoming proposals
             if (incomingForThis.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text(S.of(context)!.requestsProposalsTitle,
-                  style: const TextStyle(color: Colors.cyanAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: p.info, fontSize: 11, fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               ...incomingForThis.map((neg) => _buildIncomingProposal(context, neg)),
             ],
@@ -178,8 +182,8 @@ class MatchTabRequests extends StatelessWidget {
               children: [
                 TextButton.icon(
                   onPressed: () => _cancelRequestDialog(context, request),
-                  icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.redAccent),
-                  label: Text(S.of(context)!.requestsCancelButton, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+                  icon: Icon(Icons.cancel_outlined, size: 16, color: p.sos),
+                  label: Text(S.of(context)!.requestsCancelButton, style: TextStyle(color: p.sos, fontSize: 12)),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: Size.zero,
@@ -195,6 +199,7 @@ class MatchTabRequests extends StatelessWidget {
   }
 
   Widget _buildIncomingProposal(BuildContext context, Map<String, dynamic> neg) {
+    final p = context.igni;
     final offeredQty = (neg['offered_qty'] as num?)?.toDouble() ?? 0;
     final expiresAt = (neg['expires_at'] as int?) ?? 0;
     final remaining = formatCountdown(expiresAt);
@@ -203,23 +208,23 @@ class MatchTabRequests extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 3),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.cyan.withValues(alpha: 0.08),
+        color: p.infoSoft,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.cyan.withValues(alpha: 0.2)),
+        border: Border.all(color: p.info.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.handshake, color: Colors.cyanAccent, size: 16),
+          Icon(Icons.handshake, color: p.info, size: 16),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(S.of(context)!.requestsProposalOffer(offeredQty.toInt()),
-                    style: const TextStyle(color: Colors.white, fontSize: 12)),
+                    style: TextStyle(color: p.text0, fontSize: 12)),
                 Text(S.of(context)!.requestsProposalRemaining(remaining),
                     style: TextStyle(
-                        color: isExpiringSoon(expiresAt) ? Colors.redAccent : Colors.white38,
+                        color: isExpiringSoon(expiresAt) ? p.sos : p.text3,
                         fontSize: 10)),
               ],
             ),
@@ -227,12 +232,12 @@ class MatchTabRequests extends StatelessWidget {
           TextButton(
             onPressed: () => onAcceptNegotiation(neg),
             style: TextButton.styleFrom(
-              backgroundColor: Colors.green.withValues(alpha: 0.2),
+              backgroundColor: p.okSoft,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: Text(S.of(context)!.requestsAcceptButton, style: const TextStyle(color: Colors.greenAccent, fontSize: 12)),
+            child: Text(S.of(context)!.requestsAcceptButton, style: TextStyle(color: p.ok, fontSize: 12)),
           ),
           const SizedBox(width: 6),
           TextButton(
@@ -241,12 +246,12 @@ class MatchTabRequests extends StatelessWidget {
               onDeclineNegotiation(negId, neg);
             },
             style: TextButton.styleFrom(
-              backgroundColor: Colors.red.withValues(alpha: 0.15),
+              backgroundColor: p.sosSoft,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: Text(S.of(context)!.requestsDeclineButton, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+            child: Text(S.of(context)!.requestsDeclineButton, style: TextStyle(color: p.sos, fontSize: 12)),
           ),
         ],
       ),
@@ -254,15 +259,16 @@ class MatchTabRequests extends StatelessWidget {
   }
 
   Future<void> _cancelRequestDialog(BuildContext context, DecodedRequest request) async {
+    final p = context.igni;
     final readableName = getLocalizedReadableName(request.resourceType, context);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
-        title: Text(S.of(ctx)!.requestsCancelDialogTitle, style: const TextStyle(color: Colors.white)),
+        backgroundColor: p.bg2,
+        title: Text(S.of(ctx)!.requestsCancelDialogTitle, style: TextStyle(color: p.text0)),
         content: Text(
           S.of(ctx)!.requestsCancelDialogContent(readableName),
-          style: const TextStyle(color: Colors.white70),
+          style: TextStyle(color: p.text1),
         ),
         actions: [
           TextButton(
@@ -271,7 +277,7 @@ class MatchTabRequests extends StatelessWidget {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(S.of(ctx)!.requestsCancelDialogConfirm, style: const TextStyle(color: Colors.red)),
+            child: Text(S.of(ctx)!.requestsCancelDialogConfirm, style: TextStyle(color: p.sos)),
           ),
         ],
       ),
