@@ -46,7 +46,6 @@ class _MatchScreenState extends State<MatchScreen>
   late TabController _tabController;
   final _negotiationManager = NegotiationManager();
   final _repo = MatchRepository();
-  final _matchService = MatchService();
   final _eventManager = EventManager();
   final _locationService = LocationService();
   final _identity = IdentityManager();
@@ -60,11 +59,8 @@ class _MatchScreenState extends State<MatchScreen>
   List<DecodedSupply> _mySupplies = [];
   List<DecodedRequest> _myRequests = [];
   List<MyPublish> _mySupplyPublishes = [];
-  List<MyPublish> _myRequestPublishes = [];
   List<Map<String, dynamic>> _activeNegotiations = [];
   List<CommunityItem> _communityItems = [];
-  List<MatchEntry> _outboundMatches = [];
-  List<MatchEntry> _inboundMatches = [];
 
   bool _loading = true;
   String? _error;
@@ -146,17 +142,10 @@ class _MatchScreenState extends State<MatchScreen>
       final allMySupplies = results[0] as List<DecodedSupply>;
       final myRequests = results[1] as List<DecodedRequest>;
       final community = results[2] as List<CommunityItem>;
-      final allRequests = results[3] as List<DecodedRequest>;
-      final othersSupplies = results[4] as List<DecodedSupply>;
       final myPublishes = results[5] as List<MyPublish>;
-
-      // Compute matches
-      final matchResult = _matchService.computeFullMatches(
-        mySupplies: allMySupplies,
-        allRequests: allRequests,
-        othersSupplies: othersSupplies,
-        myRequests: myRequests,
-      );
+      // results[3] allRequests / results[4] othersSupplies 目前 UI 未消費，
+      // 舊 _outboundMatches/_inboundMatches 欄位已移除；MatchEntry 保留在
+      // onOpenNavigation 透過單筆 neg 即時組裝（L530 左右）。
 
       // Get active negotiations
       List<Map<String, dynamic>> activeNeg = [];
@@ -174,10 +163,7 @@ class _MatchScreenState extends State<MatchScreen>
           _mySupplies = allMySupplies;
           _myRequests = myRequests;
           _mySupplyPublishes = myPublishes.where((p) => p.isSupply).toList();
-          _myRequestPublishes = myPublishes.where((p) => !p.isSupply).toList();
           _communityItems = community;
-          _outboundMatches = matchResult.outboundMatches;
-          _inboundMatches = matchResult.inboundMatches;
           _activeNegotiations = activeNeg;
           _loading = false;
         });

@@ -200,7 +200,10 @@ resqmesh_app/lib/
 - **交付**：
   - 對接 `MatchRepository` / `NegotiationManager`（不動邏輯）
   - 選中態統一：accent 外框 + accent-soft 淺底
-  - Sheet 多步時加 Step indicator（1/3 之類）
+  - Sheet 多步時加 Step indicator（1/3 之類）— **Stage 4c 實作範圍 N/A**：
+    媒合分頁目前的 sheets/對話框（community 接受數量、cancel 確認、
+    decline 確認）皆為單步，不存在多步流程。若 Stage 4d / 5 出現多步
+    sheet 再依此條款補 indicator。
   - **物資狀態機 FSM 防呆**：在 `NegotiationManager` / 相關 service 加入 `canTransition(from, to)`（不改 DB schema、不改通訊協議，純 service 層防呆）；非法跳轉直接丟棄並寫 `debugPrint` / logger 攔截記錄
   - **FSM 單測**：
     - 合法/非法轉換矩陣（覆蓋 offered → accepted → in_transit → delivered 等主路徑 + 已知非法邊）

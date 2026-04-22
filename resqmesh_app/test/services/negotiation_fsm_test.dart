@@ -290,4 +290,85 @@ void main() {
       expect(await _readStatus(negId), equals('EXPIRED'));
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 5. 早退層也會觸發 onIllegalTransition hook（log sink 一致性）
+  //
+  //   對應 audit 指出的：public API 早退路徑（acceptNegotiation /
+  //   declineNegotiation / cancelNegotiation / startNavigating /
+  //   completeHandshake）必須與 guardedUpdateStatus 走同一條 log/hook。
+  // ═══════════════════════════════════════════════════════════════════
+
+  group('早退層觸發 onIllegalTransition', () {
+    test('accept 一個已 COMPLETED 的 neg：hook 收到 COMPLETED→ACCEPTED', () async {
+      final captured = <List<String>>[];
+      NegotiationManager.onIllegalTransition =
+          (id, from, to) => captured.add([id, from, to]);
+
+      final negId = await _seedNegotiation(status: 'COMPLETED');
+      final ok = await nm.acceptNegotiation(negId, _requesterKey);
+
+      expect(ok, isFalse);
+      expect(captured, hasLength(1));
+      expect(captured.first[1], equals('COMPLETED'));
+      expect(captured.first[2], equals('ACCEPTED'));
+      expect(await _readStatus(negId), equals('COMPLETED'));
+    });
+
+    test('decline 一個已 ACCEPTED 的 neg：hook 收到 ACCEPTED→DECLINED', () async {
+      final captured = <List<String>>[];
+      NegotiationManager.onIllegalTransition =
+          (id, from, to) => captured.add([id, from, to]);
+
+      final negId = await _seedNegotiation(status: 'ACCEPTED');
+      await nm.declineNegotiation(negId, _requesterKey, 'x');
+
+      expect(captured, hasLength(1));
+      expect(captured.first[1], equals('ACCEPTED'));
+      expect(captured.first[2], equals('DECLINED'));
+      expect(await _readStatus(negId), equals('ACCEPTED'));
+    });
+
+    test('cancel 一個 COMPLETED 的 neg：hook 收到 COMPLETED→CANCELLED', () async {
+      final captured = <List<String>>[];
+      NegotiationManager.onIllegalTransition =
+          (id, from, to) => captured.add([id, from, to]);
+
+      final negId = await _seedNegotiation(status: 'COMPLETED');
+      await nm.cancelNegotiation(negId, _providerKey, 'x');
+
+      expect(captured, hasLength(1));
+      expect(captured.first[1], equals('COMPLETED'));
+      expect(captured.first[2], equals('CANCELLED'));
+      expect(await _readStatus(negId), equals('COMPLETED'));
+    });
+
+    test('startNavigating 一個 PENDING 的 neg：hook 收到 PENDING→NAVIGATING', () async {
+      final captured = <List<String>>[];
+      NegotiationManager.onIllegalTransition =
+          (id, from, to) => captured.add([id, from, to]);
+
+      final negId = await _seedNegotiation(status: 'PENDING');
+      await nm.startNavigating(negId);
+
+      expect(captured, hasLength(1));
+      expect(captured.first[1], equals('PENDING'));
+      expect(captured.first[2], equals('NAVIGATING'));
+      expect(await _readStatus(negId), equals('PENDING'));
+    });
+
+    test('completeHandshake 一個 PENDING 的 neg：hook 收到 PENDING→COMPLETED', () async {
+      final captured = <List<String>>[];
+      NegotiationManager.onIllegalTransition =
+          (id, from, to) => captured.add([id, from, to]);
+
+      final negId = await _seedNegotiation(status: 'PENDING');
+      await nm.completeHandshake(negId, _providerKey, 5.0);
+
+      expect(captured, hasLength(1));
+      expect(captured.first[1], equals('PENDING'));
+      expect(captured.first[2], equals('COMPLETED'));
+      expect(await _readStatus(negId), equals('PENDING'));
+    });
+  });
 }

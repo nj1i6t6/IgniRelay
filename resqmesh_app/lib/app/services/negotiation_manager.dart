@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/crypto/crypto_utils.dart';
@@ -73,6 +72,15 @@ class NegotiationManager {
   static void Function(String negotiationId, String from, String to)?
       onIllegalTransition;
 
+  /// 統一的非法跳轉記錄入口：寫 debugPrint + 呼叫 [onIllegalTransition] hook。
+  /// 供 public API 的早退路徑（state 與預期不符）共用，確保所有被攔截的
+  /// 非法狀態轉換嘗試都有一致的 log/可測試 sink。
+  static void _notifyIllegal(String negotiationId, String from, String to) {
+    debugPrint(
+        '[NegotiationManager] ILLEGAL transition $from → $to (neg=$negotiationId) — dropped');
+    onIllegalTransition?.call(negotiationId, from, to);
+  }
+
   /// 內部護欄：在呼叫 [_repo.updateStatus] 前驗證 FSM 合法性；
   /// 非法則丟棄且不回寫錯誤值，呼叫 [onIllegalTransition]，並寫 debug log。
   ///
@@ -86,9 +94,7 @@ class NegotiationManager {
     Map<String, dynamic>? extra,
   }) async {
     if (!canTransition(from, to)) {
-      debugPrint(
-          '[NegotiationManager] ILLEGAL transition $from → $to (neg=$negotiationId) — dropped');
-      onIllegalTransition?.call(negotiationId, from, to);
+      _notifyIllegal(negotiationId, from, to);
       return false;
     }
     await _repo.updateStatus(negotiationId, to, extra: extra);
@@ -160,7 +166,10 @@ class NegotiationManager {
       _bufferOrphan(negotiationId, matchAccept, senderPubKey, []);
       return false;
     }
-    if (neg['status'] != 'PENDING') return false;
+    if (neg['status'] != 'PENDING') {
+      _notifyIllegal(negotiationId, neg['status'] as String, 'ACCEPTED');
+      return false;
+    }
     if (!_isResponder(neg, senderPubKey)) return false;
 
     final requestedQty = (neg['requested_qty'] as num?)?.toDouble() ?? 0.0;
@@ -185,7 +194,10 @@ class NegotiationManager {
       String negotiationId, List<int> senderPubKey, String reason) async {
     final neg = await _repo.getById(negotiationId);
     if (neg == null) return;
-    if (neg['status'] != 'PENDING') return;
+    if (neg['status'] != 'PENDING') {
+      _notifyIllegal(negotiationId, neg['status'] as String, 'DECLINED');
+      return;
+    }
     if (!_isResponder(neg, senderPubKey)) return;
 
     final ok = await guardedUpdateStatus(
@@ -206,6 +218,7 @@ class NegotiationManager {
     if (neg == null) return;
     final status = neg['status'] as String;
     if (status == 'COMPLETED' || status == 'CANCELLED' || status == 'EXPIRED') {
+      _notifyIllegal(negotiationId, status, 'CANCELLED');
       return;
     }
     if (!_isParticipant(neg, senderPubKey)) return;
@@ -224,7 +237,11 @@ class NegotiationManager {
   /// 開始導航
   Future<void> startNavigating(String negotiationId) async {
     final neg = await _repo.getById(negotiationId);
-    if (neg == null || neg['status'] != 'ACCEPTED') return;
+    if (neg == null) return;
+    if (neg['status'] != 'ACCEPTED') {
+      _notifyIllegal(negotiationId, neg['status'] as String, 'NAVIGATING');
+      return;
+    }
 
     final ok = await guardedUpdateStatus(
       negotiationId,
@@ -252,7 +269,10 @@ class NegotiationManager {
       return;
     }
     final status = neg['status'] as String;
-    if (status != 'ACCEPTED' && status != 'NAVIGATING') return;
+    if (status != 'ACCEPTED' && status != 'NAVIGATING') {
+      _notifyIllegal(negotiationId, status, 'COMPLETED');
+      return;
+    }
     if (!_isParticipant(neg, senderPubKey)) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
