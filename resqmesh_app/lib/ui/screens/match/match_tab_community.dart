@@ -211,6 +211,7 @@ class MatchTabCommunity extends StatelessWidget {
     );
 
     if (confirmed != true) return;
+    if (!context.mounted) return;
 
     final qty = int.tryParse(qtyController.text) ?? 0;
     if (qty <= 0) {

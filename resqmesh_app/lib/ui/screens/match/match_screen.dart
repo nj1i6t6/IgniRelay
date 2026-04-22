@@ -445,9 +445,11 @@ class _MatchScreenState extends State<MatchScreen>
     final readableName = getLocalizedReadableName(supply.resourceType, context);
     try {
       await _eventManager.cancelSupply(pub.eventId);
+      if (!mounted) return;
       _showSnack(S.of(context)!.matchCancelSupplySnack(readableName), Colors.grey[700]!);
       _loadAll();
     } catch (e) {
+      if (!mounted) return;
       _showSnack(S.of(context)!.matchCancelFailSnack(e.toString()), Colors.red[700]!);
     }
   }
@@ -466,9 +468,11 @@ class _MatchScreenState extends State<MatchScreen>
         requestId: requestId,
         agreedQty: agreedQty,
       );
+      if (!mounted) return;
       _showSnack(S.of(context)!.matchAcceptSnack, Colors.green);
       _loadAll();
     } catch (e) {
+      if (!mounted) return;
       _showSnack(S.of(context)!.matchAcceptFailSnack(e.toString()), Colors.red[700]!);
     }
   }
@@ -484,9 +488,11 @@ class _MatchScreenState extends State<MatchScreen>
         requestId: requestId,
         reason: 'USER_DECLINED',
       );
+      if (!mounted) return;
       _showSnack(S.of(context)!.matchDeclineSnack, Colors.grey);
       _loadAll();
     } catch (e) {
+      if (!mounted) return;
       _showSnack(S.of(context)!.matchDeclineFailSnack(e.toString()), Colors.red[700]!);
     }
   }
@@ -495,9 +501,11 @@ class _MatchScreenState extends State<MatchScreen>
     final readableName = getLocalizedReadableName(request.resourceType, context);
     try {
       await _eventManager.cancelRequest(request.eventId);
+      if (!mounted) return;
       _showSnack(S.of(context)!.matchCancelRequestSnack(readableName), Colors.grey[700]!);
       _loadAll();
     } catch (e) {
+      if (!mounted) return;
       _showSnack(S.of(context)!.matchCancelFailSnack(e.toString()), Colors.red[700]!);
     }
   }
@@ -514,9 +522,11 @@ class _MatchScreenState extends State<MatchScreen>
         requestId: requestId,
         reason: 'USER_CANCELLED',
       );
+      if (!mounted) return;
       _showSnack(S.of(context)!.matchNegCancelledSnack, Colors.grey);
       _loadAll();
     } catch (e) {
+      if (!mounted) return;
       _showSnack(S.of(context)!.matchCancelFailSnack(e.toString()), Colors.red[700]!);
     }
   }
@@ -603,6 +613,7 @@ class _MatchScreenState extends State<MatchScreen>
         _loadAll();
       }
     } catch (e) {
+      if (!mounted) return;
       _showSnack(S.of(context)!.matchCommunityFailSnack(e.toString()), Colors.red[700]!);
     }
   }
@@ -768,66 +779,84 @@ class _MatchTabStripState extends State<_MatchTabStrip> {
           final pillFg = t.highlight
               ? Colors.white
               : (active ? p.brand : p.text2);
+          // 選中態統一（Stage 4c 計畫條款）：
+          //   active → accent 外框（p.brandBorder）+ accent-soft 淺底
+          //   inactive → 無外框、無底色
+          // 原 underline 指示並存為輔助，使鍵盤導覽/弱視使用者仍有冗餘視覺線索。
           return Expanded(
-            child: InkWell(
-              onTap: () => widget.controller.animateTo(i),
-              borderRadius: const BorderRadius.all(IgniRadii.sm),
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            t.label,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight:
-                                  active ? FontWeight.w600 : FontWeight.w500,
-                              color: active ? p.text0 : p.text2,
-                            ),
-                          ),
-                        ),
-                        if (t.count > 0) ...[
-                          const SizedBox(width: 5),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: pillBg,
-                              borderRadius:
-                                  const BorderRadius.all(IgniRadii.xs),
-                            ),
-                            child: Text(
-                              '${t.count}',
-                              style: IgniTypography.monoSmall(pillFg)
-                                  .copyWith(fontSize: 10),
-                            ),
-                          ),
-                        ],
-                      ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+              child: InkWell(
+                onTap: () => widget.controller.animateTo(i),
+                borderRadius: const BorderRadius.all(IgniRadii.sm),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: active ? p.brandSoft : Colors.transparent,
+                    borderRadius: const BorderRadius.all(IgniRadii.sm),
+                    border: Border.all(
+                      color: active ? p.brandBorder : Colors.transparent,
+                      width: 1,
                     ),
                   ),
-                  if (active)
-                    Positioned(
-                      left: 18,
-                      right: 18,
-                      bottom: -5,
-                      child: Container(
-                        height: 2,
-                        decoration: BoxDecoration(
-                          color: p.brand,
-                          borderRadius: BorderRadius.circular(2),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                t.label,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: active
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                  color: active ? p.text0 : p.text2,
+                                ),
+                              ),
+                            ),
+                            if (t.count > 0) ...[
+                              const SizedBox(width: 5),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: pillBg,
+                                  borderRadius:
+                                      const BorderRadius.all(IgniRadii.xs),
+                                ),
+                                child: Text(
+                                  '${t.count}',
+                                  style: IgniTypography.monoSmall(pillFg)
+                                      .copyWith(fontSize: 10),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                    ),
-                ],
+                      if (active)
+                        Positioned(
+                          left: 14,
+                          right: 14,
+                          bottom: -5,
+                          child: Container(
+                            height: 2,
+                            decoration: BoxDecoration(
+                              color: p.brand,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
           );

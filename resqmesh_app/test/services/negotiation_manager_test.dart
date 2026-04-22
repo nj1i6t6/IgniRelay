@@ -5,7 +5,6 @@
 //
 // 使用 sqflite_common_ffi (in-memory SQLite) + mocked SharedPreferences。
 
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
@@ -17,7 +16,6 @@ import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 import 'package:ignirelay_app/app/services/negotiation_events.dart';
-import 'package:ignirelay_app/app/services/negotiation_repo.dart';
 
 String _uid(String prefix) =>
     '$prefix-${DateTime.now().microsecondsSinceEpoch}';
