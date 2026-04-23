@@ -206,6 +206,7 @@
   "mapLongPressHint": "Long press map → Mark hazard zone",
   "mapSosSentLabel": "SOS Sent  ✕ Cancel",
   "mapSosButton": "SOS",
+  "mapSosHoldHint": "Hold 1.5s to send SOS",
   "mapCancelSosTitle": "Cancel SOS",
   "mapCancelSosContent": "Are you sure you want to cancel the SOS signal?\nOther devices will be notified.",
   "mapCancelSosBack": "Back",

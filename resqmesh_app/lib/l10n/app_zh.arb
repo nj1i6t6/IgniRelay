@@ -206,6 +206,7 @@
   "mapLongPressHint": "長按地圖 → 標記危險區域",
   "mapSosSentLabel": "SOS 已發送  ✕ 取消",
   "mapSosButton": "求救 SOS",
+  "mapSosHoldHint": "長按 1.5 秒以發出 SOS",
   "mapCancelSosTitle": "取消求救",
   "mapCancelSosContent": "確定要取消 SOS 求救訊號嗎？\n取消後其他裝置會收到通知。",
   "mapCancelSosBack": "返回",

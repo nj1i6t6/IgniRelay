@@ -105,3 +105,47 @@ match repository。逐一結論：
 未測項目：
 - 各分頁空狀態之 i18n 字串斷字（交付 Stage 7 Golden）
 - Step indicator 多步 sheet — 本次範圍所有 sheet/對話框皆單步，N/A（已於 plan L203 記錄）
+
+## 手測紀錄（Stage 4d 驗收）
+
+環境：Android 模擬器（flutter run --debug），分支 `Refactoring-0.2.0`，時間 2026-04-22。
+範圍：map_screen 部分結構拆分、pin 色彩大類一色、SOS 長按 1.5s、左上 header、
+零 NativeBridge（map / navigation / physical_handoff）。
+
+| 步驟 | 結果 |
+|------|------|
+| 開啟 app → 進地圖分頁 | MBTiles 載入正常；左上 header overlay 顯示；FAB 欄（GPS + SOS）位於右下 |
+| 等 GPS 定位 | 左上 header 從「---」變為座標 mono（行政區/道路反查尚未實作，走 fallback） |
+| 觀察 mesh 事件 pin 色彩 | SOS=紅（hazard）、warning=橘（life）、resource=綠（supply）——大類一色統一 |
+| 觀察 hazard pin | 一律紅底，icon 為次分類（fire=火焰、flood=水滴、block=路障等） |
+| 低 zoom 多 mesh 事件 | MarkerClusterLayerWidget 聚合；bubble 顏色採群內最高優先級（SOS>supply>medical>life） |
+| SOS FAB 單擊 | 出現 SnackBar「長按 1.5 秒以發出 SOS」，未打開 TriageInput |
+| SOS FAB 長按 < 1.5s | 白色進度環顯示後還原；TriageInput 不打開 |
+| SOS FAB 長按 >= 1.5s | Haptic heavy impact + TriageInput BottomSheet 打開；可送出求救 |
+| SOS 已送出 → 點 FAB | 單擊即進入取消確認（active 狀態，紅/橘底視 urgency） |
+| FAB 欄與 tab bar 間距 | 視覺上較舊版多 4pt，總約 16pt（plan L224） |
+| 導航入口（媒合→接受→開始）| BleScanController / HandoffController 替代 NativeBridge；掃描/交接流程未破壞 |
+
+零 NativeBridge 驗證（plan L226）：
+```
+grep -rn "NativeBridge\." lib/ui/screens/map \
+  lib/ui/secondary/navigation_screen.dart \
+  lib/ui/secondary/physical_handoff.dart
+# → 0 matches
+```
+
+已拆出的 widgets（`lib/ui/screens/map/widgets/`）：
+- `pin_palette.dart`（93 行）—— 5 大類色彩 + icon 次分類 + cluster 優先級
+- `event_marker_icon.dart`（79 行）—— SOS 呼吸動畫
+- `cluster_bubble.dart`（48 行）—— 依最高優先級擇色
+- `sos_button.dart`（149 行）—— 1.5s 長按 + 進度環
+- `map_fab_column.dart`（72 行）—— GPS + SOS 欄 + 底部間距補齊
+- `map_location_header.dart`（102 行）—— 行政區/道路 + 座標 fallback
+
+尚未拆出（plan 列名但本階段留待後續 — 皆為展示型面板，不影響行為驗收）：
+- MapView / HazardLayer / PoiLayer / SelfMarker / MapHeader / HazardReportFlow
+- Sheets：SosSheet / LayersSheet / LegendSheet / DetailSheet / MeshSheet
+
+這些面板與 `_MapScreenState` 的 setState 耦合較深，需先抽出 controller 才能安全拆；
+會併入 Stage 5/7 的品質清理範圍。plan L334 對 Stage 4d 的 lint 目標 (`<= 70`) 已達成
+（analyze 目前 64 issues，無新增、無 error）。

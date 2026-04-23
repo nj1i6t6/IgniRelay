@@ -515,6 +515,9 @@ class SEn extends S {
   String get mapSosButton => 'SOS';
 
   @override
+  String get mapSosHoldHint => 'Hold 1.5s to send SOS';
+
+  @override
   String get mapCancelSosTitle => 'Cancel SOS';
 
   @override

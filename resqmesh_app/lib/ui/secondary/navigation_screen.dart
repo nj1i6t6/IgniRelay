@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ignirelay_app/platform/native_bridge.dart';
+import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
 import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 import 'package:ignirelay_app/app/services/negotiation_events.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -231,7 +231,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   Future<void> _startBleScan() async {
     try {
-      final btOn = await NativeBridge.isBluetoothEnabled();
+      final btOn = await BleScanController.instance.isBluetoothEnabled();
       if (!btOn) {
         debugPrint('[Navigation] BLE 未開啟');
         return;
@@ -251,10 +251,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   Future<void> _performScan() async {
     try {
-      await NativeBridge.startNordicScan();
+      await BleScanController.instance.startScan();
 
       _bleScanSub?.cancel();
-      _bleScanSub = NativeBridge.nativeEventStream.listen((event) {
+      _bleScanSub = BleScanController.instance.rawEventStream.listen((event) {
         if (event is Map && event['type'] == 'nordic_found' && mounted) {
           final rssi = event['rssi'] as int? ?? -100;
           setState(() {
@@ -266,7 +266,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
       // 8 秒後停止本輪掃描
       Future.delayed(const Duration(seconds: 8), () {
-        if (_scanning) NativeBridge.stopNordicScan();
+        if (_scanning) BleScanController.instance.stopScan();
       });
     } catch (e) {
       debugPrint('[Navigation] BLE scan error: $e');
@@ -278,7 +278,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _scanTimer?.cancel();
     _bleScanSub?.cancel();
     try {
-      NativeBridge.stopNordicScan();
+      BleScanController.instance.stopScan();
     } catch (_) {}
   }
 

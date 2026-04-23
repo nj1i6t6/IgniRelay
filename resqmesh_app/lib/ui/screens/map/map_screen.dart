@@ -24,6 +24,11 @@ import 'package:ignirelay_app/ui/widgets/ignirelay_sprites.dart';
 import 'package:ignirelay_app/ui/theme/ignirelay_theme.dart';
 import 'package:ignirelay_app/ui/secondary/triage_input.dart';
 import 'package:ignirelay_app/ui/sheets/map_layer_settings.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/event_marker_icon.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/cluster_bubble.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/pin_palette.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/map_fab_column.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/map_location_header.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 import 'package:ignirelay_app/app/services/location_service.dart';
@@ -74,6 +79,8 @@ class _MapScreenState extends State<MapScreen>
   List<Marker> _hazardCenterMarkers = [];
   List<Map<String, dynamic>> _hazardData = [];
   List<Marker> _eventMarkers = [];
+  // Stage 4d: 與 _eventMarkers 同步的 PinCategory 索引，供叢集 bubble 擇色用。
+  List<PinCategory> _eventMarkerCategories = [];
   List<Marker> _poiMarkers = [];
   Timer? _refreshTimer;
   StreamSubscription? _meshEventSub;
@@ -104,16 +111,19 @@ class _MapScreenState extends State<MapScreen>
   int _activeSosUrgency = 0;
   String _activeSosDesc = '';
 
+  /// Stage 4d 規範：hazard 一律紅（PinCategory.hazard），icon 做次分類。
+  /// label 仍由 i18n 給，維持既有鍵值；color 改由 PinPalette 集中管理。
   static (String, IconData, Color) _hazardInfo(BuildContext context, String type) {
     final l = S.of(context)!;
+    final color = PinPalette.color(PinCategory.hazard);
     switch (type) {
-      case 'ROADBLOCK': return (l.mapHazardRoadblock, Icons.block, Colors.orange);
-      case 'FIRE': return (l.mapHazardFire, Icons.local_fire_department, Colors.red);
-      case 'CHEMICAL': return (l.mapHazardChemical, Icons.warning_amber, Colors.yellow);
-      case 'FLOOD': return (l.mapHazardFlood, Icons.water, Colors.blue);
-      case 'BUILDING': return (l.mapHazardCollapse, Icons.domain_disabled, Colors.brown);
-      case 'LANDSLIDE': return (l.mapHazardLandslide, Icons.landscape, Colors.grey);
-      default: return (type, Icons.help, Colors.grey);
+      case 'ROADBLOCK': return (l.mapHazardRoadblock, PinPalette.hazardIcon(type), color);
+      case 'FIRE': return (l.mapHazardFire, PinPalette.hazardIcon(type), color);
+      case 'CHEMICAL': return (l.mapHazardChemical, PinPalette.hazardIcon(type), color);
+      case 'FLOOD': return (l.mapHazardFlood, PinPalette.hazardIcon(type), color);
+      case 'BUILDING': return (l.mapHazardCollapse, PinPalette.hazardIcon(type), color);
+      case 'LANDSLIDE': return (l.mapHazardLandslide, PinPalette.hazardIcon(type), color);
+      default: return (type, Icons.help, color);
     }
   }
 
@@ -552,8 +562,9 @@ class _MapScreenState extends State<MapScreen>
     );
 
     final markers = <Marker>[];
+    final categories = <PinCategory>[];
     if (!mounted) return;
-    final _evtL = S.of(context)!;
+    final evtL = S.of(context)!;
     for (final evt in events) {
       final lat = (evt['received_lat'] as num?)?.toDouble();
       final lng = (evt['received_lng'] as num?)?.toDouble();
@@ -564,38 +575,39 @@ class _MapScreenState extends State<MapScreen>
       // Bug 9: 過濾 urgency=0 INFO 事件
       if (urgency == 0) continue;
 
-      Color markerColor;
+      // Stage 4d: 顏色改由 PinPalette 大類一色決定，icon 只做次分類。
+      PinCategory category;
       IconData markerIcon;
       double markerSize;
       String tooltip;
 
-      final _l = _evtL;
       switch (urgency) {
-        case 3: // SOS_RED
-          markerColor = Colors.red;
+        case 3: // SOS_RED → hazard（紅）
+          category = PinCategory.hazard;
           markerIcon = Icons.sos;
           markerSize = 36;
-          tooltip = _l.mapEventSosRed;
+          tooltip = evtL.mapEventSosRed;
           break;
-        case 2: // SOS_YELLOW
-          markerColor = Colors.amber;
+        case 2: // SOS_YELLOW → life（橘）
+          category = PinCategory.life;
           markerIcon = Icons.warning_amber;
           markerSize = 32;
-          tooltip = _l.mapEventSosYellow;
+          tooltip = evtL.mapEventSosYellow;
           break;
-        case 1: // RESOURCE
-          markerColor = Colors.green;
+        case 1: // RESOURCE → supply（綠）
+          category = PinCategory.supply;
           markerIcon =
               eventType == 0 ? Icons.inventory_2 : Icons.volunteer_activism;
           markerSize = 28;
-          tooltip = _l.mapEventSupply;
+          tooltip = evtL.mapEventSupply;
           break;
-        default: // INFO
-          markerColor = Colors.cyan;
+        default: // INFO → life
+          category = PinCategory.life;
           markerIcon = Icons.info_outline;
           markerSize = 24;
-          tooltip = _l.mapEventInfo;
+          tooltip = evtL.mapEventInfo;
       }
+      final markerColor = PinPalette.color(category);
 
       // 解讀 payload 取得描述
       final payload = evt['payload'] as Uint8List?;
@@ -616,7 +628,7 @@ class _MapScreenState extends State<MapScreen>
         height: markerSize + 4,
         child: GestureDetector(
           onTap: () => _showEventInfo(evtData),
-          child: _EventMarkerIcon(
+          child: EventMarkerIcon(
             icon: markerIcon,
             color: markerColor,
             size: markerSize,
@@ -625,9 +637,15 @@ class _MapScreenState extends State<MapScreen>
           ),
         ),
       ));
+      categories.add(category);
     }
 
-    if (mounted) setState(() => _eventMarkers = markers);
+    if (mounted) {
+      setState(() {
+        _eventMarkers = markers;
+        _eventMarkerCategories = categories;
+      });
+    }
   }
 
   // ── POI / 危險區域 點擊 ──────────────────────────────────────────
@@ -1727,65 +1745,30 @@ class _MapScreenState extends State<MapScreen>
               : _buildMapView(),
       floatingActionButton: _isMarkingMode
           ? null
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 定位按鈕
-                FloatingActionButton.small(
-                  heroTag: 'gps',
-                  backgroundColor: _userLocation != null
-                      ? Colors.blueAccent
-                      : Colors.grey[700],
-                  onPressed: _centerOnUser,
-                  child: Icon(
-                    _userLocation != null
-                        ? Icons.my_location
-                        : Icons.location_searching,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // SOS 求救按鈕（根據狀態切換）
-                _activeSosEventId != null
-                    ? FloatingActionButton.extended(
-                        heroTag: 'sos',
-                        backgroundColor: _activeSosUrgency >= 3
-                            ? Colors.red[800]
-                            : Colors.orange[800],
-                        onPressed: _cancelSos,
-                        icon:
-                            const Icon(Icons.check_circle, color: Colors.white),
-                        label: Text(
-                          S.of(context)!.mapSosSentLabel,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.95),
-                            fontSize: 13,
-                          ),
-                        ),
-                      )
-                    : FloatingActionButton.extended(
-                        heroTag: 'sos',
-                        backgroundColor: Colors.redAccent,
-                        onPressed: () {
-                          showModalBottomSheet(
-                            context: context,
-                            isScrollControlled: true,
-                            backgroundColor: const Color(0xFF1a1a2e),
-                            shape: const RoundedRectangleBorder(
-                              borderRadius: BorderRadius.vertical(
-                                  top: Radius.circular(20)),
-                            ),
-                            builder: (ctx) =>
-                                TriageInputWidget(onSubmit: _onTriageSubmit),
-                          );
-                        },
-                        icon: const Icon(Icons.sos, color: Colors.white),
-                        label: Text(S.of(context)!.mapSosButton,
-                            style: const TextStyle(color: Colors.white)),
-                      ),
-              ],
+          : MapFabColumn(
+              hasUserLocation: _userLocation != null,
+              onCenterOnUser: _centerOnUser,
+              activeSosEventId: _activeSosEventId,
+              activeSosUrgency: _activeSosUrgency,
+              onSosHoldActivated: _openTriageSheet,
+              onCancelSos: _cancelSos,
+              sosLabel: S.of(context)!.mapSosButton,
+              sosActiveLabel: S.of(context)!.mapSosSentLabel,
+              sosHoldHint: S.of(context)!.mapSosHoldHint,
             ),
+    );
+  }
+
+  /// Stage 4d：SOS 長按 1.5s 達成後的動作 — 打開 TriageInput 抽屜。
+  void _openTriageSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1a1a2e),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => TriageInputWidget(onSubmit: _onTriageSubmit),
     );
   }
 
@@ -1916,7 +1899,27 @@ class _MapScreenState extends State<MapScreen>
                     borderColor: Color(0x55E8803B),
                     borderStrokeWidth: 1,
                   ),
-                  builder: (ctx, markers) => _ClusterBubble(count: markers.length),
+                  builder: (ctx, markers) {
+                    // Stage 4d 優先級：SOS(hazard) > 避難(supply) > 醫療 > 其他
+                    PinCategory top = PinCategory.life;
+                    int topPri = PinPalette.clusterPriority(top);
+                    for (final m in markers) {
+                      final idx = _eventMarkers.indexOf(m);
+                      if (idx < 0 || idx >= _eventMarkerCategories.length) {
+                        continue;
+                      }
+                      final c = _eventMarkerCategories[idx];
+                      final pri = PinPalette.clusterPriority(c);
+                      if (pri < topPri) {
+                        topPri = pri;
+                        top = c;
+                      }
+                    }
+                    return ClusterBubble(
+                      count: markers.length,
+                      highestPriority: top,
+                    );
+                  },
                 ),
               ),
             // 6. 用戶位置
@@ -1925,6 +1928,16 @@ class _MapScreenState extends State<MapScreen>
           ],
         ),
 
+        // Stage 4d：左上行政區/道路 overlay（離線反查 fallback 座標）。
+        Positioned(
+          top: 8,
+          left: 8,
+          child: MapLocationHeader(
+            userLocation: _userLocation,
+            district: null, // Stage 6+ 接 PoiQuery 反查；現階段走 fallback
+            road: null,
+          ),
+        ),
         // 長按提示（非標記模式時顯示）
         if (!_isMarkingMode)
           Positioned(
@@ -2284,118 +2297,6 @@ class _MapScreenState extends State<MapScreen>
           Text(label,
               style: const TextStyle(color: Colors.black87, fontSize: 12)),
         ],
-      ),
-    );
-  }
-}
-
-/// 事件標記圖示 (帶呼吸動畫的 SOS 標記)
-class _EventMarkerIcon extends StatefulWidget {
-  final IconData icon;
-  final Color color;
-  final double size;
-  final String tooltip;
-  final bool isSOS;
-
-  const _EventMarkerIcon({
-    required this.icon,
-    required this.color,
-    required this.size,
-    required this.tooltip,
-    this.isSOS = false,
-  });
-
-  @override
-  State<_EventMarkerIcon> createState() => _EventMarkerIconState();
-}
-
-class _EventMarkerIconState extends State<_EventMarkerIcon>
-    with SingleTickerProviderStateMixin {
-  AnimationController? _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.isSOS) {
-      _controller = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 1200),
-      )..repeat(reverse: true);
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    Widget marker = Tooltip(
-      message: widget.tooltip,
-      child: Container(
-        decoration: BoxDecoration(
-          color: widget.color,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 2),
-          boxShadow: [
-            BoxShadow(color: widget.color.withValues(alpha: 0.6), blurRadius: 8)
-          ],
-        ),
-        child: Icon(widget.icon, color: Colors.white, size: widget.size * 0.55),
-      ),
-    );
-
-    if (widget.isSOS && _controller != null) {
-      return AnimatedBuilder(
-        animation: _controller!,
-        builder: (_, child) => Opacity(
-          opacity: 0.6 + _controller!.value * 0.4,
-          child: Transform.scale(
-            scale: 0.9 + _controller!.value * 0.15,
-            child: child,
-          ),
-        ),
-        child: marker,
-      );
-    }
-    return marker;
-  }
-}
-
-/// ─── Marker cluster bubble ───
-/// Stage 4d 新增：為 mesh 事件標記群聚時顯示的氣泡；採 brand 色配合
-/// 原型主視覺，顯示該群聚內的標記數量。
-class _ClusterBubble extends StatelessWidget {
-  const _ClusterBubble({required this.count});
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    const brand = Color(0xFFE8803B);
-    final label = count > 99 ? '99+' : '$count';
-    return Container(
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: brand,
-        border: Border.all(color: Colors.white, width: 2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x55E8803B),
-            blurRadius: 10,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
-        ),
       ),
     );
   }

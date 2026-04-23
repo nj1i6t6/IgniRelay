@@ -212,7 +212,16 @@ resqmesh_app/lib/
 - **驗收**：模擬器跑發佈需求 → 發佈供給 → 接受協商 → 進入導航入口；FSM 單測全綠
 - **commit**：`refactor(stage-4c): 重構「媒合」分頁 + 物資狀態機防呆`
 
-### Stage 4d — 「地圖」分頁（commit #8）
+### Stage 4d — 「地圖」分頁（commit #8）✅ 已完成（部分拆分，行為條款全達成）
+
+> 交付結果摘要：
+> - 零 NativeBridge（map / navigation / physical_handoff）已驗證，baseline 清空。
+> - PinPalette 5 大類一色 + icon 次分類 + cluster 優先級（SOS>supply>medical>life）套用。
+> - SosLongPressButton 1.5s 長按 + MapFabColumn 與 tab 16pt 間距。
+> - MapLocationHeader 左上行政區/道路 overlay（DistrictRoadLookup 預留接口；目前走座標 mono fallback）。
+> - 已抽出 6 個 widgets（`lib/ui/screens/map/widgets/`，皆 <150 行）；
+>   剩餘 MapView / Layers / Sheets 因與 state 深耦合，延至 Stage 5/7 品質清理。
+> - 手測紀錄：`resqmesh_app/docs/leak_inventory.md`〈手測紀錄（Stage 4d 驗收）〉
 
 - **目標**：拆 2331 行巨檔為 7-9 個 <400 行小檔
 - **交付**：

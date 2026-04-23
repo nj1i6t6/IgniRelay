@@ -1015,6 +1015,12 @@ abstract class S {
   /// **'求救 SOS'**
   String get mapSosButton;
 
+  /// No description provided for @mapSosHoldHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'長按 1.5 秒以發出 SOS'**
+  String get mapSosHoldHint;
+
   /// No description provided for @mapCancelSosTitle.
   ///
   /// In zh, this message translates to:

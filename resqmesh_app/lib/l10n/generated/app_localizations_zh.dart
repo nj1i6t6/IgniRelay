@@ -502,6 +502,9 @@ class SZh extends S {
   String get mapSosButton => '求救 SOS';
 
   @override
+  String get mapSosHoldHint => '長按 1.5 秒以發出 SOS';
+
+  @override
   String get mapCancelSosTitle => '取消求救';
 
   @override

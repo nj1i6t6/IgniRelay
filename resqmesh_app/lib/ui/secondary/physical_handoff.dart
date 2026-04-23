@@ -5,7 +5,7 @@ import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
-import 'package:ignirelay_app/platform/native_bridge.dart';
+import 'package:ignirelay_app/app/controllers/handoff_controller.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 
 enum HandoffRole { provider, requester }
@@ -87,12 +87,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
   /// Provider 端：在 GATT Server 上開啟交接廣播
   Future<void> _startBleHandoffAdvertising() async {
     try {
-      await NativeBridge.startHandoffAdvertising(
+      await HandoffController.instance.startAdvertising(
         resourceId: widget.resourceId,
         pinHash: _pinHash,
       );
       // 監聽來自 Requester 的 BLE 驗證結果
-      _handoffSub = NativeBridge.handoffEvents.listen((event) {
+      _handoffSub = HandoffController.instance.events.listen((event) {
         if (event['resourceId'] == widget.resourceId &&
             event['success'] == true) {
           _onBleVerificationSuccess();
@@ -118,7 +118,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     setState(() => _handoffComplete = true);
     _autoRevertTimer?.cancel();
     _handoffSub?.cancel();
-    NativeBridge.stopHandoffAdvertising();
+    HandoffController.instance.stopAdvertising();
   }
 
   void _startAutoRevertTimer() {
@@ -144,7 +144,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
         widget.providerDeviceId!.isNotEmpty) {
       setState(() => _waitingForBle = true);
       try {
-        final success = await NativeBridge.sendHandoffPin(
+        final success = await HandoffController.instance.sendPin(
           deviceId: widget.providerDeviceId!,
           resourceId: widget.resourceId,
           pin: entered,
@@ -717,7 +717,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     _handoffSub?.cancel();
     _pinCtrl.dispose();
     if (widget.role == HandoffRole.provider && widget.method != 'DROP_OFF') {
-      NativeBridge.stopHandoffAdvertising();
+      HandoffController.instance.stopAdvertising();
     }
     super.dispose();
   }
