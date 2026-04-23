@@ -212,28 +212,86 @@ resqmesh_app/lib/
 - **驗收**：模擬器跑發佈需求 → 發佈供給 → 接受協商 → 進入導航入口；FSM 單測全綠
 - **commit**：`refactor(stage-4c): 重構「媒合」分頁 + 物資狀態機防呆`
 
-### Stage 4d — 「地圖」分頁（commit #8）✅ 已完成（部分拆分，行為條款全達成）
+### Stage 4d — 「地圖」分頁（commit #8 / #8-r2）
 
-> 交付結果摘要：
-> - 零 NativeBridge（map / navigation / physical_handoff）已驗證，baseline 清空。
-> - PinPalette 5 大類一色 + icon 次分類 + cluster 優先級（SOS>supply>medical>life）套用。
-> - SosLongPressButton 1.5s 長按 + MapFabColumn 與 tab 16pt 間距。
-> - MapLocationHeader 左上行政區/道路 overlay（DistrictRoadLookup 預留接口；目前走座標 mono fallback）。
-> - 已抽出 6 個 widgets（`lib/ui/screens/map/widgets/`，皆 <150 行）；
->   剩餘 MapView / Layers / Sheets 因與 state 深耦合，延至 Stage 5/7 品質清理。
-> - 手測紀錄：`resqmesh_app/docs/leak_inventory.md`〈手測紀錄（Stage 4d 驗收）〉
+> **雙軌驗收**（因結構拆分分兩輪推進）：
+> - **Round 1（commit d9d9bd4）— 行為條款 ✅ 達成**
+>   - 零 NativeBridge（map / navigation / physical_handoff）已驗證，baseline 清空。
+>   - PinPalette 5 大類一色 + icon 次分類 + cluster 優先級（SOS>supply>medical>life）套用於 `_eventMarkers`。
+>   - SosLongPressButton 1.5s 長按 + MapFabColumn 與 tab 16pt 間距。
+>   - MapLocationHeader 左上 overlay（DistrictRoadLookup 預留接口；現階段走座標 mono fallback，真實實作移至 Stage 7）。
+>   - 已抽出 6 個 widgets（`lib/ui/screens/map/widgets/`，皆 <150 行）。
+>   - 手測紀錄：`resqmesh_app/docs/leak_inventory.md`〈手測紀錄（Stage 4d 驗收）〉
+>   - **發現未達成項**（於 Round 2 修補）：
+>     - `_loadHazards` 仍用 local switch 挑 marker fill 色（`map_screen.dart:442 / :489`），hazard 大類一色僅套到 `_hazardInfo` 語意，未套到中心 marker，條款 L231 未實際生效。
+>     - map_screen.dart 殘留 emoji（`:1290` `👤`、`:2248` `🚨`），違反 §六 L310。
+> - **Round 2（待執行，commit #8-r2）— 結構拆分補完 🚧**
+>   - 目的：把 Round 1 未拆出的 POI/Hazard/Event/Cancel/Delete/Nearby sheets + MarkingPanel + Loading/Error/Legend 面板落實為獨立檔；清掉上述 bug 與 emoji。
+>   - D 類深耦合項（MapView / HazardLayer / PoiLayer / SelfMarker / HazardReportFlow）因需要引入 state holder，正式列為 **Stage 7 結構債**。
 
-- **目標**：拆 2331 行巨檔為 7-9 個 <400 行小檔
-- **交付**：
-  - 拆分：`MapView` / `MapMarkersLayer` / `HazardLayer` / `PoiLayer` / `SelfMarker` / `MapHeader` / `MapFabColumn` / `SosButton` / `HazardReportFlow`
-  - Sheets：`SosSheet` / `LayersSheet` / `LegendSheet` / `DetailSheet` / `MeshSheet`
-  - Marker clustering（`flutter_map_marker_cluster`），低 zoom 聚合，優先級 SOS > 避難 > 醫療 > 其他
-  - Pin 色彩改大類一色：紅=危險、藍=醫療、綠=物資、橘=生活、紫=工具，icon 只做次分類
-  - 左上改行政區+最近道路（離線反查；做不到 fallback 座標 mono 小字）
-  - SOS 按鈕：長按 1.5 秒啟動，與 tab 留 16pt 間距
-  - 本分頁範圍內 UI 無 `NativeBridge` 直呼，全走 `ble_scan_controller` / `handoff_controller`（含 `navigation_screen`、`physical_handoff`）
-- **驗收**：模擬器跑地圖載入、POI 顯示、clustering 行為、標記災害、SOS 長按、圖層切換、導航入口；`grep "NativeBridge\." lib/ui/screens/map lib/ui/secondary/navigation* lib/ui/secondary/physical_handoff*` 為 0
-- **commit**：`refactor(stage-4d): 重構「地圖」分頁並加入 clustering`
+**Round 2 交付清單**
+
+- **基線**：`map_screen.dart` 實測 2303 行（`wc -l`）；33 個 `S.of(context)!`；8 個 inline `showModalBottomSheet` / `showDialog`。
+- **目標**：主檔 2303 → <1300 行；新增檔全部 <400 行；不新增任何 `S.of(context)!`；inline modal/dialog 呼叫數 8 → 2（僅保留 `MapLayerControlSheet` + `TriageInputWidget` 的呼叫包裝）。
+
+- **新增檔（11 個，皆 <200 行）**：
+  ```
+  lib/ui/screens/map/widgets/
+    poi_category.dart              // label/id/color/icon 四個 pure fn
+    map_loading_screen.dart
+    map_legend_panel.dart
+    map_error_screen.dart          // 1 callback: onRetry
+    marking_panel.dart             // marking state 只傳入，回寫走 callback
+  lib/ui/screens/map/sheets/
+    poi_info_sheet.dart            // 含 _poiInfoRow / _poiHoursWidget / _formatOpeningHours 一併搬過來
+    event_info_sheet.dart
+    hazard_info_sheet.dart         // 3 callback: onEdit/onConfirm/onDelete
+    hazard_delete_dialog.dart      // static show() → Future<bool>
+    sos_cancel_dialog.dart         // static show() → Future<bool>
+    hazard_nearby_dialog.dart      // static show() → Future<String?>('new'|'confirm'|null)
+  ```
+
+- **原 9+5 契約名詞 → 本輪新檔對照表**
+
+  | 原契約名詞（plan L228 / L229）| 本輪對應 | 延遲階段 |
+  |---|---|---|
+  | `MapView` | 未拆（D 類） | Stage 7 |
+  | `MapMarkersLayer` | `MarkerClusterLayerWidget`（已用套件）| — |
+  | `HazardLayer` | `PolygonLayer` + marker producer 仍在 `_loadHazards` | Stage 7（需 controller）|
+  | `PoiLayer` | `MarkerLayer` + `_buildPoiMarkers` 仍在主檔 | Stage 7（需 controller）|
+  | `SelfMarker` | inline Marker（<30 行） | Stage 7 合拆 |
+  | `MapHeader` | `MapLocationHeader` ✅ Round 1 已拆 | — |
+  | `MapFabColumn` | `MapFabColumn` ✅ Round 1 已拆 | — |
+  | `SosButton` | `SosLongPressButton` ✅ Round 1 已拆 | — |
+  | `HazardReportFlow` | Round 2 拆 `MarkingPanel` + 3 個 Dialog；流程控制留在 `_MapScreenState` | Stage 7 抽 `MapController` 時才算完整 |
+  | `SosSheet` | Round 1 已用 `TriageInputWidget` | — |
+  | `LayersSheet` | Round 1 已用 `MapLayerControlSheet` | — |
+  | `LegendSheet` | Round 2 拆 `MapLegendPanel`（非 sheet，是 panel overlay） | — |
+  | `DetailSheet` | Round 2 拆 `HazardInfoSheet` + `EventInfoSheet` + `PoiInfoSheet` | — |
+  | `MeshSheet` | `EventInfoSheet`（mesh 事件詳情即此） | — |
+
+- **必修補（非 optional）**：
+  1. **hazard marker 大類一色 bug 修正**：`_loadHazards` L441-456 的 local color switch，把套到 marker fill 的 `color`（L489）改為 `PinPalette.color(PinCategory.hazard)`。多邊形本體保留分色（那是功能）。commit 訊息列 `附帶修正: hazard 中心 marker 改用 PinPalette 大類色`。
+  2. **清 emoji**：`map_screen.dart:1290` 的 `👤` 與 `:2248` 的 `🚨` 移除或以 Material Icon 取代（§六 L310）。
+  3. **基線字串修正**：plan 原本寫「2331 行巨檔」（L226 已於本輪更新為 2303）。
+
+- **本輪約束（與 §六 同級）**：
+  - 不新增任何 `S.of(context)!` 強制解包（Stage 7 將全面清除，本輪不得擴大負債）。新檔需要 i18n 就走「傳入 l10n 物件或純字串」的 props 模式。
+  - 新 widget 不得引入新狀態管理套件；state 回寫路徑維持 callback 模式。
+  - sheet/panel 的硬碼色（`Color(0xFF1a1a2e)` 等）本輪**不替換**（視覺 token 對齊交 Stage 7 視覺鎖定）；僅做結構搬遷。
+
+- **Round 2 驗收**：
+  - `wc -l lib/ui/screens/map/map_screen.dart` < 1300
+  - `find lib/ui/screens/map -name '*.dart' | xargs wc -l` 每檔 < 400
+  - `grep -c "showModalBottomSheet\|showDialog" lib/ui/screens/map/map_screen.dart` ≤ 2
+  - `grep -c "S\.of(context)!" lib/ui/screens/map/map_screen.dart` ≤ 33（不增加；預期會明顯下降）
+  - `grep -E "🚨|👤|[\U0001F600-\U0001F64F]|[\U0001F300-\U0001F5FF]" lib/ui/screens/map/` 0 match
+  - `flutter analyze`：不增加 issue，無新 error
+  - `flutter test`：**連跑 2 次皆全綠**（防 flake gate）
+  - 手測：POI 詳情 / hazard 詳情 / 刪除 / 編輯 / SOS 長按 / 取消 SOS / 標記模式發佈 / 附近重複對話框 / legend / 圖層 sheet / error-screen retry 全路徑
+  - hazard 大類一色：marker 中心圓背景 6 種 type 皆為 `PinPalette.color(PinCategory.hazard)`（紅）；多邊形維持 type 分色
+
+- **commit**：`refactor(stage-4d-r2): 地圖 sheet/panel 結構拆分 + hazard 統一色 + 清 emoji`
 
 ### Stage 5 — 次要畫面（commit #9）
 
@@ -273,8 +331,13 @@ resqmesh_app/lib/
 
 ### Stage 7 — 收尾（commit #11）
 
-- **目標**：品質清理、刪舊碼、文件同步、i18n 安全化、Design System 視覺鎖定
-- **交付**：
+- **目標**：品質清理、刪舊碼、文件同步、i18n 安全化、Design System 視覺鎖定、**吸收 Stage 4d Round 2 列名的結構債**
+- **Stage 4d 結構債（D 類，本階段必做）**：
+  - **引入 `MapController`**：採 **ChangeNotifier + ListenableBuilder**（選項 A，不新增套件，可讀性與可測性最平衡；決策於 Stage 4d Round 2 規劃時定案）。把 `_loadOverlays` / `_loadHazards` / `_loadEventMarkers` / `_refreshPoiMarkers` 的讀寫以及 `_activeSosEventId` / `_userLocation` / `_hazardData` / `_eventMarkers` / `_eventMarkerCategories` / `_layerSettings` 搬進 controller。
+  - 拆 `MapView` / `HazardLayer` / `PoiLayer` / `SelfMarker` / `HazardReportFlow` 五個原契約 widget，皆以 controller 為 single source of truth（Stage 4d Round 2 因耦合延後到此）。
+  - **`DistrictRoadLookup` 真實實作**：擴充 `PoiQuery` 支援 place/road vector-tile 查詢（或另建 lookup util），把 Stage 4d 的 stub（`map_location_header.dart:85`）接起來。此項動到 `lib/app/mesh/`，不放 Stage 6（Stage 6 執行順序已滿）。
+  - 替換 map 各 sheet/panel 硬碼色（`Color(0xFF1a1a2e)` 等）為 IgniPalette token（Stage 4d Round 2 刻意不做）。
+- **一般交付**：
   - 刪除所有過渡檔、`// TODO: removed in refactor` 殘留、無用 import
   - `flutter analyze` 清到 < 20 issues
   - `writeDebugLog` 改可 await + 測試通過（解掉原 1 fail）
@@ -321,7 +384,7 @@ resqmesh_app/lib/
 | 風險 | 應對 |
 |---|---|
 | iOS 我無法實機測 | Stage 6 寫完後明確標「iOS 實機待你驗」；Android 我自測 |
-| 地圖 2331 行拆分誤傷 | Stage 4d 前先做拆分對照（開發內部用，不進 repo） |
+| 地圖 2303 行（Round 2 起點，原始 2331）拆分誤傷 | Stage 4d Round 2 前先完成 sheet / panel 耦合盤點，於 `leak_inventory.md` 追加對照 |
 | `flutter_map_marker_cluster` 與現行 `flutter_map` 版本相容性 | Stage 4d 第一步確認；不相容則改自寫輕量 cluster，不升級 `flutter_map` |
 | custom_lint 套件 Windows 相容性 | 若有問題 fallback 用 `analysis_options.yaml` 自訂 preset |
 | 重構期間 `main` / `Damo` 有緊急合併 | 分支 rebase 而非 merge，推進前先 `git fetch` |

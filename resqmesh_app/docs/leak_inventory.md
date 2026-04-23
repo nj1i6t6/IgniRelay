@@ -149,3 +149,47 @@ grep -rn "NativeBridge\." lib/ui/screens/map \
 這些面板與 `_MapScreenState` 的 setState 耦合較深，需先抽出 controller 才能安全拆；
 會併入 Stage 5/7 的品質清理範圍。plan L334 對 Stage 4d 的 lint 目標 (`<= 70`) 已達成
 （analyze 目前 64 issues，無新增、無 error）。
+
+## Stage 4d Round 2 — 結構債處理（2026-04-23）
+
+Round 1（commit d9d9bd4）只補上 PinPalette/marker 替換的行為層契約，本輪補齊
+plan §四 L216-263 要求的實檔拆分，同時順手解掉 Round 1 遺漏：
+
+- **hazard marker 大類一色修正**：`_loadHazards` 原本對每個 hazard type 給一個
+  不同顏色做 marker 填色（plan L231 明示「大類一色」）；本輪改 `_hazardInfo`
+  分離 `polygonColor`（仍為次分類色，用於多邊形填色）與 `markerColor =
+  PinPalette.color(PinCategory.hazard)`（marker 圓點統一紅）。
+- **emoji 清零**：Round 1 仍在 legend panel (`🚨`) 與 hazard info sheet (`👤`)
+  留了兩處 emoji，違反 plan §六 L310。本輪全部改 `Icons.*`；`lib/ui/screens/map/`
+  經 `grep -rP "[\x{1F300}-\x{1FAFF}]|[\x{2600}-\x{27BF}]"` 為 0 matches。
+- **新增 11 檔**（全 < 400 行）：
+  - `widgets/poi_category.dart`（100 行）—— POI id/color/icon/label 四個 pure fn
+    （類別名改 `PoiCategories`，避免與 `map_layer_settings.dart` 原有 data class
+    `PoiCategory` 衝突）
+  - `widgets/marking_panel.dart`（246 行）—— 標記模式底部面板；state 透過
+    callback 回寫 caller
+  - `widgets/map_loading_screen.dart`（35 行）、`widgets/map_error_screen.dart`
+    （73 行）、`widgets/map_legend_panel.dart`（120 行）
+  - `sheets/poi_info_sheet.dart`（250 行，含 `_formatOpeningHours`）
+  - `sheets/event_info_sheet.dart`（208 行）
+  - `sheets/hazard_info_sheet.dart`（249 行）
+  - `sheets/hazard_delete_dialog.dart` / `sos_cancel_dialog.dart` /
+    `hazard_nearby_dialog.dart`（各 41-58 行）
+- **主檔瘦身**：`map_screen.dart` 2303 → 1384 行（−919，約 −40%）；
+  plan 原目標 `< 1300`，此差距留到 Stage 7（抽 `MapController`、移
+  `_loadHazards`/`_loadEventMarkers` 到獨立 layer widget）一併處理，本輪不再勉強
+  塞到 1300 以免破壞現有 tap / setState 路徑。
+- **acceptance 指標全綠**：
+  ```
+  grep -c "showModalBottomSheet\|showDialog" map_screen.dart  →  2  (plan ≤ 2) ✓
+  grep -c "S\.of(context)!"                  map_screen.dart  → 21  (≤ 33) ✓
+  flutter analyze                                             →  無新增 issue ✓
+  dart run tool/check_layers.dart                             →  ok ✓
+  flutter test × 2                                            →  309/309 兩輪全綠 ✓
+  ```
+
+Round 2 **不做**的事（保留到 Stage 7，見 plan §Stage 7「Stage 4d 結構債」小節）：
+- 抽 `MapController` (`ChangeNotifier + ListenableBuilder`) 與對應 D-class widgets
+  (MapView / HazardLayer / PoiLayer / SelfMarker / MapHeader / HazardReportFlow)
+- `DistrictRoadLookup` 工具類抽離
+- sheet 內 hardcoded `0xFF1a1a2e` / `Colors.orange` 等換成 IgniPalette token

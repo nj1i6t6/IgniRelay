@@ -29,10 +29,20 @@ import 'package:ignirelay_app/ui/screens/map/widgets/cluster_bubble.dart';
 import 'package:ignirelay_app/ui/screens/map/widgets/pin_palette.dart';
 import 'package:ignirelay_app/ui/screens/map/widgets/map_fab_column.dart';
 import 'package:ignirelay_app/ui/screens/map/widgets/map_location_header.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/poi_category.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/marking_panel.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/map_loading_screen.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/map_error_screen.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/map_legend_panel.dart';
+import 'package:ignirelay_app/ui/screens/map/sheets/poi_info_sheet.dart';
+import 'package:ignirelay_app/ui/screens/map/sheets/event_info_sheet.dart';
+import 'package:ignirelay_app/ui/screens/map/sheets/hazard_info_sheet.dart';
+import 'package:ignirelay_app/ui/screens/map/sheets/hazard_delete_dialog.dart';
+import 'package:ignirelay_app/ui/screens/map/sheets/sos_cancel_dialog.dart';
+import 'package:ignirelay_app/ui/screens/map/sheets/hazard_nearby_dialog.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
-import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
-import 'package:ignirelay_app/app/services/location_service.dart';
-import 'package:ignirelay_app/app/data/supply_category_data.dart';
+// NOTE(Stage 4d Round 2): pb.*, LocationService, supply_category_data 原用於
+// _showEventInfo，現已移至 sheets/event_info_sheet.dart，故本檔不再 import。
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 
 class MapScreen extends StatefulWidget {
@@ -438,22 +448,26 @@ class _MapScreenState extends State<MapScreen>
       if (!isMine && !_layerSettings.showOtherHazards) continue;
       if (!isMine && confirmCount < _layerSettings.minConfirmCount) continue;
 
-      Color color;
+      // Stage 4d Round 2 bug fix：多邊形底色保留「按 type + 嚴重度」分色
+      // （這是功能：讓使用者一眼辨識災害種類與緊急度）；但中心 marker 統一
+      // 改用 PinPalette.color(PinCategory.hazard) 紅，對齊 plan §Stage 4d
+      // L231「hazard 大類一色」。icon 仍做次分類。
+      Color polygonColor;
       switch (type) {
         case 'FIRE':
-          color = Colors.red;
+          polygonColor = Colors.red;
         case 'FLOOD':
-          color = Colors.blue;
+          polygonColor = Colors.blue;
         case 'CHEMICAL':
-          color = Colors.yellow;
+          polygonColor = Colors.yellow;
         case 'BUILDING':
-          color = Colors.brown;
+          polygonColor = Colors.brown;
         case 'LANDSLIDE':
-          color = Colors.grey;
+          polygonColor = Colors.grey;
         default:
-          color = Colors.orange;
+          polygonColor = Colors.orange;
       }
-      if (severity >= 4) color = Colors.red;
+      if (severity >= 4) polygonColor = Colors.red;
 
       // 圓形多邊形 (36 邊) 取代菱形
       final points = _circlePolygonPoints(lat, lng, radius);
@@ -461,8 +475,8 @@ class _MapScreenState extends State<MapScreen>
       // 未驗證 (confirm=1) 用虛線邊框，已驗證用實線
       polygons.add(Polygon(
         points: points,
-        color: color.withValues(alpha: confirmCount >= 2 ? 0.25 : 0.12),
-        borderColor: color,
+        color: polygonColor.withValues(alpha: confirmCount >= 2 ? 0.25 : 0.12),
+        borderColor: polygonColor,
         borderStrokeWidth: confirmCount >= 3 ? 3.0 : 2.0,
         pattern: confirmCount < 2
             ? const StrokePattern.dotted()
@@ -471,14 +485,15 @@ class _MapScreenState extends State<MapScreen>
 
       filteredData.add(h);
 
-      // 中心標記（含確認人數 badge）
-      final (typeLabel, typeIcon, _) = _hazardInfo(context, type);
+      // 中心標記（含確認人數 badge）—— 大類一色紅
+      final (_, typeIcon, _) = _hazardInfo(context, type);
+      final markerColor = PinPalette.color(PinCategory.hazard);
       centerMarkers.add(Marker(
         point: LatLng(lat, lng),
         width: 44,
         height: 44,
         child: GestureDetector(
-          onTap: () => _showHazardInfo(h),
+          onTap: () => _openHazardInfo(h),
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -486,7 +501,7 @@ class _MapScreenState extends State<MapScreen>
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.85),
+                  color: markerColor.withValues(alpha: 0.85),
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: isMine ? Colors.greenAccent : Colors.white,
@@ -494,7 +509,8 @@ class _MapScreenState extends State<MapScreen>
                   ),
                   boxShadow: [
                     BoxShadow(
-                        color: color.withValues(alpha: 0.5), blurRadius: 6),
+                        color: markerColor.withValues(alpha: 0.5),
+                        blurRadius: 6),
                   ],
                 ),
                 child: Icon(typeIcon, color: Colors.white, size: 18),
@@ -627,7 +643,11 @@ class _MapScreenState extends State<MapScreen>
         width: markerSize + 4,
         height: markerSize + 4,
         child: GestureDetector(
-          onTap: () => _showEventInfo(evtData),
+          onTap: () => EventInfoSheet.show(
+            context,
+            evtData,
+            userLocation: _userLocation,
+          ),
           child: EventMarkerIcon(
             icon: markerIcon,
             color: markerColor,
@@ -665,277 +685,12 @@ class _MapScreenState extends State<MapScreen>
 
     final poi = await _poiQuery!.queryNearestPoi(latlng, zoom);
     if (poi == null || !mounted) return;
-    _showPoiInfoSheet(poi);
+    PoiInfoSheet.show(context, poi);
   }
 
-  void _showPoiInfoSheet(Map<String, String> poi) {
-    final name = poi['name'] ?? '';
-    final cls = poi['class'] ?? '';
-    final sub = poi['subclass'] ?? '';
-    final phone = poi['phone'] ?? '';
-    final hours = poi['opening_hours'] ?? '';
-    final houseNo = poi['housenumber'] ?? '';
-    final street = poi['addr_street'] ?? '';
-    final city = poi['addr_city'] ?? '';
-    final district = poi['addr_district'] ?? '';
-    final addrFull = poi['addr_full'] ?? '';
-
-    // 組合地址：優先使用 addr:full，否則拼接
-    String address = '';
-    if (addrFull.isNotEmpty) {
-      address = addrFull;
-    } else {
-      final parts = <String>[];
-      if (city.isNotEmpty) parts.add(city);
-      if (district.isNotEmpty) parts.add(district);
-      if (street.isNotEmpty) parts.add(street);
-      if (houseNo.isNotEmpty) parts.add('${houseNo}號');
-      address = parts.join('');
-    }
-
-    // 類別名稱映射
-    String category = _poiCategoryLabel(context, cls, sub);
-
-    // 類別顏色
-    Color categoryColor = _poiCategoryColor(cls, sub);
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 拖曳指示器
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            // 名稱 + 類別標籤
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: categoryColor.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: categoryColor, width: 1),
-                  ),
-                  child: Text(
-                    category,
-                    style: TextStyle(color: categoryColor, fontSize: 11),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            // 資訊列表
-            if (address.isNotEmpty)
-              _poiInfoRow(Icons.location_on, S.of(ctx)!.mapPoiInfoAddress, address),
-            if (phone.isNotEmpty) _poiInfoRow(Icons.phone, S.of(ctx)!.mapPoiInfoPhone, phone),
-            if (hours.isNotEmpty) _poiHoursWidget(ctx, hours),
-            // 如果三項都空，顯示提示
-            if (address.isEmpty && phone.isEmpty && hours.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(S.of(ctx)!.mapPoiInfoNoDetail,
-                    style: const TextStyle(color: Colors.white38, fontSize: 13)),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _poiInfoRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: Colors.white54, size: 18),
-          const SizedBox(width: 10),
-          Text('$label  ',
-              style: const TextStyle(color: Colors.white54, fontSize: 13)),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 營業時間 widget：解析 OSM opening_hours 格式，每行一組，星期英轉中
-  Widget _poiHoursWidget(BuildContext context, String raw) {
-    final lines = _formatOpeningHours(context, raw);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.access_time, color: Colors.white54, size: 18),
-          const SizedBox(width: 10),
-          Text('${S.of(context)!.mapPoiInfoOpen}  ',
-              style: const TextStyle(color: Colors.white54, fontSize: 13)),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: lines
-                  .map((l) => Padding(
-                        padding: const EdgeInsets.only(bottom: 3),
-                        child: Text(l,
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 13)),
-                      ))
-                  .toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 解析 OSM opening_hours 字串，回傳格式化的行列表
-  /// 例: "Mo-Tu 09:00-12:00,15:30-17:30; We 09:00-12:00; Su off"
-  /// →  ["週一～週二  09:00-12:00, 15:30-17:30",
-  ///     "週三        09:00-12:00",
-  ///     "週日        公休"]
-  static List<String> _formatOpeningHours(BuildContext context, String raw) {
-    final l = S.of(context)!;
-    // 星期英轉中對照
-    final dayMap = {
-      'Mo': l.mapDayMonday,
-      'Tu': l.mapDayTuesday,
-      'We': l.mapDayWednesday,
-      'Th': l.mapDayThursday,
-      'Fr': l.mapDayFriday,
-      'Sa': l.mapDaySaturday,
-      'Su': l.mapDaySunday,
-    };
-    final holidayLabel = l.mapDayHoliday;
-    final closedLabel = l.mapDayClosed;
-
-    String translateDays(String s) {
-      var result = s;
-      // 先處理 "-" 連接的範圍 (Mo-Fr → 週一～週五)
-      result = result.replaceAllMapped(
-        RegExp(r'\b(Mo|Tu|We|Th|Fr|Sa|Su)\s*-\s*(Mo|Tu|We|Th|Fr|Sa|Su)\b'),
-        (m) => '${dayMap[m[1]] ?? m[1]!}～${dayMap[m[2]] ?? m[2]!}',
-      );
-      // 再處理 "," 分隔的多日 (Mo,We → 週一、週三)
-      result = result.replaceAllMapped(
-        RegExp(r'\b(Mo|Tu|We|Th|Fr|Sa|Su)\b'),
-        (m) => dayMap[m[0]] ?? m[0]!,
-      );
-      result = result.replaceAll(RegExp(r'PH\b'), holidayLabel);
-      return result;
-    }
-
-    // 以 ";" 分割不同時段規則
-    final rules =
-        raw.split(';').map((r) => r.trim()).where((r) => r.isNotEmpty);
-    final lines = <String>[];
-
-    for (final rule in rules) {
-      // "off" 轉 "公休"
-      var formatted =
-          rule.replaceAll(RegExp(r'\boff\b', caseSensitive: false), closedLabel);
-      formatted = translateDays(formatted);
-      // 美化: 在日期與時間之間統一為兩個空格，逗號後加空格
-      formatted = formatted.replaceAll(',', ', ');
-      lines.add(formatted.trim());
-    }
-
-    return lines.isEmpty ? [raw] : lines;
-  }
-
-  String _poiCategoryLabel(BuildContext context, String cls, String sub) {
-    final l = S.of(context)!;
-    if (cls == 'hospital' || sub == 'hospital') return l.mapPoiHospital;
-    if (sub == 'clinic' || sub == 'doctors') return l.mapPoiClinic;
-    if (sub == 'nursing_home') return l.mapPoiNursingHome;
-    if (cls == 'pharmacy' || sub == 'pharmacy') return l.mapPoiPharmacy;
-    if (sub == 'police') return l.mapPoiPolice;
-    if (sub == 'fire_station') return l.mapPoiFireStation;
-    if (sub == 'school' || sub == 'kindergarten') return l.mapPoiSchool;
-    if (sub == 'college' || sub == 'university') return l.mapPoiUniversity;
-    if (sub == 'supermarket') return l.mapPoiSupermarket;
-    if (sub == 'convenience') return l.mapPoiConvenience;
-    if (sub == 'mall' || sub == 'department_store') return l.mapPoiMall;
-    if (sub == 'fuel') return l.mapPoiGasStation;
-    if (sub == 'restaurant') return l.mapPoiRestaurant;
-    if (sub == 'cafe') return l.mapPoiCafe;
-    if (sub == 'bank') return l.mapPoiBank;
-    if (sub == 'post_office') return l.mapPoiPostOffice;
-    if (sub == 'place_of_worship') return l.mapPoiReligious;
-    if (sub == 'parking') return l.mapPoiParking;
-    if (cls == 'shop') return l.mapPoiShop;
-    return sub.isNotEmpty ? sub : cls;
-  }
-
-  /// 判斷 POI 是否屬於五大救災類別，不屬於則回傳 null
-  String? _poiCategoryId(String cls, String sub) {
-    if (cls == 'hospital' || sub == 'hospital' || sub == 'clinic' ||
-        sub == 'doctors' || sub == 'nursing_home') return 'resq_hospital';
-    if (cls == 'pharmacy' || sub == 'pharmacy') return 'resq_pharmacy';
-    if (sub == 'police' || sub == 'fire_station') return 'resq_police';
-    if (sub == 'school' || sub == 'kindergarten' ||
-        sub == 'college' || sub == 'university') return 'resq_school';
-    if (sub == 'supermarket' || sub == 'convenience' ||
-        cls == 'grocery') return 'resq_grocery';
-    return null;
-  }
-
-  Color _poiCategoryColor(String cls, String sub) {
-    switch (_poiCategoryId(cls, sub)) {
-      case 'resq_hospital': return Colors.red;
-      case 'resq_pharmacy': return Colors.purple;
-      case 'resq_police': return const Color(0xFF3366ff);
-      case 'resq_school': return Colors.orange;
-      case 'resq_grocery': return Colors.green;
-      default: return Colors.cyan;
-    }
-  }
-
-  IconData _poiCategoryIcon(String cls, String sub) {
-    if (cls == 'hospital' || sub == 'hospital') return Icons.local_hospital;
-    if (sub == 'clinic' || sub == 'doctors') return Icons.medical_services;
-    if (sub == 'nursing_home') return Icons.elderly;
-    if (cls == 'pharmacy' || sub == 'pharmacy') return Icons.local_pharmacy;
-    if (sub == 'police') return Icons.local_police;
-    if (sub == 'fire_station') return Icons.fire_truck;
-    if (sub == 'school' || sub == 'kindergarten') return Icons.school;
-    if (sub == 'college' || sub == 'university') return Icons.account_balance;
-    if (sub == 'supermarket' || sub == 'convenience') return Icons.shopping_cart;
-    if (cls == 'grocery') return Icons.store;
-    return Icons.place;
-  }
+  // Stage 4d Round 2: _showPoiInfoSheet / _poiInfoRow / _poiHoursWidget /
+  // _formatOpeningHours 已移至 sheets/poi_info_sheet.dart；
+  // _poiCategoryLabel/Id/Color/Icon 已移至 widgets/poi_category.dart。
 
   List<Marker> _buildPoiMarkers(List<Map<String, String>> pois) {
     final markers = <Marker>[];
@@ -946,22 +701,22 @@ class _MapScreenState extends State<MapScreen>
       final sub = poi['subclass'] ?? '';
 
       // #1 Fix: 只顯示五大救災類別的 POI
-      final catId = _poiCategoryId(cls, sub);
+      final catId = PoiCategories.id(cls, sub);
       if (catId == null) continue;
 
       // #3 Fix: 圖層控制 - 檢查類別是否啟用
       if (!_layerSettings.showPoi) continue;
       if (!_layerSettings.poiIsEnabled(catId)) continue;
 
-      final color = _poiCategoryColor(cls, sub);
-      final icon = _poiCategoryIcon(cls, sub);
+      final color = PoiCategories.color(cls, sub);
+      final icon = PoiCategories.icon(cls, sub);
 
       markers.add(Marker(
         point: LatLng(lat, lng),
         width: 24,
         height: 24,
         child: GestureDetector(
-          onTap: () => _showPoiInfoSheet(poi),
+          onTap: () => PoiInfoSheet.show(context, poi),
           child: Container(
             width: 24,
             height: 24,
@@ -1078,37 +833,11 @@ class _MapScreenState extends State<MapScreen>
         final dist = (nearby['_distance'] as double).round();
         final cnt = (nearby['confirm_count'] as int?) ?? 1;
         final (typeLabel, _, _) = _hazardInfo(context, _markType);
-        final action = await showDialog<String>(
-          context: context,
-          builder: (_) => AlertDialog(
-            backgroundColor: const Color(0xFF1a1a2e),
-            title: Row(children: [
-              const Icon(Icons.people, color: Colors.orange),
-              const SizedBox(width: 8),
-              Text(S.of(context)!.mapMarkingNearbyExists,
-                  style: const TextStyle(color: Colors.white, fontSize: 16)),
-            ]),
-            content: Text(
-              '距離 ${dist}m 處已有「$typeLabel」回報\n'
-              '目前已有 $cnt 人確認\n\n'
-              '你可以「確認」來增加可信度，\n或建立全新標記。',
-              style: const TextStyle(color: Colors.white70, fontSize: 14),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, 'new'),
-                child: Text(S.of(context)!.mapMarkingCreateNew,
-                    style: const TextStyle(color: Colors.white54)),
-              ),
-              ElevatedButton.icon(
-                onPressed: () => Navigator.pop(context, 'confirm'),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-                icon: const Icon(Icons.check, color: Colors.white, size: 18),
-                label:
-                    Text(S.of(context)!.mapMarkingConfirmReport, style: const TextStyle(color: Colors.white)),
-              ),
-            ],
-          ),
+        final action = await HazardNearbyDialog.show(
+          context,
+          distanceMeters: dist,
+          confirmCount: cnt,
+          typeLabel: typeLabel,
         );
 
         if (action == 'confirm') {
@@ -1162,352 +891,46 @@ class _MapScreenState extends State<MapScreen>
   }
 
   // ── 危險標記詳情面板 ──────────────────────────────────────────
+  // Stage 4d Round 2：原 `_showHazardInfo` 已移至 sheets/hazard_info_sheet.dart。
+  // 這個 wrapper 負責把 `_MapScreenState` 私有狀態 (`_myReporterHex`、
+  // `_hazardInfo`、`_eventManager` 等) 封裝成 callback 傳入。
 
-  void _showHazardInfo(Map<String, dynamic> h) {
+  void _openHazardInfo(Map<String, dynamic> h) {
     final type = h['type'] as String? ?? '';
-    final severity = (h['severity'] as int?) ?? 3;
-    final radius = (h['radius'] as num?)?.toDouble() ?? 200.0;
     final confirmCount = (h['confirm_count'] as int?) ?? 1;
-    final desc = h['description'] as String? ?? '';
     final reportedBy = h['reported_by'] as String? ?? '';
-    final createdAt = (h['created_at'] as int?) ?? 0;
     final hazardId = h['hazard_id'] as String? ?? '';
     final isMine = reportedBy == _myReporterHex;
-
     final (typeLabel, typeIcon, typeColor) = _hazardInfo(context, type);
 
-    final l = S.of(context)!;
-    // 時間顯示
-    String timeAgo = '';
-    if (createdAt > 0) {
-      final diff = DateTime.now().millisecondsSinceEpoch - createdAt;
-      final mins = diff ~/ 60000;
-      if (mins < 60) {
-        timeAgo = l.mapTimeAgoMinutes(mins);
-      } else if (mins < 1440) {
-        timeAgo = l.mapTimeAgoHours(mins ~/ 60);
-      } else {
-        timeAgo = l.mapTimeAgoDays(mins ~/ 1440);
-      }
-    }
-
-    // 可信度標籤
-    String credLabel;
-    Color credColor;
-    if (confirmCount >= 5) {
-      credLabel = l.mapCredibilityConfirmed;
-      credColor = Colors.greenAccent;
-    } else if (confirmCount >= 3) {
-      credLabel = l.mapCredibilityCredible;
-      credColor = Colors.lightGreen;
-    } else if (confirmCount >= 2) {
-      credLabel = l.mapCredibilityEndorsed;
-      credColor = Colors.orange;
-    } else {
-      credLabel = l.mapCredibilityUnverified;
-      credColor = Colors.white38;
-    }
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
+    HazardInfoSheet.show(
+      context,
+      hazard: h,
+      typeLabel: typeLabel,
+      typeIcon: typeIcon,
+      typeColor: typeColor,
+      isMine: isMine,
+      onEdit: () => _enterEditMode(h),
+      onDelete: () => _deleteHazardConfirm(hazardId),
+      onConfirm: () async {
+        await _eventManager.confirmHazard(hazardId);
+        _loadOverlays();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(S.of(context)!
+                  .mapHazardConfirmSnack(typeLabel, confirmCount + 1)),
+              backgroundColor: Colors.green,
             ),
-            // 標題行
-            Row(children: [
-              Icon(typeIcon, color: typeColor, size: 24),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(typeLabel,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold)),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: credColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: credColor, width: 1),
-                ),
-                child: Text('$credLabel ×$confirmCount',
-                    style: TextStyle(color: credColor, fontSize: 11)),
-              ),
-            ]),
-            const SizedBox(height: 12),
-            // 嚴重度條
-            Row(children: [
-              Text('${l.mapHazardInfoSeverity}  ',
-                  style: const TextStyle(color: Colors.white54, fontSize: 13)),
-              ...List.generate(
-                5,
-                (i) => Icon(
-                  Icons.circle,
-                  size: 12,
-                  color: i < severity
-                      ? (severity >= 4 ? Colors.red : Colors.orange)
-                      : Colors.white12,
-                ),
-              ),
-              Text('  ($severity/5)',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
-            ]),
-            const SizedBox(height: 6),
-            Text(l.mapHazardInfoRadius(radius.round()),
-                style: const TextStyle(color: Colors.white54, fontSize: 13)),
-            if (desc.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(l.mapHazardInfoDesc(desc),
-                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
-            ],
-            if (timeAgo.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(l.mapHazardInfoTime(timeAgo),
-                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
-            ],
-            if (isMine)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text('👤 ${l.mapHazardInfoMine}',
-                    style: TextStyle(
-                        color: Colors.greenAccent[400], fontSize: 12)),
-              ),
-            const SizedBox(height: 16),
-            // 操作按鈕
-            Row(children: [
-              if (isMine) ...[
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _enterEditMode(h);
-                    },
-                    icon: const Icon(Icons.edit, size: 16),
-                    label: Text(l.mapHazardInfoEditButton),
-                    style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.orange,
-                        side: const BorderSide(color: Colors.orange)),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      await _deleteHazardConfirm(hazardId);
-                    },
-                    icon: const Icon(Icons.delete, size: 16),
-                    label: Text(l.mapHazardDeleteConfirm),
-                    style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red)),
-                  ),
-                ),
-              ] else ...[
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      await _eventManager.confirmHazard(hazardId);
-                      _loadOverlays();
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                                l.mapHazardConfirmSnack(typeLabel, confirmCount + 1)),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      }
-                    },
-                    icon:
-                        const Icon(Icons.check, color: Colors.white, size: 18),
-                    label: Text(l.mapHazardInfoConfirmButton,
-                        style: const TextStyle(color: Colors.white)),
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange),
-                  ),
-                ),
-              ],
-            ]),
-          ],
-        ),
-      ),
+          );
+        }
+      },
     );
   }
 
   // ── 事件標記詳情面板 ────────────────────────────────────────────
-
-  void _showEventInfo(Map<String, dynamic> evt) {
-    final eventType = (evt['event_type'] as int?) ?? 0;
-    final urgency = (evt['urgency'] as int?) ?? 0;
-    final hlcTs = (evt['hlc_timestamp'] as int?) ?? 0;
-    final lat = (evt['received_lat'] as num?)?.toDouble() ?? 0;
-    final lng = (evt['received_lng'] as num?)?.toDouble() ?? 0;
-    final eventId = (evt['event_id'] as String?) ?? '';
-
-    final lEvt = S.of(context)!;
-    // 事件類型名稱
-    String typeName;
-    IconData typeIcon;
-    Color typeColor;
-    switch (eventType) {
-      case 0:
-        typeName = lEvt.mapEventTypeSupply;
-        typeIcon = Icons.inventory_2;
-        typeColor = Colors.greenAccent;
-        break;
-      case 1:
-        typeName = lEvt.mapEventTypeRequest;
-        typeIcon = Icons.volunteer_activism;
-        typeColor = Colors.amber;
-        break;
-      default:
-        typeName = lEvt.mapEventTypeUnknown(eventType);
-        typeIcon = Icons.info_outline;
-        typeColor = Colors.cyanAccent;
-    }
-
-    // 緊急度
-    String urgencyLabel;
-    Color urgencyColor;
-    switch (urgency) {
-      case 3:
-        urgencyLabel = lEvt.mapEventSosRed;
-        urgencyColor = Colors.red;
-        break;
-      case 2:
-        urgencyLabel = lEvt.mapEventSosYellow;
-        urgencyColor = Colors.amber;
-        break;
-      case 1:
-        urgencyLabel = lEvt.mapEventSupply;
-        urgencyColor = Colors.green;
-        break;
-      default:
-        urgencyLabel = lEvt.mapEventInfo;
-        urgencyColor = Colors.cyan;
-    }
-
-    // 時間
-    String timeAgo = '';
-    if (hlcTs > 0) {
-      final diff = DateTime.now().millisecondsSinceEpoch - hlcTs;
-      final mins = diff ~/ 60000;
-      if (mins < 60) {
-        timeAgo = lEvt.mapTimeAgoMinutes(mins);
-      } else if (mins < 1440) {
-        timeAgo = lEvt.mapTimeAgoHours(mins ~/ 60);
-      } else {
-        timeAgo = lEvt.mapTimeAgoDays(mins ~/ 1440);
-      }
-    }
-
-    // 解析 payload
-    String payloadDesc = '';
-    final payload = evt['payload'] as Uint8List?;
-    if (payload != null) {
-      try {
-        if (eventType == 0) {
-          final rd = pb.ResourceData.fromBuffer(payload);
-          payloadDesc = lEvt.mapPayloadQtyUnit(getLocalizedReadableName(rd.resourceType, context), rd.quantity.toInt(), rd.unit);
-        } else if (eventType == 1) {
-          final rd = pb.RequestData.fromBuffer(payload);
-          payloadDesc = lEvt.mapPayloadQtyPcs(getLocalizedReadableName(rd.resourceType, context), rd.quantityNeeded.toInt());
-        } else {
-          payloadDesc = String.fromCharCodes(payload);
-          if (payloadDesc.length > 100) payloadDesc = '${payloadDesc.substring(0, 100)}...';
-        }
-      } catch (_) {
-        payloadDesc = '${payload.length} bytes';
-      }
-    }
-
-    // 距離
-    String distStr = '';
-    final myLoc = _userLocation;
-    if (myLoc != null && lat != 0 && lng != 0) {
-      final dist = LocationService.haversineMeters(myLoc, LatLng(lat, lng));
-      distStr = LocationService.formatDistance(dist);
-    }
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40, height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Row(children: [
-              Icon(typeIcon, color: typeColor, size: 24),
-              const SizedBox(width: 8),
-              Expanded(child: Text(typeName,
-                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: urgencyColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(urgencyLabel, style: TextStyle(color: urgencyColor, fontSize: 11)),
-              ),
-            ]),
-            const SizedBox(height: 12),
-            if (payloadDesc.isNotEmpty)
-              Text(payloadDesc, style: const TextStyle(color: Colors.white70, fontSize: 14)),
-            const SizedBox(height: 8),
-            if (distStr.isNotEmpty)
-              Row(children: [
-                const Icon(Icons.place, size: 14, color: Colors.white38),
-                const SizedBox(width: 4),
-                Text(lEvt.mapEventInfoDistance(distStr), style: const TextStyle(color: Colors.white54, fontSize: 13)),
-              ]),
-            if (timeAgo.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(lEvt.mapEventInfoTime(timeAgo), style: const TextStyle(color: Colors.white38, fontSize: 12)),
-            ],
-            const SizedBox(height: 4),
-            Text('ID: ${eventId.length > 8 ? eventId.substring(0, 8) : eventId}...',
-                style: const TextStyle(color: Colors.white24, fontSize: 10)),
-          ],
-        ),
-      ),
-    );
-  }
+  // Stage 4d Round 2: 原 `_showEventInfo` 已整段移至 sheets/event_info_sheet.dart，
+  // tap callback 直接呼叫 `EventInfoSheet.show(context, evt, userLocation: ...)`。
 
   void _enterEditMode(Map<String, dynamic> h) {
     setState(() {
@@ -1526,37 +949,16 @@ class _MapScreenState extends State<MapScreen>
   }
 
   Future<void> _deleteHazardConfirm(String hazardId) async {
-    final lDel = S.of(context)!;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
-        title: Text(lDel.mapHazardDeleteTitle,
-            style: const TextStyle(color: Colors.white, fontSize: 16)),
-        content: Text(lDel.mapHazardDeleteContent,
-            style: const TextStyle(color: Colors.white70, fontSize: 14)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(lDel.mapHazardDeleteCancel, style: const TextStyle(color: Colors.white54)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: Text(lDel.mapHazardDeleteConfirm, style: const TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      await _eventManager.deleteHazard(hazardId);
-      _loadOverlays();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(S.of(context)!.mapHazardDeletedSnack), backgroundColor: Colors.green),
-        );
-      }
+    final confirmed = await HazardDeleteDialog.show(context);
+    if (!confirmed || !mounted) return;
+    await _eventManager.deleteHazard(hazardId);
+    _loadOverlays();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(S.of(context)!.mapHazardDeletedSnack),
+            backgroundColor: Colors.green),
+      );
     }
   }
 
@@ -1624,29 +1026,8 @@ class _MapScreenState extends State<MapScreen>
 
   /// 取消 SOS 求救
   Future<void> _cancelSos() async {
-    final lSos = S.of(context)!;
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
-        title: Text(lSos.mapCancelSosTitle, style: const TextStyle(color: Colors.white)),
-        content: Text(
-          lSos.mapCancelSosContent,
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(lSos.mapCancelSosBack),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(lSos.mapCancelSosConfirm, style: const TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true || !mounted) return;
+    final confirm = await SosCancelDialog.show(context);
+    if (!confirm || !mounted) return;
 
     try {
       // 發布取消事件到 Mesh 網路
@@ -1739,9 +1120,20 @@ class _MapScreenState extends State<MapScreen>
         ],
       ),
       body: _mbtilesLoading
-          ? _buildLoadingScreen()
+          ? const MapLoadingScreen()
           : !_mbtilesAvailable
-              ? _buildErrorScreen()
+              ? MapErrorScreen(
+                  errorKey: _mbtilesError,
+                  errorArg: _mbtilesErrorArg,
+                  onRetry: () {
+                    setState(() {
+                      _mbtilesLoading = true;
+                      _mbtilesError = null;
+                      _mbtilesErrorArg = null;
+                    });
+                    _initMBTiles();
+                  },
+                )
               : _buildMapView(),
       floatingActionButton: _isMarkingMode
           ? null
@@ -1960,344 +1352,33 @@ class _MapScreenState extends State<MapScreen>
             ),
           ),
         // 標記模式控制面板
-        if (_isMarkingMode) _buildMarkingPanel(),
+        if (_isMarkingMode)
+          MarkingPanel(
+            isEditing: _editingHazardId != null,
+            markType: _markType,
+            markSeverity: _markSeverity,
+            markRadius: _markRadius,
+            descController: _markDescCtrl,
+            isPublishing: _markPublishing,
+            onTypeChanged: (v) => setState(() => _markType = v),
+            onSeverityChanged: (v) => setState(() => _markSeverity = v),
+            onRadiusChanged: (v) => setState(() => _markRadius = v),
+            onCancel: _exitMarkingMode,
+            onPublish: _publishOrUpdateMark,
+            hazardInfoBuilder: _hazardInfo,
+          ),
         // 圖例面板
-        if (_showLegend && !_isMarkingMode) _buildLegendPanel(),
+        if (_showLegend && !_isMarkingMode) const MapLegendPanel(),
       ],
     );
   }
 
-  // ── 標記模式控制面板 ─────────────────────────────────────────────
-
-  Widget _buildMarkingPanel() {
-    final lPanel = S.of(context)!;
-    final (typeLabel, _, typeColor) = _hazardInfo(context, _markType);
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1a1a2e).withValues(alpha: 0.97),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.4),
-              blurRadius: 16,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── 標題 + 取消 ──
-            Row(children: [
-              const Icon(Icons.warning_amber, color: Colors.orange, size: 22),
-              const SizedBox(width: 8),
-              Text(
-                _editingHazardId != null ? lPanel.mapMarkingEditTitle : lPanel.mapMarkingNewTitle,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold),
-              ),
-              const Spacer(),
-              IconButton(
-                onPressed: _exitMarkingMode,
-                icon: const Icon(Icons.close, color: Colors.white38),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-            ]),
-            Text(lPanel.mapMarkingTapHint,
-                style: const TextStyle(color: Colors.white38, fontSize: 11)),
-            const SizedBox(height: 10),
-
-            // ── 危險類型選擇 ──
-            SizedBox(
-              height: 38,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: ['ROADBLOCK', 'FIRE', 'CHEMICAL', 'FLOOD', 'BUILDING', 'LANDSLIDE'].map((key) {
-                  final (label, icon, color) = _hazardInfo(context, key);
-                  final selected = _markType == key;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      avatar: Icon(icon, color: color, size: 16),
-                      label: Text(label),
-                      selected: selected,
-                      selectedColor: color.withValues(alpha: 0.3),
-                      backgroundColor: Colors.white10,
-                      labelStyle: TextStyle(
-                        color: selected ? color : Colors.white70,
-                        fontSize: 12,
-                      ),
-                      side:
-                          BorderSide(color: selected ? color : Colors.white24),
-                      onSelected: (_) => setState(() => _markType = key),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // ── 嚴重程度 ──
-            Row(children: [
-              Text(lPanel.mapMarkingSeverityLabel,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
-              Expanded(
-                child: Slider(
-                  value: _markSeverity,
-                  min: 1,
-                  max: 5,
-                  divisions: 4,
-                  activeColor: typeColor,
-                  inactiveColor: Colors.white12,
-                  label: '${_markSeverity.round()}',
-                  onChanged: (v) => setState(() => _markSeverity = v),
-                ),
-              ),
-              Text('${_markSeverity.round()}/5',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
-            ]),
-
-            // ── 影響半徑 ──
-            Row(children: [
-              Text(lPanel.mapMarkingRadiusLabel,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
-              Expanded(
-                child: Slider(
-                  value: _markRadius,
-                  min: 50,
-                  max: 2000,
-                  divisions: 39,
-                  activeColor: Colors.orange,
-                  inactiveColor: Colors.white12,
-                  label: '${_markRadius.round()}m',
-                  onChanged: (v) => setState(() => _markRadius = v),
-                ),
-              ),
-              Text('${_markRadius.round()}m',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
-            ]),
-
-            // ── 描述 ──
-            SizedBox(
-              height: 40,
-              child: TextField(
-                controller: _markDescCtrl,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: lPanel.mapMarkingDescHint,
-                  hintStyle:
-                      const TextStyle(color: Colors.white24, fontSize: 13),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.white24),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.orange),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // ── 發布按鈕 ──
-            SizedBox(
-              width: double.infinity,
-              height: 44,
-              child: ElevatedButton.icon(
-                onPressed: _markPublishing ? null : _publishOrUpdateMark,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                icon: _markPublishing
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : Icon(
-                        _editingHazardId != null
-                            ? Icons.save
-                            : Icons.cell_tower,
-                        color: Colors.white,
-                        size: 20),
-                label: Text(
-                  _editingHazardId != null ? lPanel.mapMarkingUpdateButton : lPanel.mapMarkingPublishButton,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoadingScreen() {
-    final lLoad = S.of(context)!;
-    return Container(
-      color: const Color(0xFFF2EFE9),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(color: Colors.redAccent),
-            const SizedBox(height: 16),
-            Text(lLoad.mapLoading, style: const TextStyle(color: Colors.black54)),
-            const SizedBox(height: 8),
-            Text(
-              lLoad.mapLoadingNote,
-              style: const TextStyle(color: Colors.black38, fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildErrorScreen() {
-    final l = S.of(context)!;
-    String errorMsg;
-    if (_mbtilesError == 'mapMbtilesLoadFail') {
-      errorMsg = l.mapMbtilesLoadFail(_mbtilesErrorArg ?? '');
-    } else if (_mbtilesError == 'mapMbtilesNotFound') {
-      errorMsg = l.mapMbtilesNotFound;
-    } else {
-      errorMsg = l.mapErrorUnknown;
-    }
-    return Container(
-      color: const Color(0xFFF2EFE9),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.map_outlined, color: Colors.black26, size: 64),
-            const SizedBox(height: 16),
-            Text(l.mapErrorTitle,
-                style: const TextStyle(color: Colors.black54, fontSize: 18)),
-            const SizedBox(height: 8),
-            Text(
-              errorMsg,
-              style: const TextStyle(color: Colors.black38, fontSize: 13),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              l.mapErrorAssetNote,
-              style: const TextStyle(color: Colors.black26, fontSize: 12),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () {
-                setState(() {
-                  _mbtilesLoading = true;
-                  _mbtilesError = null;
-                  _mbtilesErrorArg = null;
-                });
-                _initMBTiles();
-              },
-              icon: const Icon(Icons.refresh, color: Colors.white),
-              label: Text(l.mapRetryButton, style: const TextStyle(color: Colors.white)),
-              style:
-                  ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLegendPanel() {
-    return Positioned(
-      top: 8,
-      right: 8,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.95),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black12),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15), blurRadius: 8)
-          ],
-        ),
-        child: Builder(builder: (ctx) {
-          final lLeg = S.of(ctx)!;
-          return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('🚨 ${lLeg.mapLegendTitle}',
-                style: const TextStyle(
-                    color: Colors.black87,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13)),
-            const SizedBox(height: 4),
-            Text(lLeg.mapLegendZoomHint,
-                style: const TextStyle(color: Colors.red, fontSize: 10)),
-            const Divider(color: Colors.black12, height: 16),
-            _legendItem(Colors.red, lLeg.mapLegendHospital),
-            _legendItem(const Color(0xFF3366ff), lLeg.mapLegendPolice),
-            _legendItem(Colors.orange, lLeg.mapLegendSchool),
-            _legendItem(Colors.purple, lLeg.mapLegendPharmacy),
-            _legendItem(Colors.green, lLeg.mapLegendSupermarket),
-            const Divider(color: Colors.black12, height: 16),
-            Text(lLeg.mapLegendMeshEvents,
-                style: const TextStyle(
-                    color: Colors.black54,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 11)),
-            _legendItem(Colors.red, lLeg.mapEventSosRed, icon: Icons.sos),
-            _legendItem(Colors.amber, lLeg.mapEventSosYellow, icon: Icons.warning_amber),
-            _legendItem(Colors.green, lLeg.mapEventSupply, icon: Icons.inventory_2),
-            _legendItem(Colors.cyan, lLeg.mapEventInfo, icon: Icons.info_outline),
-          ],
-          );
-        }),
-      ),
-    );
-  }
-
-  Widget _legendItem(Color color, String label, {IconData? icon}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          icon != null
-              ? Icon(icon, color: color, size: 14)
-              : Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.black26, width: 1),
-                  ),
-                ),
-          const SizedBox(width: 8),
-          Text(label,
-              style: const TextStyle(color: Colors.black87, fontSize: 12)),
-        ],
-      ),
-    );
-  }
+  // Stage 4d Round 2：_buildMarkingPanel / _buildLoadingScreen / _buildErrorScreen /
+  // _buildLegendPanel / _legendItem 原於此處，已移至
+  //   widgets/marking_panel.dart
+  //   widgets/map_loading_screen.dart
+  //   widgets/map_error_screen.dart
+  //   widgets/map_legend_panel.dart
+  // Legend 面板原使用 warning emoji 開頭的標題字串，違反 plan §六 L310，
+  // 已換為 `Icons.warning_amber`。
 }
