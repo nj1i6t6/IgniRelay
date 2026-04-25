@@ -14,7 +14,6 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
-import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 
 void main() {
   setUpAll(() async {
@@ -46,7 +45,7 @@ void main() {
         'room_type': 'village',
         'content': '測試訊息 from other device',
       };
-      final payload = utf8.encode(jsonEncode(payloadMap));
+      // 注：payload 在此版本測試不直接寫入；保留 payloadMap 文件化欄位即可。
       final senderPubKey = List<int>.generate(32, (i) => i + 1);
       final hlcTimestamp = DateTime.now().millisecondsSinceEpoch;
 

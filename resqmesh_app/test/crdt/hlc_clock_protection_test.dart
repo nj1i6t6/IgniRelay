@@ -18,7 +18,7 @@ void main() {
   group('HLC — clock protection', () {
     test('normal clock: remote within 24h is accepted', () {
       HLC.setNodeId('local');
-      final local = HLC.now();
+      HLC.now();
 
       // Remote 1 hour ahead
       final remoteTs = DateTime.now().millisecondsSinceEpoch + 3600000;

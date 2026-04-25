@@ -1,38 +1,42 @@
 import 'dart:typed_data';
 
-import 'package:ignirelay_app/platform/native_bridge.dart';
+import 'package:ignirelay_app/platform/native_bridge_facade.dart';
 
 /// BLE 掃描與連線（Nordic central 面向）的應用層 facade。
 ///
 /// 用於導航配對、Bloom filter 交換、outbox 傳輸等 Central 側操作。
+///
+/// Stage 5：改走 `NativeBridgeFacade`，讓單元測試可注入 `FakeNativeBridge`。
 class BleScanController {
   BleScanController._();
   static final BleScanController instance = BleScanController._();
 
-  Future<bool> isBluetoothEnabled() => NativeBridge.isBluetoothEnabled();
+  Future<bool> isBluetoothEnabled() =>
+      NativeBridgeFacade.instance.isBluetoothEnabled();
 
   Future<bool> requestBluetoothEnable() =>
-      NativeBridge.requestBluetoothEnable();
+      NativeBridgeFacade.instance.requestBluetoothEnable();
 
-  Future<bool> startScan() => NativeBridge.startNordicScan();
+  Future<bool> startScan() => NativeBridgeFacade.instance.startNordicScan();
 
-  Future<void> stopScan() => NativeBridge.stopNordicScan();
+  Future<void> stopScan() => NativeBridgeFacade.instance.stopNordicScan();
 
   Future<bool> connect(String deviceId) =>
-      NativeBridge.nordicConnect(deviceId);
+      NativeBridgeFacade.instance.nordicConnect(deviceId);
 
   Future<void> disconnect(String deviceId) =>
-      NativeBridge.nordicDisconnect(deviceId);
+      NativeBridgeFacade.instance.nordicDisconnect(deviceId);
 
   Future<Uint8List?> readBloom(String deviceId) =>
-      NativeBridge.nordicReadBloom(deviceId);
+      NativeBridgeFacade.instance.nordicReadBloom(deviceId);
 
   Future<bool> writeBloom(String deviceId, Uint8List bloomBytes) =>
-      NativeBridge.nordicWriteBloom(deviceId, bloomBytes);
+      NativeBridgeFacade.instance.nordicWriteBloom(deviceId, bloomBytes);
 
   Future<bool> writeEvent(String deviceId, Uint8List eventBytes) =>
-      NativeBridge.nordicWriteEvent(deviceId, eventBytes);
+      NativeBridgeFacade.instance.nordicWriteEvent(deviceId, eventBytes);
 
   /// 掃描/GATT 事件串流（跨用途的原始事件）。
-  Stream<dynamic> get rawEventStream => NativeBridge.nativeEventStream;
+  Stream<dynamic> get rawEventStream =>
+      NativeBridgeFacade.instance.nativeEventStream;
 }

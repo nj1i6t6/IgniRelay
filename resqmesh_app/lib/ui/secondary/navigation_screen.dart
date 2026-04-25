@@ -134,7 +134,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
       final session = rows.first;
       // 判斷自己是 provider 還是 requester，讀對方的位置
-      final myLoc = _location.currentLocation;
+      // （myLoc 目前未用於 peer 推算；保留 deliveryMode 判斷即可）
       final providerLat = (session['provider_lat'] as num?)?.toDouble();
       final providerLng = (session['provider_lng'] as num?)?.toDouble();
       final requesterLat = (session['requester_lat'] as num?)?.toDouble();
@@ -285,9 +285,16 @@ class _NavigationScreenState extends State<NavigationScreen> {
   // ── 開始交接 ──────────────────────────────────────────────────
 
   void _startHandoff() {
+    // Stage 5：依 deliveryMode 判定當前裝置在交接中的角色，避免硬編碼成 provider。
+    // 與 `_loadPeerLocation` / `_targetPos` 採同一套慣例：
+    //   - DELIVER：我是供給者（provider），要把物資帶到需求者位置
+    //   - PICKUP（含未填值的 fallback）：我是需求者（requester），要前往供給者位置
+    final role = widget.match.deliveryMode == 'DELIVER'
+        ? HandoffRole.provider
+        : HandoffRole.requester;
     Navigator.of(context).pushReplacement(MaterialPageRoute(
       builder: (_) => PhysicalHandoffScreen(
-        role: HandoffRole.provider,
+        role: role,
         resourceId: widget.match.resourceId,
         resourceType: widget.match.resourceType,
         urgency: widget.match.urgency,

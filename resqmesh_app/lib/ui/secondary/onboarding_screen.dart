@@ -93,8 +93,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
+      // Stage 5：與 onboarding 主畫面同色（0xFF0d0d1a）；原本用 Colors.black 會
+      // 在 loading→主畫面之間閃一下純黑→深紫過渡。
       return const Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: Color(0xFF0d0d1a),
         body: Center(child: CircularProgressIndicator(color: Colors.redAccent)),
       );
     }

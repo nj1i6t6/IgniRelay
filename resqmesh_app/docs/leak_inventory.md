@@ -193,3 +193,69 @@ Round 2 **不做**的事（保留到 Stage 7，見 plan §Stage 7「Stage 4d 結
   (MapView / HazardLayer / PoiLayer / SelfMarker / MapHeader / HazardReportFlow)
 - `DistrictRoadLookup` 工具類抽離
 - sheet 內 hardcoded `0xFF1a1a2e` / `Colors.orange` 等換成 IgniPalette token
+
+---
+
+## Stage 5 — NativeBridgeFacade + 次要畫面收尾（2026-04-25）
+
+### 動機
+- plan §Stage 5：UI 層直呼 `NativeBridge.*` 的最後出血面、controller 缺乏可注入
+  測試替身、navigation→handoff 角色硬編碼、4 個次要畫面的 dark palette 一致性。
+- 補一條「不再退回 NativeBridge static 直呼」的防回歸繩。
+
+### 主要變更
+
+**新增可測邊界 (`NativeBridgeFacade`)**
+- `lib/platform/native_bridge_facade.dart`：abstract 介面 + `_RealNativeBridgeFacade`
+  delegate，14 個 method（4 handoff + 10 BLE central）。**介面覆蓋面限縮**：只
+  收 Stage 5 觸碰的 controller surface，**不**把 BLE / Wi-Fi Direct / NFC /
+  battery / foreground service 全部 static 都包進來，避免本階段擴大爆炸面。
+- `lib/app/controllers/handoff_controller.dart`、`ble_scan_controller.dart`：
+  全部 routing 從 `NativeBridge.foo(...)` 改為 `NativeBridgeFacade.instance.foo(...)`。
+- `test/fakes/fake_native_bridge.dart`：`FakeNativeBridge implements NativeBridgeFacade`，
+  記錄 `calls: List<(String, Map<String, Object?>)>`，可覆寫每個 method 的回傳。
+- `test/controllers/ble_scan_controller_test.dart`：12 個測試案例（10 個 BLE +
+  4 個 handoff + 1 個 resetToReal），含 `Uint8List?` null/非 null 雙路徑、
+  StreamController.broadcast event 透傳、resetToReal 還原驗證；全綠。
+
+**Bug 修正**
+- `navigation_screen.dart:_startHandoff`：`role: HandoffRole.provider` 寫死改為
+  依 `widget.match.deliveryMode == 'DELIVER'` 判定 provider/requester（與
+  `_loadPeerLocation` / `_targetPos` 同一套慣例）。
+- `station_supply_screen.dart:_RegisterTabState`：3 個 `TextEditingController`
+  原本誤放在 `deactivate()` 釋放，改為 `dispose()`（`deactivate` 會在 widget
+  暫離 tree 時就觸發，下次 reactivate 會 use-after-dispose）。
+
+**Dark palette 收斂**
+- `onboarding_screen.dart`：loading 態 `Colors.black` → `Color(0xFF0d0d1a)`，
+  消除 loading→主畫面的純黑→深紫閃爍。
+- `triage_input.dart`：SOS_RED 鎖定態 `Colors.grey[800]`（實機偏褐）→
+  `Color(0xFF222244)`，與整體深紫主題一致。
+
+**Analyze 清債（為達 plan §八 ≤ 50 預算）**
+- `match_repository.dart`：移除未使用的 `_eventManager`、`_negotiationManager`、
+  以及對應的 3 個 import。
+- `station_supply_screen.dart`：移除冗餘 `dart:typed_data` import；loading
+  Scaffold 提升為 `const`。
+- `navigation_screen.dart:_loadPeerLocation`：移除 unused `myLoc` 區域變數。
+- `triage_input.dart`：兩個 `TextStyle` 加 `const`。
+- 測試端：`chat_service_test.dart`、`chat_event_handler_test.dart`、
+  `hlc_clock_protection_test.dart` 三檔的 unused import / unused local 清理。
+
+### Acceptance 指標全綠
+```
+grep -r "NativeBridge\." lib/ui/                              →  0  ✓
+flutter analyze                                                → 50 issues  (≤ 50) ✓
+dart run tool/check_layers.dart                                → ok  ✓
+flutter test × 2                                               → 321/321 兩輪全綠 ✓
+flutter test test/controllers/ble_scan_controller_test.dart   → 12/12 ✓
+```
+
+### Stage 5 **不做**的事（保留到後續 stage）
+- **不擴大 facade 介面**：把所有 NativeBridge static 都包進來會在 Stage 6/7 才
+  做（屆時 handoff 跨平台事件正規化 + 全面 controller routing 完成後再收）。
+- **不做 IgniPalette token 替換**：4 個畫面內 hardcoded `0xFF0d0d1a` /
+  `Colors.redAccent` 等仍保留，等 Stage 7 統一 design token 套用時一併處理。
+- **不做 CI 化**：plan 明確「不新增 CI/CD 配置」，本輪只在本機 `flutter test × 2`
+  + `flutter analyze` 把關。
+

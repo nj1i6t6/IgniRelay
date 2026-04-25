@@ -109,7 +109,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
           const SizedBox(height: 16),
           Text(
             S.of(context)!.triageTitle,
-            style: TextStyle(
+            style: const TextStyle(
                 fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 16),
@@ -192,7 +192,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
               onPressed: () => _submit(2),
               icon: const Icon(Icons.warning, color: Colors.black, size: 18),
               label: Text(S.of(context)!.triageSosYellowButton,
-                  style: TextStyle(
+                  style: const TextStyle(
                       color: Colors.black,
                       fontSize: 15,
                       fontWeight: FontWeight.bold)),
@@ -214,12 +214,14 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
               width: double.infinity,
               height: 64,
               decoration: BoxDecoration(
+                // Stage 5：鎖定態改用深紫 (0xFF222244) 對齊 dark palette；
+                // Colors.grey[800] 在實機上偏褐，與 0xFF0d0d1a 底層撞色。
                 color: _isSosRedUnlocked
                     ? Colors.red
                     : _isHolding
                         ? Colors.red
                             .withValues(alpha:0.3 + (3 - _sosCountdown) * 0.2)
-                        : Colors.grey[800],
+                        : const Color(0xFF222244),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: _isSosRedUnlocked

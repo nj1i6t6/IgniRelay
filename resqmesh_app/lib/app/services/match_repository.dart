@@ -1,12 +1,10 @@
 import 'dart:typed_data';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/geo/village_geofence.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/event_types.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 import 'package:ignirelay_app/app/services/location_service.dart';
-import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 import 'package:ignirelay_app/app/services/negotiation_repo.dart';
 
 /// 媒合相關資料查詢 (Repository 層)
@@ -15,9 +13,7 @@ import 'package:ignirelay_app/app/services/negotiation_repo.dart';
 class MatchRepository {
   final _db = DatabaseHelper();
   final _identity = IdentityManager();
-  final _eventManager = EventManager();
   final _negotiationRepo = NegotiationRepo();
-  final _negotiationManager = NegotiationManager();
 
   /// 查詢所有可用的物資供給 (已解碼)
   /// 從 Materials_State 讀取 total_qty, delivery_mode

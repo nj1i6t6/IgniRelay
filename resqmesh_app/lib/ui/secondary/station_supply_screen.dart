@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -117,9 +116,9 @@ class _StationSupplyScreenState extends State<StationSupplyScreen>
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF0d0d1a),
-        body: const Center(
+      return const Scaffold(
+        backgroundColor: Color(0xFF0d0d1a),
+        body: Center(
           child: CircularProgressIndicator(color: Colors.orangeAccent),
         ),
       );
@@ -823,11 +822,13 @@ class _RegisterTabState extends State<_RegisterTab> {
   }
 
   @override
-  void deactivate() {
+  void dispose() {
+    // Stage 5 修正：原本誤放在 `deactivate()`，會在 widget 暫離 tree 時就把
+    // TextEditingController 釋放掉，下次 reactivate 會炸 use-after-dispose。
     _quantityCtrl.dispose();
     _catLimitCtrl.dispose();
     _totalLimitCtrl.dispose();
-    super.deactivate();
+    super.dispose();
   }
 }
 

@@ -212,7 +212,7 @@ resqmesh_app/lib/
 - **驗收**：模擬器跑發佈需求 → 發佈供給 → 接受協商 → 進入導航入口；FSM 單測全綠
 - **commit**：`refactor(stage-4c): 重構「媒合」分頁 + 物資狀態機防呆`
 
-### Stage 4d — 「地圖」分頁（commit #8 / #8-r2）
+### Stage 4d — 「地圖」分頁（commit #8 / #8-r2）✅ 已完成
 
 > **雙軌驗收**（因結構拆分分兩輪推進）：
 > - **Round 1（commit d9d9bd4）— 行為條款 ✅ 達成**
@@ -225,9 +225,13 @@ resqmesh_app/lib/
 >   - **發現未達成項**（於 Round 2 修補）：
 >     - `_loadHazards` 仍用 local switch 挑 marker fill 色（`map_screen.dart:442 / :489`），hazard 大類一色僅套到 `_hazardInfo` 語意，未套到中心 marker，條款 L231 未實際生效。
 >     - map_screen.dart 殘留 emoji（`:1290` `👤`、`:2248` `🚨`），違反 §六 L310。
-> - **Round 2（待執行，commit #8-r2）— 結構拆分補完 🚧**
->   - 目的：把 Round 1 未拆出的 POI/Hazard/Event/Cancel/Delete/Nearby sheets + MarkingPanel + Loading/Error/Legend 面板落實為獨立檔；清掉上述 bug 與 emoji。
->   - D 類深耦合項（MapView / HazardLayer / PoiLayer / SelfMarker / HazardReportFlow）因需要引入 state holder，正式列為 **Stage 7 結構債**。
+> - **Round 2（commit 62f7663）— 結構拆分補完 ✅ 達成**
+>   - 11 檔全拆出（widgets: poi_category / marking_panel / map_loading_screen / map_error_screen / map_legend_panel；sheets: poi_info_sheet / event_info_sheet / hazard_info_sheet / hazard_delete_dialog / sos_cancel_dialog / hazard_nearby_dialog），每檔 < 400 行（最大 marking_panel.dart 246 行）。
+>   - hazard marker 大類一色 bug 修正：`_loadHazards` 改用 `PinPalette.color(PinCategory.hazard)` 做 marker fill；polygon 仍保次分類色。
+>   - 2 處 emoji 清零（legend `🚨` → `Icons.warning_amber`；hazard info `👤` → `Icons.person_outline`）。
+>   - 主檔 2303 → 1384 行（−919，約 −40%）；比 Round 2 原目標 `<1300` 多 84 行，此差距明確延到 Stage 7 抽 `MapController` 時一併處理。
+>   - 實測 acceptance：`showModalBottomSheet|showDialog` = 2（≤ 2 ✅）、`S.of(context)!` = 21（從 33 下降 ✅ 不增加）、`lib/ui/screens/map/` emoji = 0 ✅、`flutter analyze` 無新增 issue ✅、`check_layers` ok ✅、`flutter test` × 2 = 309/309 兩輪全綠 ✅。
+>   - D 類深耦合項（MapView / HazardLayer / PoiLayer / SelfMarker / HazardReportFlow）因需要引入 state holder，正式列為 **Stage 7 結構債**（見 Stage 7 §「Stage 4d 結構債」）。
 
 **Round 2 交付清單**
 
@@ -293,7 +297,7 @@ resqmesh_app/lib/
 
 - **commit**：`refactor(stage-4d-r2): 地圖 sheet/panel 結構拆分 + hazard 統一色 + 清 emoji`
 
-### Stage 5 — 次要畫面（commit #9）
+### Stage 5 — 次要畫面（commit #9）✅ 已完成
 
 - **目標**：據點供給、分級通報、onboarding 等剩餘次要畫面套新視覺；全域驗證 UI 零 `NativeBridge` 直呼；為 controller 建立可測邊界
 - **交付**：
@@ -309,6 +313,19 @@ resqmesh_app/lib/
   - `flutter test` 包含至少一個使用 `FakeNativeBridge` 的 controller 測試且綠燈
   - 模擬器跑：onboarding → 發需求 → 發供給 → 進導航 → 進實體交接（PIN / BLE / DROP_OFF 三種 UI 正常；實際 handoff 閉環在 Stage 6 修）
 - **commit**：`refactor(stage-5): 重構剩餘次要畫面 + NativeBridgeFacade 可測邊界`
+- ✅ **達成（2026-04-25）**：
+  - **NativeBridgeFacade**：`lib/platform/native_bridge_facade.dart` 抽象介面 + `_RealNativeBridgeFacade` delegate，14 method（4 handoff + 10 BLE central）；`HandoffController` / `BleScanController` 全 routing 改走 facade
+  - **FakeNativeBridge + controller 測試**：`test/fakes/fake_native_bridge.dart` + `test/controllers/ble_scan_controller_test.dart` 12 案例（含 Uint8List? 雙路徑、StreamController 透傳、resetToReal 還原）全綠
+  - **navigation→handoff role**：`navigation_screen.dart:_startHandoff` 改依 `match.deliveryMode` 判定 provider/requester
+  - **Bug 修正**：`station_supply_screen._RegisterTabState` 的 controller dispose 從 `deactivate()` 移到正確的 `dispose()`
+  - **palette 收斂**：onboarding loading `Colors.black` → `0xFF0d0d1a`、triage SOS_RED 鎖定 `Colors.grey[800]` → `0xFF222244`
+  - **acceptance 全綠**：
+    ```
+    grep -r "NativeBridge\." lib/ui/                              →  0  ✓
+    flutter analyze                                                → 50 issues  (≤ 50) ✓
+    dart run tool/check_layers.dart                                → ok  ✓
+    flutter test × 2                                               → 321/321 兩輪全綠 ✓
+    ```
 
 ### Stage 6 — iOS Handoff P0 與通訊層補完（commit #10）
 
