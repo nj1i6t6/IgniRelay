@@ -1,0 +1,57 @@
+# Stage 6 (commit #10)：Flutter iOS Podfile 模板。
+#
+# 本檔之前不存在於 repo，導致 macOS 端 `flutter build ios` / `pod install`
+# 必須自行從 Flutter 範本重建。本輪補上預設範本，使 iOS 建置可重現。
+#
+# Podfile.lock 策略：
+#   - **要 commit Podfile.lock**：與 Android `gradle/wrapper` / `pubspec.lock`
+#     同樣理由——CI 與隊員間需鎖定 CocoaPods 版本，避免「我這邊跑得起來」
+#     式 floating-version drift。
+#   - 若使用者本機升級 pod，commit 訊息須附上「pod update <name>」並列升級
+#     項，以利 review。
+#   - 第一次 fetch 後執行：`cd ios && pod install` 會生成 `Podfile.lock`
+#     與 `Pods/`；後者已在 `.gitignore`。
+
+# Uncomment this line to define a global platform for your project
+platform :ios, '13.0'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __dir__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  use_frameworks!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+  end
+end

@@ -43,7 +43,10 @@ class BleManager {
   bool _isConnecting = false;
 
   // Bug 5 Fix: 取消標記 — timeout 時設定，sync 每步檢查
-  final Set<String> _cancelledSyncs = {};
+  // Stage 6 (commit #10)：原本無界 Set；改 LRU(200) 防無限成長（leak L2）。
+  // 同步完成或 cooldown 過期時可被剔除；維持插入順序的 LinkedHashSet。
+  static const int _maxCancelledSyncs = 200;
+  final _cancelledSyncs = <String>{};
 
   StreamSubscription? _nordicEventSub;
 
@@ -60,7 +63,12 @@ class BleManager {
   static const int _maxDebugLogs = 80;
   final List<String> debugLogs = [];
   int scanCycleCount = 0;
-  final Set<String> uniquePeersEverSeen = {};
+
+  // Stage 6 (commit #10)：原本無界 Set 紀錄全程看到的 peer（debug stat 用）。
+  // 改 LRU(500)：同樣是 Set 語意，但 add 時會檢查上限並剔最舊一筆（leak L1）。
+  // FIFO 即可滿足 debug 視窗需求，不需嚴格 LRU。
+  static const int _maxUniquePeersEverSeen = 500;
+  final uniquePeersEverSeen = <String>{};
 
   void _dlog(String msg) {
     final now = DateTime.now();
@@ -180,7 +188,7 @@ class BleManager {
     final rssi = event['rssi'] as int? ?? 0;
     if (deviceId.isEmpty) return;
 
-    uniquePeersEverSeen.add(deviceId);
+    _addBoundedPeer(deviceId);
     if (!_knownPeers.contains(deviceId) && !_isInCooldown(deviceId)
         && !_pendingDevices.contains(deviceId)) {
       _knownPeers.add(deviceId);
@@ -728,7 +736,19 @@ class BleManager {
     _peerCooldown.removeWhere((_, time) =>
         DateTime.now().difference(time) > Duration(seconds: kPeerCooldownSec));
     _knownPeers.clear();
+    // Stage 6：cooldown 過期意味著此 peer 已可重試 → 連帶從 _cancelledSyncs
+    // 移除；正常情況下這保證 _cancelledSyncs 大小跟著 cooldown 縮減而非無界堆積。
+    _cancelledSyncs.removeWhere((id) => !_peerCooldown.containsKey(id));
   }
+
+  // Stage 6 (commit #10)：bounded set helpers — 兩個 Set 共用 FIFO eviction。
+  // FIFO 既能保證上限又能保留近期插入；不需嚴格 LRU 因為這兩個 set 都是 debug
+  // / defensive 用途，舊資料失準的影響低於記憶體無界增長。
+  void _addBoundedPeer(String id) =>
+      addBoundedFifo(uniquePeersEverSeen, id, _maxUniquePeersEverSeen);
+
+  void _addBoundedCancelled(String id) =>
+      addBoundedFifo(_cancelledSyncs, id, _maxCancelledSyncs);
 
   /// 序列化處理連線佇列（一台連完再連下一台）
   Future<void> _processQueue() async {
@@ -743,7 +763,7 @@ class BleManager {
               .timeout(const Duration(seconds: 30), onTimeout: () async {
             _dlog('TIMEOUT connecting to $deviceId');
             _knownPeers.remove(deviceId);
-            _cancelledSyncs.add(deviceId);
+            _addBoundedCancelled(deviceId);
             try { await NativeBridge.nordicDisconnect(deviceId); } catch (_) {}
             _peerCooldown[deviceId] = DateTime.now();
           });
@@ -763,6 +783,23 @@ class BleManager {
   int get knownPeersCount => _knownPeers.length;
   int get cooldownCount => _peerCooldown.length;
   int get seenEventsCount => _eventHandler.seenEventsCount;
+}
+
+/// Stage 6：可重用的 FIFO bounded set 插入。
+///
+/// 加入 `item` 到 `set`；若已存在則 no-op；若達上限 `max` 則先剔除最舊一筆。
+/// `Set` 不保證順序，但 Dart 內建 `LinkedHashSet`（`{}` 字面量預設）保留
+/// 插入順序，`set.first` 即最舊一筆。
+///
+/// **暴露為 top-level**：BleManager 之外，其他模組若需相同 bounded 語意可
+/// 直接呼叫；Stage 6 測試也以此函式做壓力驗證。
+void addBoundedFifo<T>(Set<T> set, T item, int max) {
+  if (max <= 0) return; // degenerate cap → 永遠空集合
+  if (set.contains(item)) return;
+  while (set.length >= max && set.isNotEmpty) {
+    set.remove(set.first);
+  }
+  set.add(item);
 }
 
 /// BLE 事件通知（供 NativeBleTransport 橋接用）

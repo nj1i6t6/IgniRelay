@@ -603,6 +603,8 @@ class EventManager {
       requesterPubKey: requesterPubKey,
       actualDeliveredQty: actualDeliveredQty,
       method: method,
+      // Stage 6 (commit #10)：標示本 payload 由新版 schema 寫出。
+      schemaVersion: pb.HandshakeCompleteData.kCurrentSchemaVersion,
     );
 
     final payload = data.writeToBuffer();

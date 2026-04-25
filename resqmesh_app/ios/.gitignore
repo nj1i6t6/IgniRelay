@@ -32,3 +32,7 @@ Runner/GeneratedPluginRegistrant.*
 !default.mode2v3
 !default.pbxuser
 !default.perspectivev3
+
+# Stage 6 (commit #10)：明示策略——Podfile.lock 必須 commit（鎖定 pod 版本）。
+# 此處 *不* 加 `Podfile.lock` 忽略規則；如有人手 commit 後又改 .gitignore
+# 排除它，會破壞跨機建置一致性。

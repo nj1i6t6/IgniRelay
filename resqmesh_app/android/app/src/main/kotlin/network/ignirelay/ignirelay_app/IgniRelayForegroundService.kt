@@ -621,6 +621,39 @@ class IgniRelayForegroundService : Service() {
                     pushDiffToDevice(device, value)
                 }
             }
+            // Stage 6 (commit #10)：HANDSHAKE_CHAR_UUID 從原本 fall-through `else`
+            // 抽出成顯式 branch；驗證 `{pin, resourceId}` 後 emit 統一型別
+            // `handoff_result`，與 iOS BlePlugin.swift `peripheralManager` 對齊。
+            // Dart 端 physical_handoff 監聽此事件以判斷交接成功。
+            IgniRelayConstants.HANDSHAKE_CHAR_UUID -> {
+                Log.d(TAG, "HANDSHAKE_WRITE from ${device.address}: ${value.size} bytes")
+                var success = false
+                var resourceId = ""
+                try {
+                    val json = org.json.JSONObject(String(value, Charsets.UTF_8))
+                    val pin = json.optString("pin")
+                    val writeResId = json.optString("resourceId")
+                    val storedHash = MainActivity.sharedHandoffPinHash
+                    val storedRes = MainActivity.sharedHandoffResourceId
+                    if (pin.isNotEmpty() && storedHash != null && storedRes != null) {
+                        val hash = java.security.MessageDigest.getInstance("SHA-256")
+                            .digest(pin.toByteArray(Charsets.UTF_8))
+                            .joinToString("") { "%02x".format(it) }
+                        resourceId = writeResId
+                        success = (hash == storedHash && writeResId == storedRes)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "HANDSHAKE payload not JSON: ${e.message}")
+                }
+                mainHandler.post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "handoff_result",
+                        "device" to device.address,
+                        "resourceId" to resourceId,
+                        "success" to success
+                    ))
+                }
+            }
             else -> {
                 Log.d(TAG, "EVENT_WRITE from ${device.address}: ${value.size} bytes")
                 mainHandler.post {

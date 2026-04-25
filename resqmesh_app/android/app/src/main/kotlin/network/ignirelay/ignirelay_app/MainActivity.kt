@@ -28,6 +28,22 @@ class MainActivity : FlutterActivity() {
         @Volatile
         @JvmStatic
         var sharedEventSink: EventChannel.EventSink? = null
+
+        /**
+         * Stage 6 (commit #10)：交接 PIN 狀態跨平台對齊。
+         * - 由 `startHandoffAdvertising` (provider) 寫入。
+         * - GATT Server 在 ForegroundService 收到 HANDSHAKE_CHAR 寫入時讀取
+         *   並做 SHA-256 + resourceId 比對，發出 `handoff_result` 事件。
+         * - 之前是 MainActivity instance fields，因 ForegroundService 跨進程無法
+         *   直接存取；改為 companion 上的 @Volatile @JvmStatic 共享變數。
+         */
+        @Volatile
+        @JvmStatic
+        var sharedHandoffResourceId: String? = null
+
+        @Volatile
+        @JvmStatic
+        var sharedHandoffPinHash: String? = null
     }
 
     private var nordicManager: NordicMeshManager? = null
@@ -36,10 +52,6 @@ class MainActivity : FlutterActivity() {
     // Bloom Filter 快取（由 Dart 端推送更新）
     @Volatile
     private var localBloomBytes: ByteArray = ByteArray(0)
-
-    // 交接 PIN 狀態
-    private var handoffResourceId: String? = null
-    private var handoffPinHash: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -182,10 +194,12 @@ class MainActivity : FlutterActivity() {
 
                     // ── 跨裝置 PIN 交接方法 ────────────────────────────────
                     "startHandoffAdvertising" -> {
-                        handoffResourceId = call.argument<String>("resourceId")
-                        handoffPinHash = call.argument<String>("pinHash")
+                        // Stage 6：寫到 companion 的 @JvmStatic 變數，讓
+                        // IgniRelayForegroundService 能在 GATT 寫入回調直接讀取。
+                        sharedHandoffResourceId = call.argument<String>("resourceId")
+                        sharedHandoffPinHash = call.argument<String>("pinHash")
                         startDataMuleService()
-                        Log.d(TAG, "Handoff advertising started for resource: $handoffResourceId")
+                        Log.d(TAG, "Handoff advertising started for resource: $sharedHandoffResourceId")
                         result.success(true)
                     }
                     "sendHandoffPin" -> {
@@ -195,8 +209,8 @@ class MainActivity : FlutterActivity() {
                         result.success(verified)
                     }
                     "stopHandoffAdvertising" -> {
-                        handoffResourceId = null
-                        handoffPinHash = null
+                        sharedHandoffResourceId = null
+                        sharedHandoffPinHash = null
                         result.success(true)
                     }
 
@@ -324,7 +338,7 @@ class MainActivity : FlutterActivity() {
         val hash = java.security.MessageDigest.getInstance("SHA-256")
             .digest(pin.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
-        return hash == handoffPinHash && resourceId == handoffResourceId
+        return hash == sharedHandoffPinHash && resourceId == sharedHandoffResourceId
     }
 
     // ── 各大廠私有電源管理設定頁 ──────────────────────────────────────────

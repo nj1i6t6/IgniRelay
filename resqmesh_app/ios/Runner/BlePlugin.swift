@@ -1,5 +1,6 @@
 import Flutter
 import CoreBluetooth
+import CommonCrypto // Stage 6：SHA-256 PIN hash 用
 
 // ══════════════════════════════════════════════════════════════════════════
 // IgniRelay BLE Plugin — iOS CoreBluetooth 實作
@@ -50,6 +51,20 @@ class BlePlugin: NSObject, FlutterPlugin {
     // ── Shared State ───────────────────────────────────────────────────
     private var localBloomBytes: Data = Data()
     private var outboxEvents: [Data] = []
+
+    // Stage 6 (commit #10)：handoff PIN 跨平台對齊。Provider 端在
+    // `startHandoffAdvertising` 暫存 (resourceId, sha256(pin))，待 GATT server
+    // 收到 HANDSHAKE_CHAR 寫入時驗證並發出 `handoff_result` 事件。
+    private var handoffResourceId: String?
+    private var handoffPinHash: String?
+
+    // ── SHA-256 helper（純 C API，避免引入 CryptoKit 提高 deployment target）──
+    static func sha256Hex(_ input: String) -> String {
+        let data = Data(input.utf8)
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        data.withUnsafeBytes { _ = CC_SHA256($0.baseAddress, CC_LONG(data.count), &hash) }
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
 
     // ── Plugin Registration ────────────────────────────────────────────
     static func register(with registrar: FlutterPluginRegistrar) {
@@ -217,20 +232,40 @@ class BlePlugin: NSObject, FlutterPlugin {
         case "requestHighBandwidthTransfer":
             result(false)
 
-        case "requestBluetoothEnable":
-            result(false) // iOS 無法程式化開啟藍牙
+        // Stage 6 (commit #10): 移除原本第二個 "requestBluetoothEnable"
+        // duplicate case（已於 L83 處理）。
 
         // ── 交接 PIN ─────────────────────────────────────────────────
         case "startHandoffAdvertising":
+            // Stage 6：與 Android `MainActivity.handoffResourceId/handoffPinHash`
+            // 對齊——把 resourceId / pinHash 暫存於 BlePlugin 實例，
+            // 待 GATT server 收到 HANDSHAKE_CHAR 寫入時做 SHA-256 + resourceId 比對。
+            if let args = call.arguments as? [String: Any] {
+                handoffResourceId = args["resourceId"] as? String
+                handoffPinHash = args["pinHash"] as? String
+            }
             startAdvertising()
             result(true)
 
         case "stopHandoffAdvertising":
+            handoffResourceId = nil
+            handoffPinHash = nil
             result(true)
 
         case "sendHandoffPin":
-            // TODO: 實作 PIN 驗證邏輯
-            result(false)
+            // Stage 6：完成原本的 TODO，對齊 Android `verifyHandoffPin` 同裝置
+            // 本地驗證邏輯（physical_handoff fallback 路徑使用）。
+            // 跨裝置 BLE handoff 走 GATT write，於 didReceiveWrite 處理。
+            guard let args = call.arguments as? [String: Any],
+                  let pin = args["pin"] as? String,
+                  let resourceId = args["resourceId"] as? String,
+                  let storedHash = handoffPinHash,
+                  let storedResId = handoffResourceId else {
+                result(false)
+                return
+            }
+            let hash = BlePlugin.sha256Hex(pin)
+            result(hash == storedHash && resourceId == storedResId)
 
         default:
             result(FlutterMethodNotImplemented)
@@ -579,12 +614,28 @@ extension BlePlugin: CBPeripheralManagerDelegate {
                 pushOutboxToSubscriber(request.central)
             } else if request.characteristic.uuid == BlePlugin.HANDSHAKE_CHAR_UUID,
                       let data = request.value {
-                // Central 寫入交接握手資料 → 通知 Dart 層
+                // Stage 6：Central（requester）透過 BLE 寫入 PIN+resourceId →
+                // Provider 在此驗證並發出統一型別 "handoff_result" 事件
+                // （Dart 端 physical_handoff 監聽此事件）。
+                // 寫入格式：JSON UTF-8 `{"pin":"...","resourceId":"..."}`，
+                // 與 Android 端 `processCharacteristicWrite` HANDSHAKE branch 對齊。
                 let deviceId = request.central.identifier.uuidString
+                var success = false
+                var resId = ""
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let pin = json["pin"] as? String,
+                   let writeResId = json["resourceId"] as? String,
+                   let storedHash = handoffPinHash,
+                   let storedRes = handoffResourceId {
+                    resId = writeResId
+                    success = (BlePlugin.sha256Hex(pin) == storedHash &&
+                               writeResId == storedRes)
+                }
                 sendEvent([
-                    "type": "handshake_data",
+                    "type": "handoff_result",
                     "device": deviceId,
-                    "data": FlutterStandardTypedData(bytes: data),
+                    "resourceId": resId,
+                    "success": success,
                 ])
             }
         }

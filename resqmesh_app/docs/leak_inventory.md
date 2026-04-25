@@ -43,11 +43,11 @@ match repository。逐一結論：
 
 ## 已確認 leak（需處置）
 
-| ID | 位置 | 描述 | 建議處置 | 預計階段 |
-|----|------|------|----------|----------|
-| L1 | `lib/app/mesh/ble_manager.dart:63` `uniquePeersEverSeen` | 保存所有時間看過的 peer id，重啟前不會清。 | 改為有界 LRU（上限 500）或 N 小時 TTL。 | Stage 6 |
-| L2 | `lib/app/mesh/ble_manager.dart:46` `_cancelledSyncs` | 記錄已取消的同步 session id，只寫不讀移除。 | 改 LRU(200) 或同步完成/過期時清。 | Stage 6 |
-| L3 | `lib/app/services/chat_service.dart:26` `_lastSendTime` | 記錄每個 roomId 上次送出時間，roomId 離開未清。 | markAsRead / leaveRoom 時同步 remove；否則 LRU(64)。 | Stage 5（併聊天清理） |
+| ID | 位置 | 描述 | 建議處置 | 預計階段 | 狀態 |
+|----|------|------|----------|----------|------|
+| L1 | `lib/app/mesh/ble_manager.dart:63` `uniquePeersEverSeen` | 保存所有時間看過的 peer id，重啟前不會清。 | 改為有界 LRU（上限 500）或 N 小時 TTL。 | Stage 6 | ✅ Stage 6 commit #10：FIFO bounded(500) via `addBoundedFifo` |
+| L2 | `lib/app/mesh/ble_manager.dart:46` `_cancelledSyncs` | 記錄已取消的同步 session id，只寫不讀移除。 | 改 LRU(200) 或同步完成/過期時清。 | Stage 6 | ✅ Stage 6 commit #10：FIFO bounded(200) + `_cleanupCooldowns` 連帶清除 |
+| L3 | `lib/app/services/chat_service.dart:26` `_lastSendTime` | 記錄每個 roomId 上次送出時間，roomId 離開未清。 | markAsRead / leaveRoom 時同步 remove；否則 LRU(64)。 | Stage 5（併聊天清理） | ⏳ 仍待 Stage 7 收尾 |
 
 ## 已確認非 leak（保留於此，避免再被誤列）
 
@@ -250,6 +250,41 @@ dart run tool/check_layers.dart                                → ok  ✓
 flutter test × 2                                               → 321/321 兩輪全綠 ✓
 flutter test test/controllers/ble_scan_controller_test.dart   → 12/12 ✓
 ```
+
+---
+
+## Stage 6 — iOS Handoff P0 + 通訊層補完（2026-04-25）
+
+### 動機
+- plan §Stage 6：handoff 跨平台閉環（事件型別 / iOS PIN / schema 相容 / transport TTL / iOS 建置）。
+- 補上 L1 / L2 兩個盤點已久的 leak 處置。
+
+### 主要變更
+- **跨平台 handoff event 統一**：iOS `BlePlugin.swift` GATT server 在收到 HANDSHAKE_CHAR 寫入後做 SHA-256 + resourceId 比對並 emit `handoff_result`；Android `IgniRelayForegroundService.processCharacteristicWrite` 從 fall-through `else` 抽出 HANDSHAKE branch 做相同驗證。`HandoffController.events` 對舊版 iOS `handshake_data` fallback 為 `success=false + legacy=true`。
+- **iOS duplicate case 清理**：`BlePlugin.swift` 第二個 `case "requestBluetoothEnable"` 移除。
+- **iOS sendHandoffPin**：對齊 Android `verifyHandoffPin` 本地 SHA-256 + resourceId 比對。
+- **schema_version 雙向相容**：`HandshakeCompleteData` 加 tag 10（int32, default 0）+ `kCurrentSchemaVersion = 1`；`publishHandshakeComplete` 寫入時帶版本號。`.proto` 同步加上 message 宣告（文件用，不重 generate）。
+- **publishHandshakeComplete 帶真實值**：`physical_handoff.dart` 4 處呼叫從 `providerPubKey: []` 改成從 `Match_Negotiations` row 讀回（fallback chain：actual_delivered_qty → agreed_qty → offered_qty）。
+- **transport bounded sets**：`uniquePeersEverSeen` FIFO(500)、`_cancelledSyncs` FIFO(200) + cooldown 過期連帶清除；抽出 top-level `addBoundedFifo<T>` helper。
+- **iOS 建置**：補 `ios/Podfile` 模板 + `.gitignore` Podfile.lock 策略註記。
+
+### Acceptance 全綠
+```
+flutter analyze                                       → 50 issues  (≤ 50) ✓
+dart run tool/check_layers.dart                       → ok ✓
+flutter test × 2（含 14 新 Stage 6 案例）              → 335/335 兩輪全綠 ✓
+flutter test test/proto/handshake_schema_compat_test.dart → 5/5 ✓
+flutter test test/transport/bounded_set_test.dart      → 6/6 ✓
+flutter test test/controllers/handoff_controller_test.dart → 3/3 ✓
+```
+
+### Stage 6 **不做**的事（保留到 Stage 7 或實機驗收）
+- **Android↔Android emulator E2E**：CLI 環境無法驅動 emulator；plan acceptance 第 1 條待具備裝置者補做。
+- **iOS 編譯 + 實機**：須 macOS + Xcode；本輪只完成程式碼修改與 Podfile 模板。
+- **transport 端到端 BLE peer 壓測**：本輪以 `addBoundedFifo` 10000 筆灌入單元壓力測試作代換；真實 BLE 大量 peer 發現的壓測仍需實機。
+- **`mesh_runtime_controller` facade 化**：plan §Stage 5 已標延後到 Stage 6/7；本輪因 transport contract 仍可能在 Stage 7 動到，再次延後到 Stage 7。
+
+---
 
 ### Stage 5 **不做**的事（保留到後續 stage）
 - **不擴大 facade 介面**：把所有 NativeBridge static 都包進來會在 Stage 6/7 才

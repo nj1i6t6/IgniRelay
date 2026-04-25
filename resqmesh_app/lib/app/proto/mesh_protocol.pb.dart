@@ -1957,6 +1957,11 @@ class MatchDeclineData extends $pb.GeneratedMessage {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class HandshakeCompleteData extends $pb.GeneratedMessage {
+  // Stage 6 (commit #10)：當前 wire-format 版本。
+  // 新客戶端寫入時帶入，舊客戶端不寫此欄位（protobuf scalar default = 0）。
+  // 解析時若拿到 0，視為「舊 client」的 payload，可選擇 fallback 行為。
+  static const $core.int kCurrentSchemaVersion = 1;
+
   factory HandshakeCompleteData({
     $core.String? negotiationId,
     $core.String? resourceId,
@@ -1967,6 +1972,7 @@ class HandshakeCompleteData extends $pb.GeneratedMessage {
     $core.String? method,
     $core.List<$core.int>? providerSignature,
     $core.List<$core.int>? requesterSignature,
+    $core.int? schemaVersion,
   }) {
     final $result = create();
     if (negotiationId != null) $result.negotiationId = negotiationId;
@@ -1981,6 +1987,7 @@ class HandshakeCompleteData extends $pb.GeneratedMessage {
       $result.providerSignature = providerSignature;
     if (requesterSignature != null)
       $result.requesterSignature = requesterSignature;
+    if (schemaVersion != null) $result.schemaVersion = schemaVersion;
     return $result;
   }
 
@@ -2006,6 +2013,10 @@ class HandshakeCompleteData extends $pb.GeneratedMessage {
         protoName: 'provider_signature')
     ..a<$core.List<$core.int>>(9, 'requesterSignature', $pb.PbFieldType.OY,
         protoName: 'requester_signature')
+    // Stage 6：tag 10 schema_version (int32, default 0 = legacy client)。
+    // 利用 protobuf 未知欄位向後相容特性——舊 client 解析時 silently ignore。
+    ..a<$core.int>(10, 'schemaVersion', $pb.PbFieldType.O3,
+        protoName: 'schema_version')
     ..hasRequiredFields = false;
 
   @$core.override
@@ -2079,6 +2090,17 @@ class HandshakeCompleteData extends $pb.GeneratedMessage {
   set requesterSignature($core.List<$core.int> v) {
     $_setBytes(8, v);
   }
+
+  // Stage 6 (commit #10)：wire-format 版本。
+  @$pb.TagNumber(10)
+  $core.int get schemaVersion => $_getIZ(9);
+  @$pb.TagNumber(10)
+  set schemaVersion($core.int v) {
+    $_setSignedInt32(9, v);
+  }
+
+  @$pb.TagNumber(10)
+  $core.bool hasSchemaVersion() => $_has(9);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

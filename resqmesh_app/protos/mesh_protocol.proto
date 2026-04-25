@@ -260,3 +260,28 @@ message MeshEnvelope {
   bytes payload = 2;        // 內容（EVENT: MeshEvent bytes / BLOOM_FILTER: 事件 ID 列表）
   string sender_id = 3;     // 發送者 node UUID
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HandshakeCompleteData (交割完成憑證)
+//
+// 注意：本 message 的對應 Dart class 直接維護於 lib/app/proto/mesh_protocol.pb.dart，
+// 並非由本 .proto 重新生成（pb.dart 已含其它非 proto-source 訊息）。
+// 將此宣告納入 .proto 僅為文件用，便於審查 wire-format 對照。
+// ─────────────────────────────────────────────────────────────────────────────
+message HandshakeCompleteData {
+  string negotiation_id = 1;
+  string resource_id = 2;
+  string request_id = 3;
+  bytes provider_pub_key = 4;
+  bytes requester_pub_key = 5;
+  float actual_delivered_qty = 6;
+  string method = 7;          // "QR_CODE" / "BLE" / "PIN_4DIGIT" / "DROP_OFF"
+  bytes provider_signature = 8;
+  bytes requester_signature = 9;
+  // Stage 6 (commit #10)：wire-format 版本。
+  // 預設 0 = 未升級之舊 client；新 client 寫入 1。
+  // 利用 protobuf 未知欄位向後相容特性：
+  //   - 新 client 解析舊 payload（無 schema_version）→ 取得 0
+  //   - 舊 client 解析新 payload（含 schema_version=1）→ 自動 silently ignore
+  int32 schema_version = 10;
+}

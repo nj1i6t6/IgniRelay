@@ -297,7 +297,7 @@ resqmesh_app/lib/
 
 - **commit**：`refactor(stage-4d-r2): 地圖 sheet/panel 結構拆分 + hazard 統一色 + 清 emoji`
 
-### Stage 5 — 次要畫面（commit #9）✅ 已完成
+### Stage 5 — 次要畫面（commit #9）✅ 技術交付達成（模擬器全鏈路驗收待補）
 
 - **目標**：據點供給、分級通報、onboarding 等剩餘次要畫面套新視覺；全域驗證 UI 零 `NativeBridge` 直呼；為 controller 建立可測邊界
 - **交付**：
@@ -314,21 +314,22 @@ resqmesh_app/lib/
   - `flutter test` 包含至少一個使用 `FakeNativeBridge` 的 controller 測試且綠燈
   - 模擬器跑：onboarding → 發需求 → 發供給 → 進導航 → 進實體交接（PIN / BLE / DROP_OFF 三種 UI 正常；實際 handoff 閉環在 Stage 6 修）
 - **commit**：`refactor(stage-5): 重構剩餘次要畫面 + NativeBridgeFacade 可測邊界`
-- ✅ **達成（2026-04-25）**：
+- ✅ **技術交付達成（2026-04-25）**：
   - **NativeBridgeFacade**：`lib/platform/native_bridge_facade.dart` 抽象介面 + `_RealNativeBridgeFacade` delegate，14 method（4 handoff + 10 BLE central）；`HandoffController` / `BleScanController` 全 routing 改走 facade
   - **FakeNativeBridge + controller 測試**：`test/fakes/fake_native_bridge.dart` + `test/controllers/ble_scan_controller_test.dart` 12 案例（含 Uint8List? 雙路徑、StreamController 透傳、resetToReal 還原）全綠
   - **navigation→handoff role**：`navigation_screen.dart:_startHandoff` 改依 `match.deliveryMode` 判定 provider/requester
   - **Bug 修正**：`station_supply_screen._RegisterTabState` 的 controller dispose 從 `deactivate()` 移到正確的 `dispose()`
   - **palette 收斂**：onboarding loading `Colors.black` → `0xFF0d0d1a`、triage SOS_RED 鎖定 `Colors.grey[800]` → `0xFF222244`
-  - **acceptance 全綠**：
+  - **單元 + 靜態分析驗收綠燈**：
     ```
     grep -r "NativeBridge\." lib/ui/                              →  0  ✓
     flutter analyze                                                → 50 issues  (≤ 50) ✓
     dart run tool/check_layers.dart                                → ok  ✓
-    flutter test × 2                                               → 321/321 兩輪全綠 ✓
+    flutter test × 2（平行 isolate，含 stage-5-fix DB 隔離）        → 321/321 兩輪全綠 ✓
     ```
+- ⚠️ **未完成**：模擬器全鏈路驗收（onboarding→發需求→發供給→導航→實體交接）尚未執行。本輪 CLI 環境無法驅動 emulator；驗收骨架已留在 `resqmesh_app/docs/leak_inventory.md` Stage 5-fix「回應 3」段，由具備裝置者補做後再蓋章 Stage 5 為完整完成。
 
-### Stage 6 — iOS Handoff P0 與通訊層補完（commit #10）
+### Stage 6 — iOS Handoff P0 與通訊層補完（commit #10）✅ 技術交付達成（iOS 實機 / Android E2E 待測）
 
 - **目標**：修掉分析文件的 P0，讓 handoff 跨平台閉環，補 schema 前向相容能力，清通訊層集合
 - **交付（執行順序固定，不可調換）**：
@@ -346,6 +347,28 @@ resqmesh_app/lib/
   - transport 集合壓力測試：連續發現/連接若干 peer 後，集合大小有上界而非單調成長
   - iOS 編譯與實機：使用者之後自行在 macOS 驗證；commit 訊息註明「iOS 實機測試待執行」
 - **commit**：`refactor(stage-6): handoff 跨平台閉環 + schema_version + transport TTL`
+- ✅ **技術交付達成（2026-04-25）**：
+  - **handoff event 統一為 `handoff_result`**：iOS `BlePlugin.swift` GATT server 在收到 HANDSHAKE_CHAR 寫入後做 SHA-256 + resourceId 比對並 emit `handoff_result`；Android `IgniRelayForegroundService.processCharacteristicWrite` 從原本 fall-through `else` 抽出顯式 HANDSHAKE branch 做相同驗證。`HandoffController.events` 對舊版 iOS `handshake_data` fallback 為 `success=false + legacy=true`（向後相容）。
+  - **iOS duplicate case 清理**：`BlePlugin.swift` 第二個 `case "requestBluetoothEnable"` 移除。
+  - **iOS `sendHandoffPin` 完成**：對齊 Android `MainActivity.verifyHandoffPin`，本地 SHA-256 + resourceId 比對。
+  - **schema_version**：`HandshakeCompleteData` 加 tag 10 `schema_version`（int32, default 0）+ `kCurrentSchemaVersion = 1`；`publishHandshakeComplete` 寫入時帶版本號。`.proto` 同步加上 message 宣告（文件用，不重 generate）。
+  - **publishHandshakeComplete 帶真實值**：`physical_handoff.dart` 4 處呼叫從原 `providerPubKey: []` / `requesterPubKey: []` / `actualDeliveredQty: 0` 改成從 `Match_Negotiations` row 讀回（fallback chain：actual_delivered_qty → agreed_qty → offered_qty）。
+  - **transport TTL/LRU**：`BleManager.uniquePeersEverSeen` 改 FIFO bounded(500)、`_cancelledSyncs` 改 FIFO bounded(200) + cooldown 過期時連帶清除；抽出可重用的 top-level `addBoundedFifo<T>` helper。
+  - **iOS 建置**：補 `ios/Podfile` 模板（platform 13.0、`flutter_ios_podfile_setup`）；`ios/.gitignore` 補 Podfile.lock 必須 commit 的策略註記；`Generated.xcconfig` 已 ignore（既有規則）。
+  - **新增測試 14 案例全綠**：
+    - `test/controllers/handoff_controller_test.dart`：3 案例驗證跨平台 event 歸一化。
+    - `test/proto/handshake_schema_compat_test.dart`：5 案例驗證 schema_version 雙向相容（含 tag-99 unknown field 壓力）。
+    - `test/transport/bounded_set_test.dart`：6 案例驗證 `addBoundedFifo` FIFO 語意 + 10000 筆灌入仍 ≤ cap + BleManager singleton smoke。
+  - **驗收綠燈**：
+    ```
+    flutter analyze                                       → 50 issues  (≤ 50) ✓
+    dart run tool/check_layers.dart                       → ok ✓
+    flutter test × 2                                      → 335/335 兩輪全綠 ✓
+    ```
+- ⚠️ **未完成（必須由具備裝置者補做）**：
+  - Android↔Android 模擬器 handoff E2E（plan acceptance 第 1 條）：本輪 CLI 環境無法驅動 emulator。
+  - iOS 編譯 / 實機（plan acceptance 第 4 條）：須 macOS + Xcode；本輪只完成程式碼修改與 Podfile 模板。
+  - transport 集合「真實 BLE peer 大量發現」壓力測試（plan acceptance 第 3 條的 in-app 重現）：本輪以 `addBoundedFifo` 單元壓力測試（10000 筆）作代換；BleManager 端到端壓測仍待 emulator/裝置。
 
 ### Stage 7 — 收尾（commit #11）
 

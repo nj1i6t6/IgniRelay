@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/controllers/handoff_controller.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
@@ -70,6 +71,50 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
         : const Duration(hours: 4);
   }
 
+  /// Stage 6 (commit #10)：取代原本 4 處硬編 `providerPubKey: []`,
+  /// `requesterPubKey: []`, `actualDeliveredQty: 0` 的呼叫。
+  /// 從 `Match_Negotiations` 讀回真實值（若 row 不在 / 欄位為 null
+  /// 則 fallback 為空 list / 0；publishHandshakeComplete 對 fallback 不會崩）。
+  Future<void> _publishHandshakeFromNegotiation() async {
+    List<int> providerPubKey = const [];
+    List<int> requesterPubKey = const [];
+    double deliveredQty = 0;
+    try {
+      final db = await DatabaseHelper().database;
+      final rows = await db.query(
+        'Match_Negotiations',
+        where: 'negotiation_id = ?',
+        whereArgs: [widget.negotiationId],
+        limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        final row = rows.first;
+        final pBlob = row['provider_pub_key'];
+        if (pBlob is Uint8List) providerPubKey = pBlob.toList();
+        final rBlob = row['requester_pub_key'];
+        if (rBlob is Uint8List) requesterPubKey = rBlob.toList();
+        // actual_delivered_qty 可能是 null（剛進交接）→ 用 agreed_qty 退回；
+        // 兩者皆 null → offered_qty。
+        deliveredQty =
+            (row['actual_delivered_qty'] as num?)?.toDouble() ??
+                (row['agreed_qty'] as num?)?.toDouble() ??
+                (row['offered_qty'] as num?)?.toDouble() ??
+                0.0;
+      }
+    } catch (e) {
+      debugPrint('[Handoff] negotiation lookup failed: $e — fallback to empties');
+    }
+    await _eventManager.publishHandshakeComplete(
+      negotiationId: widget.negotiationId,
+      resourceId: widget.resourceId,
+      requestId: widget.requestId ?? '',
+      providerPubKey: providerPubKey,
+      requesterPubKey: requesterPubKey,
+      actualDeliveredQty: deliveredQty,
+      method: widget.method,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -106,15 +151,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
   void _onBleVerificationSuccess() async {
     if (!mounted || _handoffComplete) return;
     HapticFeedback.heavyImpact();
-    await _eventManager.publishHandshakeComplete(
-      negotiationId: widget.negotiationId,
-      resourceId: widget.resourceId,
-      requestId: widget.requestId ?? '',
-      providerPubKey: [],
-      requesterPubKey: [],
-      actualDeliveredQty: 0,
-      method: widget.method,
-    );
+    await _publishHandshakeFromNegotiation();
     setState(() => _handoffComplete = true);
     _autoRevertTimer?.cancel();
     _handoffSub?.cancel();
@@ -151,15 +188,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
         );
         if (success) {
           HapticFeedback.heavyImpact();
-          await _eventManager.publishHandshakeComplete(
-            negotiationId: widget.negotiationId,
-            resourceId: widget.resourceId,
-            requestId: widget.requestId ?? '',
-            providerPubKey: [],
-            requesterPubKey: [],
-            actualDeliveredQty: 0,
-            method: widget.method,
-          );
+          await _publishHandshakeFromNegotiation();
           setState(() {
             _handoffComplete = true;
             _waitingForBle = false;
@@ -180,15 +209,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     // 本地驗證 (同裝置 fallback 或無 BLE 時)
     if (entered == _pin) {
       HapticFeedback.heavyImpact();
-      await _eventManager.publishHandshakeComplete(
-        negotiationId: widget.negotiationId,
-        resourceId: widget.resourceId,
-        requestId: widget.requestId ?? '',
-        providerPubKey: [],
-        requesterPubKey: [],
-        actualDeliveredQty: 0,
-        method: widget.method,
-      );
+      await _publishHandshakeFromNegotiation();
       setState(() => _handoffComplete = true);
       _autoRevertTimer?.cancel();
     } else {
@@ -436,13 +457,41 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
   /// DROP_OFF 完成時呼叫 publishHandshakeComplete
   Future<void> _completeDropOff() async {
     HapticFeedback.heavyImpact();
+    // Stage 6：DROP_OFF 也走同一條 negotiation lookup，但 method 強制 DROP_OFF。
+    // 為避免 helper 內鎖死 widget.method，這裡先讀資料，再 override method。
+    List<int> providerPubKey = const [];
+    List<int> requesterPubKey = const [];
+    double deliveredQty = 0;
+    try {
+      final db = await DatabaseHelper().database;
+      final rows = await db.query(
+        'Match_Negotiations',
+        where: 'negotiation_id = ?',
+        whereArgs: [widget.negotiationId],
+        limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        final row = rows.first;
+        final pBlob = row['provider_pub_key'];
+        if (pBlob is Uint8List) providerPubKey = pBlob.toList();
+        final rBlob = row['requester_pub_key'];
+        if (rBlob is Uint8List) requesterPubKey = rBlob.toList();
+        deliveredQty =
+            (row['actual_delivered_qty'] as num?)?.toDouble() ??
+                (row['agreed_qty'] as num?)?.toDouble() ??
+                (row['offered_qty'] as num?)?.toDouble() ??
+                0.0;
+      }
+    } catch (e) {
+      debugPrint('[Handoff] DROP_OFF negotiation lookup failed: $e');
+    }
     await _eventManager.publishHandshakeComplete(
       negotiationId: widget.negotiationId,
       resourceId: widget.resourceId,
       requestId: widget.requestId ?? '',
-      providerPubKey: [],
-      requesterPubKey: [],
-      actualDeliveredQty: 0,
+      providerPubKey: providerPubKey,
+      requesterPubKey: requesterPubKey,
+      actualDeliveredQty: deliveredQty,
       method: 'DROP_OFF',
     );
     setState(() => _handoffComplete = true);
