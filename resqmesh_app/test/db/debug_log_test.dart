@@ -13,7 +13,12 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfiNoIsolate;
+    DatabaseHelper.testDatabasePathOverride = inMemoryDatabasePath;
     SharedPreferences.setMockInitialValues({});
+  });
+
+  setUp(() async {
+    await DatabaseHelper().resetForTest();
   });
 
   group('DatabaseHelper — Debug Log Persistence (Bug 2)', () {

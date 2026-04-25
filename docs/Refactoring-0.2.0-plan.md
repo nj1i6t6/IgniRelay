@@ -305,7 +305,8 @@ resqmesh_app/lib/
   - 清除任何殘餘 `NativeBridge` 直呼（UI 層全面清零）
   - 導航進交接時 role 不再硬編碼 provider，依上下文決定 requester / provider
   - **限縮版 `NativeBridgeFacade` 介面 + DI**：
-    - **介面覆蓋面限縮**：只抽 Stage 5 觸及 controller（`ble_scan_controller`、`mesh_runtime_controller`、`handoff_controller` 等此階段會動到的部分）實際使用的 method，不一次全包 BLE / Wi-Fi Direct / NFC / battery 全部 static
+    - **介面覆蓋面限縮**：只抽 Stage 5 觸及 controller（`ble_scan_controller`、`handoff_controller`）實際使用的 method，不一次全包 BLE / Wi-Fi Direct / NFC / battery 全部 static
+    - ⚠️ **`mesh_runtime_controller` 刻意延後到 Stage 6/7**：foreground service / DataMule / BleRelay / GATT / Bloom / outbox 等 9 個 static 涉及前景服務生命週期與跨平台 (Android/iOS) 行為差異，其 contract 預期會在 Stage 6 iOS handoff 統一時被改動。本階段在文件聲明中不主張覆蓋它，避免「覆蓋了又要再改」的虛工。`mesh_runtime_controller.dart` 仍直接走 `NativeBridge.*` static 是 acceptable 的；UI 層只會經由 controller 進入這條路徑，仍滿足 §UI 直呼歸零的硬驗收
     - **驗收範圍不限縮**：UI 全域零 `NativeBridge` 直呼仍然成立（未抽進 facade 的其他 static，UI 不得繞過 controller 直呼，改走 controller routing）
     - 建立 `test/fakes/fake_native_bridge.dart`；至少一個 controller 單測使用它、納入既有 `flutter test` 流程；**不新增 CI 配置**（遵守 §六「不做 CI/CD 配置」）
 - **驗收**：

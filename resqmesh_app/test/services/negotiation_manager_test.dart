@@ -17,8 +17,12 @@ import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 import 'package:ignirelay_app/app/services/negotiation_events.dart';
 
+// Stage 5-fix：原本只用 microsecondsSinceEpoch 在 in-memory DB（極快）下會
+// 撞同一 tick → 四連呼叫同一 string → UNIQUE 失敗。加 atomic counter 保證
+// 即使在同一 microsecond 內也唯一。
+int _seq = 0;
 String _uid(String prefix) =>
-    '$prefix-${DateTime.now().microsecondsSinceEpoch}';
+    '$prefix-${DateTime.now().microsecondsSinceEpoch}-${++_seq}';
 
 final _providerKey = Uint8List.fromList(List.generate(32, (i) => i));
 final _requesterKey = Uint8List.fromList(List.generate(32, (i) => 0xFF - i));
@@ -88,12 +92,16 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfiNoIsolate;
+    // Stage 5-fix：避免多檔平行 isolate 撞同一磁碟 DB（UNIQUE / locked flake）。
+    DatabaseHelper.testDatabasePathOverride = inMemoryDatabasePath;
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
     await IdentityManager().initialize();
   });
 
-  setUp(() {
+  setUp(() async {
+    // 每測 reset 一次 in-memory DB → 完全零殘留狀態，避免 group 間 row 串擾。
+    await DatabaseHelper().resetForTest();
     nm = NegotiationManager();
   });
 

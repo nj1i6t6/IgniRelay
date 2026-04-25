@@ -14,17 +14,24 @@ import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/event_types.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 
+// Stage 5-fix：counter 保證 in-memory DB 高速執行下 uid 仍唯一。
+int _seq = 0;
 String _uid(String prefix) =>
-    '$prefix-${DateTime.now().microsecondsSinceEpoch}';
+    '$prefix-${DateTime.now().microsecondsSinceEpoch}-${++_seq}';
 
 void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfiNoIsolate;
+    DatabaseHelper.testDatabasePathOverride = inMemoryDatabasePath;
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
     await IdentityManager().initialize();
+  });
+
+  setUp(() async {
+    await DatabaseHelper().resetForTest();
   });
 
   final em = EventManager();

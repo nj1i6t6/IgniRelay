@@ -20,9 +20,14 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfiNoIsolate;
+    DatabaseHelper.testDatabasePathOverride = inMemoryDatabasePath;
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
     await IdentityManager().initialize();
+  });
+
+  setUp(() async {
+    await DatabaseHelper().resetForTest();
   });
 
   group('MeshEventHandler — Chat Event Routing', () {

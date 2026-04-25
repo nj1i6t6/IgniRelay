@@ -21,8 +21,10 @@ import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 final _providerKey = Uint8List.fromList(List.generate(32, (i) => i));
 final _requesterKey = Uint8List.fromList(List.generate(32, (i) => 0xFF - i));
 
+// Stage 5-fix：counter 保證 in-memory DB 高速執行下 uid 仍唯一。
+int _seq = 0;
 String _uid(String prefix) =>
-    '$prefix-${DateTime.now().microsecondsSinceEpoch}';
+    '$prefix-${DateTime.now().microsecondsSinceEpoch}-${++_seq}';
 
 Future<void> _seedMaterial(String resourceId) async {
   final db = await DatabaseHelper().database;
@@ -94,12 +96,14 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfiNoIsolate;
+    DatabaseHelper.testDatabasePathOverride = inMemoryDatabasePath;
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
     await IdentityManager().initialize();
   });
 
-  setUp(() {
+  setUp(() async {
+    await DatabaseHelper().resetForTest();
     nm = NegotiationManager();
     NegotiationManager.onIllegalTransition = null;
   });

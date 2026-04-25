@@ -19,9 +19,11 @@ import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/platform/mesh_transport.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 
-// 每次呼叫回傳帶毫秒時間戳的唯一 event ID
+// 每次呼叫回傳唯一 event ID
+// Stage 5-fix：counter 保證 in-memory DB 高速執行下 uid 仍唯一。
+int _seq = 0;
 String _uid(String prefix) =>
-    '$prefix-${DateTime.now().microsecondsSinceEpoch}';
+    '$prefix-${DateTime.now().microsecondsSinceEpoch}-${++_seq}';
 
 /// 取得本機公鑰 bytes（用於測試簽章）
 Future<List<int>> _getLocalPubKey() async {
@@ -62,9 +64,14 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfiNoIsolate;
+    DatabaseHelper.testDatabasePathOverride = inMemoryDatabasePath;
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
     await IdentityManager().initialize();
+  });
+
+  setUp(() async {
+    await DatabaseHelper().resetForTest();
   });
 
   final handler = MeshEventHandler();

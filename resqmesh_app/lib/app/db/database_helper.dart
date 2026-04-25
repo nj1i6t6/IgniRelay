@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:ignirelay_app/app/db/medical_card_repo.dart';
@@ -12,6 +13,23 @@ class DatabaseHelper {
   Database? _db;
   late final MedicalCardRepo _medicalCardRepo = MedicalCardRepo(this);
 
+  /// Stage 5-fix：測試專用 DB 路徑覆蓋。
+  ///
+  /// 預設為 `null` → 走 `getDatabasesPath()/resqmesh_local.db`（正式行為）。
+  /// 測試端在 `setUpAll` 設為 `inMemoryDatabasePath`（即 `:memory:`），讓
+  /// 多個測試檔在 `flutter test` 平行 isolate 時各自開獨立 in-memory DB，
+  /// 避免共享磁碟檔造成 UNIQUE constraint / database is locked 偶發 flake。
+  @visibleForTesting
+  static String? testDatabasePathOverride;
+
+  /// Stage 5-fix：測試專用——丟掉現有 connection（in-memory 模式下相當於清庫）。
+  /// 在 `setUp`/`tearDown` 呼叫可保證 test 間零殘留狀態。
+  @visibleForTesting
+  Future<void> resetForTest() async {
+    await _db?.close();
+    _db = null;
+  }
+
   /// Exposed for MedicalCardRepo (and other repos) to access the DB.
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -20,8 +38,9 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDb() async {
-    final databasesPath = await getDatabasesPath();
-    final path = join(databasesPath, 'resqmesh_local.db');
+    final overridePath = testDatabasePathOverride;
+    final path = overridePath ??
+        join(await getDatabasesPath(), 'resqmesh_local.db');
 
     return await openDatabase(
       path,

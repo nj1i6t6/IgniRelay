@@ -259,3 +259,95 @@ flutter test test/controllers/ble_scan_controller_test.dart   → 12/12 ✓
 - **不做 CI 化**：plan 明確「不新增 CI/CD 配置」，本輪只在本機 `flutter test × 2`
   + `flutter analyze` 把關。
 
+---
+
+## Stage 5-fix — 審查回應補強（2026-04-25）
+
+針對外部審查的四項發現逐一回應與補丁：
+
+### 回應 1 [HIGH] supply_registration.dart 是否需重繪
+
+**經實檢確認，本次刻意不重繪**。原檔（563 行）在進入 Stage 5 前已具備：
+- 全域 dark scaffold (`0xFF0d0d1a`) + AppBar (`0xFF1a1a2e`) + 統一 InputDecoration helper
+- 三層分類 ChoiceChip 已使用 `withValues(alpha: 0.3)` + 類別色高亮
+- 配送模式三選一卡片以 `AnimatedContainer + accent 邊框`，與 Stage 4c match-screen 同一視覺語彙
+- 日期 picker 已套 `ThemeData.dark()` + `surface: 0xFF1a1a2e`
+- SnackBar 顏色（green[700]/orange[700]/red[700]）與其餘畫面一致
+
+→ 因此「未在 Stage 5 觸碰」**不等於「未達 Stage 5 視覺標準」**。本檔的視覺
+   等級已在 stage-1-followup 完成；強行重繪只會製造無意義 churn。
+→ 此判斷已加註於 plan §Stage 5 已完成項，避免後續審查再次誤判。
+
+### 回應 2 [MEDIUM] flutter test 不可重現的全綠
+
+**承認原 commit 的 “321/321 × 2 全綠” 描述有過度樂觀的成分**：
+- 平行 isolate 模式下，`DatabaseHelper` 走預設 disk 路徑 `resqmesh_local.db`，
+  多檔同時開檔會偶發 UNIQUE / `database is locked`（auditor 報告 336/335 + fail
+  即此狀況的另一 PRNG branch）。
+- 之前我跑 `flutter test` 兩次都全綠是 **lucky run**：parallelism 排程剛好
+  錯開了 negotiation_manager / event_manager 的 seeding 競爭。
+
+**Stage 5-fix 補丁（2026-04-25）**：
+- 在 `lib/app/db/database_helper.dart` 加入 `@visibleForTesting` 的兩個 hook：
+  - `static String? testDatabasePathOverride`：測試端 `setUpAll` 設為
+    `inMemoryDatabasePath` (`:memory:`)，每個 isolate 開獨立 in-memory DB。
+  - `Future<void> resetForTest()`：測試端 `setUp` 呼叫，close + 重置
+    `_db = null`，下次存取自動 rebuild → 完全零殘留。
+- 7 個測試檔（chat_service / debug_log / event_manager / chat_event_handler /
+  negotiation_fsm / negotiation_manager / up_pipeline / widget_test）的 `setUpAll`
+  全套用 in-memory override。
+- 4 個含 `_uid(prefix)` 的測試檔加 atomic counter（in-memory DB 過快會造成
+  4 連 microsecondsSinceEpoch 撞同 tick）：
+  ```dart
+  int _seq = 0;
+  String _uid(String prefix) =>
+      '$prefix-${DateTime.now().microsecondsSinceEpoch}-${++_seq}';
+  ```
+
+**重新驗收**（平行模式三輪）：
+```
+flutter test  # pass 1 → 321/321 ✓ (15.4s)
+flutter test  # pass 2 → 321/321 ✓ (10.7s)
+flutter test  # pass 3 → 321/321 ✓ (10.5s)
+flutter test --concurrency=1  # serial → 321/321 ✓
+```
+
+### 回應 3 [MEDIUM] 手動驗收證據缺失
+
+**承認本輪只跑 unit + analyze + check_layers，沒有逐步手測證據**。
+原因：本 session 為純 CLI 環境，無法直接驅動 Android emulator / 實機。
+plan §Stage 5 L314 的「模擬器全鏈路」是嚴格的硬驗收，這部分**不在本輪
+commit 範圍內**——應該由具備裝置的測試者另行執行並回填證據。
+
+**留下可填的手測表格骨架**（供下一位測試者照填）：
+
+| # | 步驟 | 期望 | 實際 | 截圖/錄影 |
+|---|------|------|------|------------|
+| 1 | 全新安裝 → onboarding 載入 | 深紫底 + 紅 spinner，無黑屏閃爍 | _待填_ | _待填_ |
+| 2 | onboarding 暱稱輸入 → 完成 | 進入主頁 | _待填_ | _待填_ |
+| 3 | 主頁 → 發需求（triage） | 黃/紅 SOS 按鈕、3 秒長按解鎖 | _待填_ | _待填_ |
+| 4 | 主頁 → 發供給（supply_registration） | 三層分類、配送模式可複選、發布成功 snackbar | _待填_ | _待填_ |
+| 5 | 媒合配對 → 進導航（NavigationScreen） | role 自動判定、目標位置、BLE 掃描 | _待填_ | _待填_ |
+| 6 | 導航 → 進實體交接 PIN 模式 | role 正確（DELIVER→provider, PICKUP→requester） | _待填_ | _待填_ |
+| 7 | 實體交接 BLE 模式 | 連線成功、雙方 PIN 校驗 | _待填_ | _待填_ |
+| 8 | 實體交接 DROP_OFF 模式 | photo + desc 填寫流程順 | _待填_ | _待填_ |
+
+**注意**：手測未通過前，本階段「正式」驗收仍視為部分達成。Stage 5 的
+core deliverables（facade / 測試替身 / role 修正 / dispose 修正）本身是
+單元層即可驗證的，已通過；UI 全鏈路驗收應由實機測試者補上。
+
+### 回應 4 [LOW] mesh_runtime_controller 未走 facade
+
+**承認，且為刻意延後**。已在 plan §Stage 5「限縮版 facade」項補上明確
+警告 emoji 與「延後到 Stage 6/7」註記，避免文字與實作不一致。
+
+理由：mesh_runtime 涉及的 9 個 static（startMeshForegroundService /
+startAndroidDataMuleMode / startBleRelayMode / stopAllServices /
+updateBloomFilter / updateEventOutbox / requestHighBandwidthTransfer /
+startBleAdvertising / getGattServerStatus）涉跨平台 (Android/iOS)
+contract，且 Stage 6 iOS handoff P0 修正會直接動到 transport / advertise
+路徑——若本輪先包進 facade，Stage 6 又要重新調整介面，會變成虛工。
+
+UI 層仍滿足「零 NativeBridge 直呼」硬驗收：UI 只透過
+`MeshRuntimeController.instance.*` 進入這些方法，不會繞過 controller。
+
