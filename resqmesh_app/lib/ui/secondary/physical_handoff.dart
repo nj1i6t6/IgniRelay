@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/controllers/handoff_controller.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 enum HandoffRole { provider, requester }
 
@@ -61,6 +61,8 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
 
   // ── DROP_OFF 專用狀態 ──
   bool _dropOffPlaced = false;
+  // 照片描述：UI 捕捉輸入但目前不上送（規劃中），保留欄位以利後續接入。
+  // ignore: unused_field
   String _dropOffPhotoDesc = '';
   double? _dropOffLat;
   double? _dropOffLng;
@@ -267,7 +269,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
       appBar: AppBar(
-        title: Text(S.of(context)!.handoffTitle, style: const TextStyle(color: Colors.white)),
+        title: Text(context.l10n.handoffTitle, style: const TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -282,7 +284,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
   }
 
   Widget _buildProviderView() {
-    final timeout = widget.urgency >= 2 ? S.of(context)!.handoffTimeout30min : S.of(context)!.handoffTimeout4hr;
+    final timeout = widget.urgency >= 2 ? context.l10n.handoffTimeout30min : context.l10n.handoffTimeout4hr;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -291,12 +293,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
           const Icon(Icons.qr_code_2, color: Colors.white, size: 64),
           const SizedBox(height: 16),
           Text(
-            S.of(context)!.handoffProviderResource(widget.resourceType),
+            context.l10n.handoffProviderResource(widget.resourceType),
             style: const TextStyle(color: Colors.white70, fontSize: 16),
           ),
           const SizedBox(height: 32),
           Text(
-            S.of(context)!.handoffProviderPinLabel,
+            context.l10n.handoffProviderPinLabel,
             style: const TextStyle(color: Colors.white54, fontSize: 14),
           ),
           const SizedBox(height: 12),
@@ -336,7 +338,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    S.of(context)!.handoffProviderTimeout(timeout),
+                    context.l10n.handoffProviderTimeout(timeout),
                     style: const TextStyle(color: Colors.orange, fontSize: 13),
                   ),
                 ),
@@ -345,12 +347,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            S.of(context)!.handoffProviderWaiting,
+            context.l10n.handoffProviderWaiting,
             style: const TextStyle(color: Colors.white30, fontSize: 13),
           ),
           const SizedBox(height: 8),
           Text(
-            S.of(context)!.handoffProviderGattNote,
+            context.l10n.handoffProviderGattNote,
             style: const TextStyle(color: Colors.cyan, fontSize: 11),
           ),
           const SizedBox(height: 16),
@@ -370,12 +372,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
           const Icon(Icons.pin, color: Colors.white, size: 64),
           const SizedBox(height: 16),
           Text(
-            S.of(context)!.handoffProviderResource(widget.resourceType),
+            context.l10n.handoffProviderResource(widget.resourceType),
             style: const TextStyle(color: Colors.white70, fontSize: 16),
           ),
           const SizedBox(height: 8),
           Text(
-            S.of(context)!.handoffRequesterPinPrompt,
+            context.l10n.handoffRequesterPinPrompt,
             style: const TextStyle(color: Colors.white54, fontSize: 14),
           ),
           const SizedBox(height: 32),
@@ -419,12 +421,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
 
           if (_isLockedOut)
             Text(
-              S.of(context)!.handoffRequesterLockout(_lockoutSeconds),
+              context.l10n.handoffRequesterLockout(_lockoutSeconds),
               style: const TextStyle(color: Colors.redAccent, fontSize: 13),
             )
           else if (_wrongAttempts > 0)
             Text(
-              S.of(context)!.handoffRequesterWrong(remaining),
+              context.l10n.handoffRequesterWrong(remaining),
               style: const TextStyle(color: Colors.orange, fontSize: 13),
             ),
 
@@ -444,7 +446,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
                 disabledBackgroundColor: Colors.white12,
               ),
               child: Text(
-                S.of(context)!.handoffRequesterConfirmButton,
+                context.l10n.handoffRequesterConfirmButton,
                 style: const TextStyle(
                     color: Colors.black,
                     fontSize: 16,
@@ -510,12 +512,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
           const Icon(Icons.inventory_2, color: Colors.amber, size: 64),
           const SizedBox(height: 16),
           Text(
-            S.of(context)!.handoffProviderResource(widget.resourceType),
+            context.l10n.handoffProviderResource(widget.resourceType),
             style: const TextStyle(color: Colors.white70, fontSize: 16),
           ),
           const SizedBox(height: 24),
           Text(
-            S.of(context)!.handoffDropoffProviderTitle,
+            context.l10n.handoffDropoffProviderTitle,
             style: const TextStyle(
                 color: Colors.amber, fontSize: 18, fontWeight: FontWeight.bold),
           ),
@@ -532,7 +534,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(S.of(context)!.handoffDropoffLocationLabel,
+                Text(context.l10n.handoffDropoffLocationLabel,
                     style: const TextStyle(color: Colors.white70, fontSize: 14)),
                 const SizedBox(height: 8),
                 Row(
@@ -544,7 +546,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
                       child: Text(
                         _dropOffLat != null
                             ? '${_dropOffLat!.toStringAsFixed(5)}, ${_dropOffLng!.toStringAsFixed(5)}'
-                            : S.of(context)!.handoffDropoffUseCurrentLocation,
+                            : context.l10n.handoffDropoffUseCurrentLocation,
                         style: TextStyle(
                           color: _dropOffLat != null
                               ? Colors.white
@@ -561,7 +563,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
                           _dropOffLng = 121.543;
                         });
                       },
-                      child: Text(S.of(context)!.handoffDropoffLocateButton,
+                      child: Text(context.l10n.handoffDropoffLocateButton,
                           style: const TextStyle(color: Colors.cyan, fontSize: 13)),
                     ),
                   ],
@@ -577,9 +579,9 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
             style: const TextStyle(color: Colors.white),
             maxLines: 2,
             decoration: InputDecoration(
-              labelText: S.of(context)!.handoffDropoffDescLabel,
+              labelText: context.l10n.handoffDropoffDescLabel,
               labelStyle: const TextStyle(color: Colors.white54),
-              hintText: S.of(context)!.handoffDropoffDescHint,
+              hintText: context.l10n.handoffDropoffDescHint,
               hintStyle: const TextStyle(color: Colors.white24, fontSize: 12),
               prefixIcon:
                   const Icon(Icons.photo_camera, color: Colors.white54),
@@ -609,7 +611,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
                   ? const Icon(Icons.check, color: Colors.white)
                   : const Icon(Icons.place, color: Colors.white),
               label: Text(
-                _dropOffPlaced ? S.of(context)!.handoffDropoffWaitingButton : S.of(context)!.handoffDropoffConfirmButton,
+                _dropOffPlaced ? context.l10n.handoffDropoffWaitingButton : context.l10n.handoffDropoffConfirmButton,
                 style: const TextStyle(color: Colors.white, fontSize: 16),
               ),
               style: ElevatedButton.styleFrom(
@@ -636,12 +638,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
           const Icon(Icons.inventory_2, color: Colors.amber, size: 64),
           const SizedBox(height: 16),
           Text(
-            S.of(context)!.handoffProviderResource(widget.resourceType),
+            context.l10n.handoffProviderResource(widget.resourceType),
             style: const TextStyle(color: Colors.white70, fontSize: 16),
           ),
           const SizedBox(height: 24),
           Text(
-            S.of(context)!.handoffDropoffRequesterTitle,
+            context.l10n.handoffDropoffRequesterTitle,
             style: const TextStyle(
                 color: Colors.amber, fontSize: 18, fontWeight: FontWeight.bold),
           ),
@@ -658,7 +660,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
                 const Icon(Icons.info_outline, color: Colors.amber, size: 24),
                 const SizedBox(height: 8),
                 Text(
-                  S.of(context)!.handoffDropoffRequesterContent,
+                  context.l10n.handoffDropoffRequesterContent,
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white70, fontSize: 14),
                 ),
@@ -674,7 +676,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
               onPressed: _completeDropOff,
               icon: const Icon(Icons.check_circle, color: Colors.white),
               label: Text(
-                S.of(context)!.handoffDropoffRequesterConfirm,
+                context.l10n.handoffDropoffRequesterConfirm,
                 style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -704,7 +706,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
                 color: Colors.greenAccent, size: 100),
             const SizedBox(height: 24),
             Text(
-              S.of(context)!.handoffSuccessTitle,
+              context.l10n.handoffSuccessTitle,
               style: const TextStyle(
                   color: Colors.greenAccent,
                   fontSize: 28,
@@ -712,7 +714,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              S.of(context)!.handoffSuccessContent(widget.resourceType),
+              context.l10n.handoffSuccessContent(widget.resourceType),
               style: const TextStyle(color: Colors.white54, fontSize: 16),
             ),
             const SizedBox(height: 40),
@@ -720,7 +722,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
               onPressed: () => Navigator.of(context).pop(true),
               style:
                   ElevatedButton.styleFrom(backgroundColor: Colors.greenAccent),
-              child: Text(S.of(context)!.handoffSuccessBack, style: const TextStyle(color: Colors.black)),
+              child: Text(context.l10n.handoffSuccessBack, style: const TextStyle(color: Colors.black)),
             ),
           ],
         ),
@@ -738,7 +740,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
             const Icon(Icons.cancel, color: Colors.redAccent, size: 100),
             const SizedBox(height: 24),
             Text(
-              S.of(context)!.handoffCancelledTitle,
+              context.l10n.handoffCancelledTitle,
               style: const TextStyle(
                   color: Colors.redAccent,
                   fontSize: 24,
@@ -746,7 +748,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              S.of(context)!.handoffCancelledContent,
+              context.l10n.handoffCancelledContent,
               style: const TextStyle(color: Colors.white54, fontSize: 14),
             ),
             const SizedBox(height: 40),
@@ -754,7 +756,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
               onPressed: () => Navigator.of(context).pop(false),
               style:
                   ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-              child: Text(S.of(context)!.handoffCancelledBack, style: const TextStyle(color: Colors.white)),
+              child: Text(context.l10n.handoffCancelledBack, style: const TextStyle(color: Colors.white)),
             ),
           ],
         ),

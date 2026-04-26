@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// Stage 4d Round 2：MBTiles 載入失敗時的全螢幕錯誤畫面。
 ///
@@ -25,7 +25,7 @@ class MapErrorScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l = S.of(context)!;
+    final l = context.l10n;
     String errorMsg;
     if (errorKey == 'mapMbtilesLoadFail') {
       errorMsg = l.mapMbtilesLoadFail(errorArg ?? '');

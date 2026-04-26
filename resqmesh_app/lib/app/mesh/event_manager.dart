@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:fixnum/fixnum.dart' as fixnum;
 import 'package:uuid/uuid.dart';

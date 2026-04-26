@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 /// Stage 4d Round 2：危險標記詳情 BottomSheet。
 ///
@@ -28,7 +29,7 @@ class HazardInfoSheet {
   }) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: context.igni.bg2,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -75,7 +76,7 @@ class _HazardInfoSheetBody extends StatelessWidget {
     final desc = hazard['description'] as String? ?? '';
     final createdAt = (hazard['created_at'] as int?) ?? 0;
 
-    final l = S.of(context)!;
+    final l = context.l10n;
 
     // 時間顯示
     String timeAgo = '';

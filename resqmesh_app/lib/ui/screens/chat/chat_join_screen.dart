@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart' as crypto_lib;
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/geo/village_geofence.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// Screen for joining chat rooms via GPS auto-detect, manual location, or invite code.
 class ChatJoinScreen extends StatefulWidget {
@@ -32,7 +32,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
   Future<void> _autoJoinVillage() async {
     setState(() {
       _joining = true;
-      _statusMessage = S.of(context)!.chatJoinGpsLocating;
+      _statusMessage = context.l10n.chatJoinGpsLocating;
     });
 
     try {
@@ -44,7 +44,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
           await Future.delayed(const Duration(milliseconds: 500));
           if (locService.hasLocation) break;
           if (!mounted) return;
-          setState(() => _statusMessage = S.of(context)!.chatJoinGpsWaiting((i + 1) ~/ 2));
+          setState(() => _statusMessage = context.l10n.chatJoinGpsWaiting((i + 1) ~/ 2));
         }
       }
 
@@ -53,7 +53,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
           setState(() => _statusMessage = null);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(locService.unavailableReason ?? S.of(context)!.chatJoinGpsFail),
+              content: Text(locService.unavailableReason ?? context.l10n.chatJoinGpsFail),
               duration: const Duration(seconds: 4),
             ),
           );
@@ -61,17 +61,17 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
         return;
       }
 
-      setState(() => _statusMessage = S.of(context)!.chatJoinGpsQuerying);
+      setState(() => _statusMessage = context.l10n.chatJoinGpsQuerying);
 
       final roomId = await _chatService.autoJoinVillageRoom();
       if (roomId != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context)!.chatJoinAutoSuccess)),
+          SnackBar(content: Text(context.l10n.chatJoinAutoSuccess)),
         );
         Navigator.pop(context, true);
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context)!.chatJoinAutoFailRegion)),
+          SnackBar(content: Text(context.l10n.chatJoinAutoFailRegion)),
         );
       }
     } finally {
@@ -97,7 +97,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
         setState(() => _searchResults = results);
         if (results.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(S.of(context)!.chatJoinSearchNoResults)),
+            SnackBar(content: Text(context.l10n.chatJoinSearchNoResults)),
           );
         }
       }
@@ -148,14 +148,14 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context)!.chatJoinSuccess(village.fullName))),
+          SnackBar(content: Text(context.l10n.chatJoinSuccess(village.fullName))),
         );
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context)!.chatJoinFail(e.toString()))),
+          SnackBar(content: Text(context.l10n.chatJoinFail(e.toString()))),
         );
       }
     } finally {
@@ -191,14 +191,14 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context)!.chatJoinInviteSuccess)),
+          SnackBar(content: Text(context.l10n.chatJoinInviteSuccess)),
         );
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context)!.chatJoinFail(e.toString()))),
+          SnackBar(content: Text(context.l10n.chatJoinFail(e.toString()))),
         );
       }
     } finally {
@@ -216,7 +216,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
   @override
   Widget build(BuildContext context) {
     final p = context.igni;
-    final s = S.of(context)!;
+    final s = context.l10n;
     return Scaffold(
       backgroundColor: p.bg0,
       appBar: AppBar(

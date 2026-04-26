@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
@@ -20,7 +19,7 @@ import 'package:ignirelay_app/app/services/match_service.dart';
 import 'package:ignirelay_app/ui/secondary/physical_handoff.dart';
 import 'package:ignirelay_app/ui/theme/ignirelay_theme.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// 導航引導畫面
 /// 顯示供給/需求兩方座標、直線距離、方位、BLE 近接偵測
@@ -102,12 +101,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
             barrierDismissible: false,
             builder: (_) => AlertDialog(
               backgroundColor: const Color(0xFF1a1a2e),
-              title: Text(S.of(context)!.navCancelDialogTitle, style: const TextStyle(color: Colors.white)),
-              content: Text(S.of(context)!.navCancelDialogContent, style: const TextStyle(color: Colors.white70)),
+              title: Text(context.l10n.navCancelDialogTitle, style: const TextStyle(color: Colors.white)),
+              content: Text(context.l10n.navCancelDialogContent, style: const TextStyle(color: Colors.white70)),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
-                  child: Text(S.of(context)!.navCancelDialogBack, style: const TextStyle(color: Colors.redAccent)),
+                  child: Text(context.l10n.navCancelDialogBack, style: const TextStyle(color: Colors.redAccent)),
                 ),
               ],
             ),
@@ -117,7 +116,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
         _locationRefresh?.cancel();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(S.of(context)!.navCompleteSnack), backgroundColor: Colors.green),
+            SnackBar(content: Text(context.l10n.navCompleteSnack), backgroundColor: Colors.green),
           );
           Navigator.popUntil(context, (r) => r.isFirst);
         }
@@ -344,15 +343,15 @@ class _NavigationScreenState extends State<NavigationScreen> {
     // 配送方向描述
     String whoMoves;
     if (m.deliveryMode == 'DELIVER') {
-      whoMoves = S.of(context)!.navDirectionProviderToReq;
+      whoMoves = context.l10n.navDirectionProviderToReq;
     } else {
-      whoMoves = S.of(context)!.navDirectionReqToProvider;
+      whoMoves = context.l10n.navDirectionReqToProvider;
     }
 
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
       appBar: AppBar(
-        title: Text(S.of(context)!.navTitle, style: const TextStyle(color: Colors.white)),
+        title: Text(context.l10n.navTitle, style: const TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -451,13 +450,13 @@ class _NavigationScreenState extends State<NavigationScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        S.of(context)!.navSupplyInfo(m.supplyQty.toInt(), m.requestQty.toInt(), (m.fulfillmentRatio * 100).toInt()),
+                        context.l10n.navSupplyInfo(m.supplyQty.toInt(), m.requestQty.toInt(), (m.fulfillmentRatio * 100).toInt()),
                         style: const TextStyle(
                             color: Colors.white38, fontSize: 12),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ] else ...[
-                      Text(S.of(context)!.navGpsLocating,
+                      Text(context.l10n.navGpsLocating,
                           style:
                               const TextStyle(color: Colors.white38, fontSize: 16)),
                     ],
@@ -480,7 +479,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                           color: _peerDetected ? Colors.white : Colors.white38,
                         ),
                         label: Text(
-                          _peerDetected ? S.of(context)!.navHandoffButton : S.of(context)!.navHandoffWaiting,
+                          _peerDetected ? context.l10n.navHandoffButton : context.l10n.navHandoffWaiting,
                           style: TextStyle(
                             color:
                                 _peerDetected ? Colors.white : Colors.white38,
@@ -599,13 +598,13 @@ class _NavigationScreenState extends State<NavigationScreen> {
       String strength;
       Color strengthColor;
       if (_peerRssi > -60) {
-        strength = S.of(context)!.navBleSignalStrong;
+        strength = context.l10n.navBleSignalStrong;
         strengthColor = Colors.greenAccent;
       } else if (_peerRssi > -80) {
-        strength = S.of(context)!.navBleSignalMedium;
+        strength = context.l10n.navBleSignalMedium;
         strengthColor = Colors.amber;
       } else {
-        strength = S.of(context)!.navBleSignalWeak;
+        strength = context.l10n.navBleSignalWeak;
         strengthColor = Colors.orange;
       }
 
@@ -621,7 +620,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
             const Icon(Icons.bluetooth_connected,
                 color: Colors.greenAccent, size: 20),
             const SizedBox(width: 8),
-            Text(S.of(context)!.navBleDetected,
+            Text(context.l10n.navBleDetected,
                 style:
                     const TextStyle(color: Colors.greenAccent, fontSize: 13)),
             const Spacer(),
@@ -631,7 +630,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 color: strengthColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Text(S.of(context)!.navBleSignal(strength),
+              child: Text(context.l10n.navBleSignal(strength),
                   style: TextStyle(color: strengthColor, fontSize: 11)),
             ),
           ],
@@ -657,7 +656,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              S.of(context)!.navBleScanning,
+              context.l10n.navBleScanning,
               style: const TextStyle(color: Colors.white38, fontSize: 12),
             ),
           ),

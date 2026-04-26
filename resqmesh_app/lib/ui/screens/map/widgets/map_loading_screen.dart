@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// Stage 4d Round 2：地圖底圖載入中的全螢幕佔位。
 ///
@@ -11,7 +11,7 @@ class MapLoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l = S.of(context)!;
+    final l = context.l10n;
     return Container(
       color: const Color(0xFFF2EFE9),
       child: Center(

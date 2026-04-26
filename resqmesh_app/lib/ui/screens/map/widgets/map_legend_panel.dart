@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// Stage 4d Round 2：地圖右上圖例面板。
 ///
@@ -27,7 +27,7 @@ class MapLegendPanel extends StatelessWidget {
           ],
         ),
         child: Builder(builder: (ctx) {
-          final l = S.of(ctx)!;
+          final l = ctx.l10n;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,

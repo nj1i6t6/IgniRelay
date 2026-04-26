@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/services/match_repository.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// Tab 2: 我的需求 (My Requests)
 class MatchTabRequests extends StatelessWidget {
@@ -45,7 +45,7 @@ class MatchTabRequests extends StatelessWidget {
       backgroundColor: p.bg2,
       onRefresh: onRefresh,
       child: myRequests.isEmpty
-          ? buildEmptyState(Icons.campaign, S.of(context)!.requestsEmptyTitle, S.of(context)!.requestsEmptySubtitle)
+          ? buildEmptyState(Icons.campaign, context.l10n.requestsEmptyTitle, context.l10n.requestsEmptySubtitle)
           : ListView.builder(
               padding: const EdgeInsets.only(left: 12, right: 12, top: 8, bottom: 140),
               itemCount: myRequests.length,
@@ -65,13 +65,13 @@ class MatchTabRequests extends StatelessWidget {
     String statusLabel;
     if (request.status == 'MATCHED') {
       statusColor = p.info;
-      statusLabel = S.of(context)!.requestsStatusMatching;
+      statusLabel = context.l10n.requestsStatusMatching;
     } else if (remaining <= 0) {
       statusColor = p.ok;
-      statusLabel = S.of(context)!.requestsStatusFulfilled;
+      statusLabel = context.l10n.requestsStatusFulfilled;
     } else {
       statusColor = p.warn;
-      statusLabel = S.of(context)!.requestsStatusWaiting;
+      statusLabel = context.l10n.requestsStatusWaiting;
     }
 
     // Find incoming proposals for this request
@@ -160,18 +160,18 @@ class MatchTabRequests extends StatelessWidget {
             const SizedBox(height: 10),
             Row(
               children: [
-                _buildQtyChip(S.of(context)!.requestsQtyNeeded, '$totalQty ${S.of(context)!.requestsQtyUnit}', p.text2),
+                _buildQtyChip(context.l10n.requestsQtyNeeded, '$totalQty ${context.l10n.requestsQtyUnit}', p.text2),
                 const SizedBox(width: 8),
-                _buildQtyChip(S.of(context)!.requestsQtyRemaining, '$remaining ${S.of(context)!.requestsQtyUnit}', remaining > 0 ? p.warn : p.ok),
+                _buildQtyChip(context.l10n.requestsQtyRemaining, '$remaining ${context.l10n.requestsQtyUnit}', remaining > 0 ? p.warn : p.ok),
                 const SizedBox(width: 8),
                 if (fulfilled > 0)
-                  _buildQtyChip(S.of(context)!.requestsQtyFulfilled, '$fulfilled ${S.of(context)!.requestsQtyUnit}', p.ok),
+                  _buildQtyChip(context.l10n.requestsQtyFulfilled, '$fulfilled ${context.l10n.requestsQtyUnit}', p.ok),
               ],
             ),
             // Incoming proposals
             if (incomingForThis.isNotEmpty) ...[
               const SizedBox(height: 10),
-              Text(S.of(context)!.requestsProposalsTitle,
+              Text(context.l10n.requestsProposalsTitle,
                   style: TextStyle(color: p.info, fontSize: 11, fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               ...incomingForThis.map((neg) => _buildIncomingProposal(context, neg)),
@@ -183,7 +183,7 @@ class MatchTabRequests extends StatelessWidget {
                 TextButton.icon(
                   onPressed: () => _cancelRequestDialog(context, request),
                   icon: Icon(Icons.cancel_outlined, size: 16, color: p.sos),
-                  label: Text(S.of(context)!.requestsCancelButton, style: TextStyle(color: p.sos, fontSize: 12)),
+                  label: Text(context.l10n.requestsCancelButton, style: TextStyle(color: p.sos, fontSize: 12)),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: Size.zero,
@@ -220,9 +220,9 @@ class MatchTabRequests extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(S.of(context)!.requestsProposalOffer(offeredQty.toInt()),
+                Text(context.l10n.requestsProposalOffer(offeredQty.toInt()),
                     style: TextStyle(color: p.text0, fontSize: 12)),
-                Text(S.of(context)!.requestsProposalRemaining(remaining),
+                Text(context.l10n.requestsProposalRemaining(remaining),
                     style: TextStyle(
                         color: isExpiringSoon(expiresAt) ? p.sos : p.text3,
                         fontSize: 10)),
@@ -237,7 +237,7 @@ class MatchTabRequests extends StatelessWidget {
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: Text(S.of(context)!.requestsAcceptButton, style: TextStyle(color: p.ok, fontSize: 12)),
+            child: Text(context.l10n.requestsAcceptButton, style: TextStyle(color: p.ok, fontSize: 12)),
           ),
           const SizedBox(width: 6),
           TextButton(
@@ -251,7 +251,7 @@ class MatchTabRequests extends StatelessWidget {
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: Text(S.of(context)!.requestsDeclineButton, style: TextStyle(color: p.sos, fontSize: 12)),
+            child: Text(context.l10n.requestsDeclineButton, style: TextStyle(color: p.sos, fontSize: 12)),
           ),
         ],
       ),
@@ -265,19 +265,19 @@ class MatchTabRequests extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: p.bg2,
-        title: Text(S.of(ctx)!.requestsCancelDialogTitle, style: TextStyle(color: p.text0)),
+        title: Text(ctx.l10n.requestsCancelDialogTitle, style: TextStyle(color: p.text0)),
         content: Text(
-          S.of(ctx)!.requestsCancelDialogContent(readableName),
+          ctx.l10n.requestsCancelDialogContent(readableName),
           style: TextStyle(color: p.text1),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(S.of(ctx)!.requestsCancelDialogBack),
+            child: Text(ctx.l10n.requestsCancelDialogBack),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(S.of(ctx)!.requestsCancelDialogConfirm, style: TextStyle(color: p.sos)),
+            child: Text(ctx.l10n.requestsCancelDialogConfirm, style: TextStyle(color: p.sos)),
           ),
         ],
       ),

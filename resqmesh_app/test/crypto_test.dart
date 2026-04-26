@@ -25,7 +25,7 @@ void main() {
     });
 
     test('Signer should generate and verify valid signature', () async {
-      final String mockPayload = "urgent_sos_message_data";
+      const String mockPayload = "urgent_sos_message_data";
       final List<int> payloadBytes = utf8.encode(mockPayload);
 
       // 使用測試金鑰對簽名
@@ -44,7 +44,7 @@ void main() {
     });
 
     test('Signer should reject tampered payload', () async {
-      final String mockPayload = "urgent_sos_message_data";
+      const String mockPayload = "urgent_sos_message_data";
       final List<int> payloadBytes = utf8.encode(mockPayload);
 
       // 使用測試金鑰對簽名
@@ -53,7 +53,7 @@ void main() {
       final signature = Uint8List.fromList(sig.bytes);
 
       // 竄改後的 payload
-      final String tamperedPayload = "urgent_sos_message_data_hacked";
+      const String tamperedPayload = "urgent_sos_message_data_hacked";
       final List<int> tamperedBytes = utf8.encode(tamperedPayload);
 
       // 驗證應失敗

@@ -8,7 +8,6 @@ import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/emergency/emergency_mode_controller.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/ui/screens/chat/chat_list_screen.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
@@ -17,6 +16,7 @@ import 'package:ignirelay_app/ui/screens/map/map_screen.dart';
 import 'package:ignirelay_app/ui/screens/match/match_screen.dart';
 import 'package:ignirelay_app/ui/screens/me/profile_screen.dart';
 import 'package:ignirelay_app/ui/shell/igni_bottom_tab_bar.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// 烽傳 Ignirelay 主 App 殼（4 分頁）。
 ///
@@ -171,13 +171,13 @@ class _MainShellState extends State<MainShell> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          S.of(context)!.mainTabSosYellowSnack(desc),
+          context.l10n.mainTabSosYellowSnack(desc),
           style: IgniTypography.bodyMedium(Colors.white),
         ),
         backgroundColor: p.warn,
         duration: const Duration(seconds: 6),
         action: SnackBarAction(
-          label: S.of(context)!.mainTabSosYellowAction,
+          label: context.l10n.mainTabSosYellowAction,
           textColor: Colors.black,
           onPressed: () => setState(() => _index = 0),
         ),
@@ -188,15 +188,15 @@ class _MainShellState extends State<MainShell> {
   void _showMatchSnack(int eventType) {
     final p = context.igni;
     final msg = eventType == 2
-        ? S.of(context)!.mainTabMatchNotifProvider
-        : S.of(context)!.mainTabMatchNotifRequester;
+        ? context.l10n.mainTabMatchNotifProvider
+        : context.l10n.mainTabMatchNotifRequester;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg, style: IgniTypography.bodyMedium(Colors.white)),
         backgroundColor: p.ok,
         duration: const Duration(seconds: 8),
         action: SnackBarAction(
-          label: S.of(context)!.mainTabMatchNotifAction,
+          label: context.l10n.mainTabMatchNotifAction,
           textColor: Colors.white,
           onPressed: () => setState(() => _index = 2),
         ),
@@ -210,7 +210,7 @@ class _MainShellState extends State<MainShell> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
-        final s = S.of(ctx)!;
+        final s = ctx.l10n;
         return AlertDialog(
           backgroundColor: p.bg1,
           shape: const RoundedRectangleBorder(
@@ -276,7 +276,7 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    final s = S.of(context)!;
+    final s = context.l10n;
     final p = context.igni;
 
     final tabs = <IgniTabItem>[

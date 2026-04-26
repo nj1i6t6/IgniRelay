@@ -408,6 +408,28 @@ resqmesh_app/lib/
   - Token smoke：手動改一個 token 值跑 `flutter test`，應 fail 於 golden 比對（證明鎖定有效），還原即恢復綠燈
 - **commit**：`refactor(stage-7): 清理品質 + i18n 安全化 + Golden 鎖定 + bump 0.2.0`
 
+#### Stage 7 落地狀態（commit 前實況，2026-04-26）
+
+| 計畫項目 | 狀態 |
+|---|---|
+| `flutter analyze` < 20（驗收上限）| ✅ 0 issue |
+| `flutter test` 全綠（含 9 張 golden）| ✅ 350 pass / 3 skip |
+| `grep -rE "S\.of\(context\)!|AppLocalizations\.of\(context\)!" lib/` = 0 | ✅ 0 命中 |
+| writeDebugLog → `Future<void>` + 測試解 flake | ✅ |
+| i18n 安全化（`context.l10n` 擴充 + 全域改寫 36 檔） | ✅ |
+| Design System Golden 3×3（GlassCard / StatusChip / GlassIconBtn × dark/light/emergency）| ✅ baseline `test/widgets/goldens/*` 存在 |
+| Token smoke 文件 `docs/golden_workflow.md` | ✅ |
+| Bump version → `0.2.0` | ✅ |
+| `DistrictRoadLookup` 真實實作（vector tile place + transportation_name 反查）| ✅ 已實接 + map_screen debounce 1.5s 觸發 |
+| Map sheet/panel 硬碼色（`Color(0xFF1a1a2e)` 等）→ IgniPalette token | ✅ map 範圍內全部替換為 `bg2` |
+| **MapController（ChangeNotifier + ListenableBuilder）抽出** | ⏳ **延至 Stage 7-r2**：map_screen 1380 行的 SOS / GPS / hazard / event / POI / marking / FAB / SOS button 互相耦合，state 拆出至 controller 需大面積調整 widget tree（含 inline 渲染 vs context 依賴拆分），單次操作風險過高。Stage 7 round 1 落地其餘八項（測試 + 視覺 + i18n 鎖死）後分次處理 |
+| 拆 `MapView` / `HazardLayer` / `PoiLayer` / `SelfMarker` / `HazardReportFlow` | ⏳ **同上延至 Stage 7-r2**，需先有 MapController 才有 single source of truth |
+| E2E 測試 match → navigation → handoff → complete | ✅ `test/controllers/match_to_handoff_e2e_test.dart` 三案：happy path / 錯 PIN / legacy fallback（mock-driven，real device test 由使用者實機跑）|
+
+> Stage 7-r2 範圍：MapController 抽出 + 5 widget 拆分。觸發條件：使用者實機驗證
+> Stage 7 round 1 包後 SOS 全路徑無 regression、確認其他工作可暫停，再切入 r2。
+> 未做也不影響打包上機（純結構債，行為不變）。
+
 ---
 
 ## 五、Mid-flight 決策規則

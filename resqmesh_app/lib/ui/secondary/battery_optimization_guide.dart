@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// 電池優化引導 Dialog
 /// 首次使用時引導用戶：
@@ -57,7 +57,7 @@ class BatteryOptimizationGuide {
     if (!Platform.isAndroid) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context)!.batteryAndroidOnly)),
+          SnackBar(content: Text(context.l10n.batteryAndroidOnly)),
         );
       }
       return;
@@ -99,7 +99,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
   }
 
   String _getManufacturerLabel(BuildContext context) {
-    final l = S.of(context)!;
+    final l = context.l10n;
     final m = _manufacturer;
     if (m.contains('xiaomi') || m.contains('redmi')) return l.batteryManufacturerXiaomi;
     if (m.contains('huawei')) return l.batteryManufacturerHuawei;
@@ -113,7 +113,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
   }
 
   String _getManufacturerInstruction(BuildContext context) {
-    final l = S.of(context)!;
+    final l = context.l10n;
     final m = _manufacturer;
     if (m.contains('xiaomi') || m.contains('redmi')) return l.batteryInstructionXiaomi;
     if (m.contains('huawei')) return l.batteryInstructionHuawei;
@@ -139,7 +139,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
           ),
           const SizedBox(width: 8),
           Text(
-            _step == 3 ? S.of(context)!.batteryDoneTitle : S.of(context)!.batteryGuideTitle,
+            _step == 3 ? context.l10n.batteryDoneTitle : context.l10n.batteryGuideTitle,
             style: const TextStyle(color: Colors.white, fontSize: 18),
           ),
         ],
@@ -186,7 +186,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  S.of(context)!.batteryIntroTitle,
+                  context.l10n.batteryIntroTitle,
                   style: const TextStyle(
                     color: Colors.orange,
                     fontWeight: FontWeight.bold,
@@ -199,16 +199,16 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
         ),
         const SizedBox(height: 16),
         Text(
-          S.of(context)!.batteryIntroBody,
+          context.l10n.batteryIntroBody,
           style: const TextStyle(color: Colors.white70, fontSize: 13),
         ),
         const SizedBox(height: 8),
-        _bulletPoint(S.of(context)!.batteryIntroConsequence1),
-        _bulletPoint(S.of(context)!.batteryIntroConsequence2),
-        _bulletPoint(S.of(context)!.batteryIntroConsequence3),
+        _bulletPoint(context.l10n.batteryIntroConsequence1),
+        _bulletPoint(context.l10n.batteryIntroConsequence2),
+        _bulletPoint(context.l10n.batteryIntroConsequence3),
         const SizedBox(height: 12),
         Text(
-          S.of(context)!.batteryIntroGuide,
+          context.l10n.batteryIntroGuide,
           style: const TextStyle(color: Colors.white54, fontSize: 12),
         ),
       ],
@@ -221,10 +221,10 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _stepIndicator(S.of(context)!.batteryStep1Label, S.of(context)!.batteryStep1Title),
+        _stepIndicator(context.l10n.batteryStep1Label, context.l10n.batteryStep1Title),
         const SizedBox(height: 12),
         Text(
-          S.of(context)!.batteryStep1Desc,
+          context.l10n.batteryStep1Desc,
           style: const TextStyle(color: Colors.white70, fontSize: 13),
         ),
         const SizedBox(height: 16),
@@ -248,14 +248,14 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
                     }
                   },
             icon: Icon(_exemptDone ? Icons.check : Icons.battery_saver),
-            label: Text(_exemptDone ? S.of(context)!.batteryStep1Done : S.of(context)!.batteryStep1Button),
+            label: Text(_exemptDone ? context.l10n.batteryStep1Done : context.l10n.batteryStep1Button),
           ),
         ),
         if (_exemptDone) ...[
           const SizedBox(height: 12),
           Center(
             child: Text(
-              '✓ ${S.of(context)!.batteryStep1Success}',
+              '✓ ${context.l10n.batteryStep1Success}',
               style: const TextStyle(color: Colors.green, fontSize: 13),
             ),
           ),
@@ -270,7 +270,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _stepIndicator(S.of(context)!.batteryStep2Label, S.of(context)!.batteryStep2Title(_getManufacturerLabel(context))),
+        _stepIndicator(context.l10n.batteryStep2Label, context.l10n.batteryStep2Title(_getManufacturerLabel(context))),
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(10),
@@ -301,14 +301,14 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
                     }
                   },
             icon: Icon(_manufacturerDone ? Icons.check : Icons.settings),
-            label: Text(_manufacturerDone ? S.of(context)!.batteryOpenedSettings : S.of(context)!.batteryGoSettings),
+            label: Text(_manufacturerDone ? context.l10n.batteryOpenedSettings : context.l10n.batteryGoSettings),
           ),
         ),
         if (_manufacturerDone) ...[
           const SizedBox(height: 8),
           Center(
             child: Text(
-              S.of(context)!.batteryReturnNote,
+              context.l10n.batteryReturnNote,
               style: const TextStyle(color: Colors.white54, fontSize: 12),
             ),
           ),
@@ -325,7 +325,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
         const Icon(Icons.check_circle, color: Colors.green, size: 64),
         const SizedBox(height: 16),
         Text(
-          S.of(context)!.batteryDoneContent,
+          context.l10n.batteryDoneContent,
           style: const TextStyle(
             color: Colors.white,
             fontSize: 16,
@@ -334,7 +334,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
         ),
         const SizedBox(height: 8),
         Text(
-          S.of(context)!.batteryDoneBody,
+          context.l10n.batteryDoneBody,
           style: const TextStyle(color: Colors.white70, fontSize: 13),
           textAlign: TextAlign.center,
         ),
@@ -352,7 +352,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
               const SizedBox(width: 8),
               Flexible(
                 child: Text(
-                  S.of(context)!.batteryDoneNote,
+                  context.l10n.batteryDoneNote,
                   style: const TextStyle(color: Colors.green, fontSize: 12),
                 ),
               ),
@@ -408,12 +408,12 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
         return [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: Text(S.of(context)!.batteryLaterButton, style: const TextStyle(color: Colors.white38)),
+            child: Text(context.l10n.batteryLaterButton, style: const TextStyle(color: Colors.white38)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
             onPressed: () => setState(() => _step = 1),
-            child: Text(S.of(context)!.batteryStartButton),
+            child: Text(context.l10n.batteryStartButton),
           ),
         ];
       case 1:
@@ -426,7 +426,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
                 setState(() => _step = 3);
               }
             },
-            child: Text(S.of(context)!.batterySkipButton, style: const TextStyle(color: Colors.white38)),
+            child: Text(context.l10n.batterySkipButton, style: const TextStyle(color: Colors.white38)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
@@ -437,19 +437,19 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
                 setState(() => _step = 3);
               }
             },
-            child: Text(S.of(context)!.batteryNextButton),
+            child: Text(context.l10n.batteryNextButton),
           ),
         ];
       case 2:
         return [
           TextButton(
             onPressed: () => setState(() => _step = 3),
-            child: Text(S.of(context)!.batterySkipButton, style: const TextStyle(color: Colors.white38)),
+            child: Text(context.l10n.batterySkipButton, style: const TextStyle(color: Colors.white38)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
             onPressed: () => setState(() => _step = 3),
-            child: Text(S.of(context)!.batteryNextButton),
+            child: Text(context.l10n.batteryNextButton),
           ),
         ];
       case 3:
@@ -457,7 +457,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
             onPressed: () => Navigator.of(context).pop(true),
-            child: Text(S.of(context)!.batteryFinishButton),
+            child: Text(context.l10n.batteryFinishButton),
           ),
         ];
       default:

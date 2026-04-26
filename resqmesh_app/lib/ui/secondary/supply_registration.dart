@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/geo_context_resolver.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 class SupplyRegistrationScreen extends StatefulWidget {
   const SupplyRegistrationScreen({super.key});
@@ -77,7 +77,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.supplyRegSuccessSnack),
+            content: Text(context.l10n.supplyRegSuccessSnack),
             backgroundColor: Colors.green[700],
           ),
         );
@@ -93,7 +93,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context)!.supplyRegFailSnack(e.toString())), backgroundColor: Colors.red[700]),
+          SnackBar(content: Text(context.l10n.supplyRegFailSnack(e.toString())), backgroundColor: Colors.red[700]),
         );
       }
     } finally {
@@ -106,7 +106,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
       appBar: AppBar(
-        title: Text(S.of(context)!.supplyRegTitle, style: const TextStyle(color: Colors.white)),
+        title: Text(context.l10n.supplyRegTitle, style: const TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -116,7 +116,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
           padding: const EdgeInsets.all(20),
           children: [
             // ── 第一層：物資大類 ──
-            Text(S.of(context)!.supplyRegCategoryLabel,
+            Text(context.l10n.supplyRegCategoryLabel,
                 style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             Wrap(
@@ -168,7 +168,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
 
             // ── 第二層：物資子類 ──
             if (_selectedCategory != null) ...[
-              Text(S.of(context)!.supplyRegSubCategoryLabel(SupplyCategoryLocalizer.categoryLabel(context, _selectedCategory!.code)),
+              Text(context.l10n.supplyRegSubCategoryLabel(SupplyCategoryLocalizer.categoryLabel(context, _selectedCategory!.code)),
                   style: const TextStyle(color: Colors.white70, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
@@ -205,7 +205,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
             // ── 第三層：具體品項（若有） ──
             if (_selectedSubCategory != null &&
                 _selectedSubCategory!.items.isNotEmpty) ...[
-              Text(S.of(context)!.supplyRegItemLabel,
+              Text(context.l10n.supplyRegItemLabel,
                   style: const TextStyle(color: Colors.white70, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
@@ -261,7 +261,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
 
             // ── 有效期限（hasExpiry 子分類才顯示）──
             if (_selectedSubCategory?.hasExpiry == true) ...[
-              Text(S.of(context)!.supplyRegExpiryLabel,
+              Text(context.l10n.supplyRegExpiryLabel,
                   style: const TextStyle(color: Colors.white70, fontSize: 14)),
               const SizedBox(height: 8),
               GestureDetector(
@@ -300,7 +300,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                         child: Text(
                           _expiryDate != null
                               ? '${_expiryDate!.year}/${_expiryDate!.month.toString().padLeft(2, '0')}/${_expiryDate!.day.toString().padLeft(2, '0')}'
-                              : S.of(context)!.supplyRegExpiryHint,
+                              : context.l10n.supplyRegExpiryHint,
                           style: TextStyle(
                             color: _expiryDate != null
                                 ? Colors.white
@@ -324,7 +324,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
 
             // ── 物品狀態（trackCondition 子分類才顯示）──
             if (_selectedSubCategory?.trackCondition == true) ...[
-              Text(S.of(context)!.supplyRegConditionLabel,
+              Text(context.l10n.supplyRegConditionLabel,
                   style: const TextStyle(color: Colors.white70, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
@@ -362,37 +362,37 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
               style: const TextStyle(color: Colors.white),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: _inputDecoration(S.of(context)!.supplyRegQtyLabel, Icons.numbers),
-              validator: (v) => (v == null || v.isEmpty) ? S.of(context)!.supplyRegQtyValidator : null,
+              decoration: _inputDecoration(context.l10n.supplyRegQtyLabel, Icons.numbers),
+              validator: (v) => (v == null || v.isEmpty) ? context.l10n.supplyRegQtyValidator : null,
             ),
             const SizedBox(height: 20),
 
             // ── 交接方式（可複選）──
-            Text(S.of(context)!.supplyRegDeliverySection,
+            Text(context.l10n.supplyRegDeliverySection,
                 style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             ...[
               _buildDeliveryModeCheckbox(
                 mode: 'DELIVER',
                 icon: Icons.delivery_dining,
-                label: S.of(context)!.supplyRegDeliveryDeliver,
-                subtitle: S.of(context)!.supplyRegDeliveryDeliverDesc,
+                label: context.l10n.supplyRegDeliveryDeliver,
+                subtitle: context.l10n.supplyRegDeliveryDeliverDesc,
                 activeColor: Colors.greenAccent,
               ),
               const SizedBox(height: 8),
               _buildDeliveryModeCheckbox(
                 mode: 'PICKUP',
                 icon: Icons.storefront,
-                label: S.of(context)!.supplyRegDeliveryPickup,
-                subtitle: S.of(context)!.supplyRegDeliveryPickupDesc,
+                label: context.l10n.supplyRegDeliveryPickup,
+                subtitle: context.l10n.supplyRegDeliveryPickupDesc,
                 activeColor: Colors.blueAccent,
               ),
               const SizedBox(height: 8),
               _buildDeliveryModeCheckbox(
                 mode: 'DROP_OFF',
                 icon: Icons.inventory_2,
-                label: S.of(context)!.supplyRegDeliveryDropoff,
-                subtitle: S.of(context)!.supplyRegDeliveryDropoffDesc,
+                label: context.l10n.supplyRegDeliveryDropoff,
+                subtitle: context.l10n.supplyRegDeliveryDropoffDesc,
                 activeColor: Colors.amber,
               ),
             ],
@@ -403,7 +403,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
               controller: _descCtrl,
               style: const TextStyle(color: Colors.white),
               maxLines: 2,
-              decoration: _inputDecoration(S.of(context)!.supplyRegNoteHint, Icons.notes),
+              decoration: _inputDecoration(context.l10n.supplyRegNoteHint, Icons.notes),
             ),
             const SizedBox(height: 20),
 
@@ -413,7 +413,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                 const Icon(Icons.radar, color: Colors.white54, size: 18),
                 const SizedBox(width: 8),
                 Text(
-                  S.of(context)!.supplyRegRange((_maxRange / 1000).toStringAsFixed(1)),
+                  context.l10n.supplyRegRange((_maxRange / 1000).toStringAsFixed(1)),
                   style: const TextStyle(color: Colors.white70),
                 ),
               ],
@@ -429,7 +429,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
               onChanged: (v) => setState(() => _maxRange = v),
             ),
             Text(
-              S.of(context)!.supplyRegRangeNote,
+              context.l10n.supplyRegRangeNote,
               style: const TextStyle(color: Colors.white30, fontSize: 11),
             ),
             const SizedBox(height: 24),
@@ -449,7 +449,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                     : const Icon(Icons.broadcast_on_personal,
                         color: Colors.white),
                 label: Text(
-                  _publishing ? S.of(context)!.supplyRegPublishing : S.of(context)!.supplyRegPublishButton,
+                  _publishing ? context.l10n.supplyRegPublishing : context.l10n.supplyRegPublishButton,
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
                 style: ElevatedButton.styleFrom(

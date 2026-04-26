@@ -21,6 +21,7 @@ import 'package:ignirelay_app/ui/secondary/survival_mode_screen.dart';
 import 'package:ignirelay_app/ui/widgets/igni_card.dart';
 import 'package:ignirelay_app/ui/widgets/igni_chip.dart';
 import 'package:ignirelay_app/ui/widgets/igni_section_label.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// 烽傳 Ignirelay「我」分頁。
 ///
@@ -72,7 +73,7 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) {
-        final s = S.of(ctx)!;
+        final s = ctx.l10n;
         return AlertDialog(
           title: Text(s.profileNicknameDialogTitle),
           content: TextField(
@@ -101,8 +102,8 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
     setState(() => _nickname = result);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(result.isNotEmpty
-          ? S.of(context)!.profileNicknameUpdated(result)
-          : S.of(context)!.profileNicknameCleared),
+          ? context.l10n.profileNicknameUpdated(result)
+          : context.l10n.profileNicknameCleared),
     ));
   }
 
@@ -141,7 +142,7 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final s = S.of(context)!;
+    final s = context.l10n;
     final p = context.igni;
 
     return Container(
@@ -246,7 +247,7 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
                       if (!context.mounted) return;
                       setState(() => _level = 1);
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(S.of(context)!.profileUpgradeSnack),
+                        content: Text(context.l10n.profileUpgradeSnack),
                       ));
                     },
                   ),
@@ -327,7 +328,7 @@ class _IdentityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.igni;
-    final s = S.of(context)!;
+    final s = context.l10n;
     final display = nickname.isNotEmpty ? nickname : s.profileAnonymous;
     final shortKey = pubKeyHex.length >= 24
         ? '${pubKeyHex.substring(0, 16)}...${pubKeyHex.substring(pubKeyHex.length - 8)}'
@@ -493,7 +494,7 @@ class _TierListState extends State<_TierList> {
   @override
   Widget build(BuildContext context) {
     final p = context.igni;
-    final s = S.of(context)!;
+    final s = context.l10n;
     final tiers = [
       (0, 'L0', s.onboardingBadgeL0, s.profileBadgeDescL0, false),
       (1, 'L1', s.onboardingBadgeL1, s.profileBadgeDescL1, false),
@@ -587,7 +588,7 @@ class _TierDetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.igni;
-    final s = S.of(context)!;
+    final s = context.l10n;
     final done = currentLevel > lvl;
     final active = currentLevel == lvl;
     final canUpgrade = currentLevel == lvl - 1 && !locked && lvl == 1;

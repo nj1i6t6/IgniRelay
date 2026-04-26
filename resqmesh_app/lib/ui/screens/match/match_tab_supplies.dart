@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/services/match_repository.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// Tab 1: 我的物資 (My Supplies)
 class MatchTabSupplies extends StatelessWidget {
@@ -31,7 +31,7 @@ class MatchTabSupplies extends StatelessWidget {
       backgroundColor: p.bg2,
       onRefresh: onRefresh,
       child: mySupplies.isEmpty
-          ? buildEmptyState(Icons.inventory_2, S.of(context)!.suppliesEmptyTitle, S.of(context)!.suppliesEmptySubtitle)
+          ? buildEmptyState(Icons.inventory_2, context.l10n.suppliesEmptyTitle, context.l10n.suppliesEmptySubtitle)
           : ListView.builder(
               padding: const EdgeInsets.only(left: 12, right: 12, top: 8, bottom: 140),
               itemCount: mySupplies.length,
@@ -51,13 +51,13 @@ class MatchTabSupplies extends StatelessWidget {
     String statusLabel;
     if (availQty <= 0) {
       statusColor = p.sos;
-      statusLabel = S.of(context)!.suppliesStatusExhausted;
+      statusLabel = context.l10n.suppliesStatusExhausted;
     } else if (committedQty > 0) {
       statusColor = p.warn;
-      statusLabel = S.of(context)!.suppliesStatusPartial;
+      statusLabel = context.l10n.suppliesStatusPartial;
     } else {
       statusColor = p.ok;
-      statusLabel = S.of(context)!.suppliesStatusAvailable;
+      statusLabel = context.l10n.suppliesStatusAvailable;
     }
 
     return Card(
@@ -91,7 +91,7 @@ class MatchTabSupplies extends StatelessWidget {
                           style: TextStyle(color: p.text0, fontSize: 14, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 2),
                       Text(
-                        supply.deliveryMode == 'DELIVER' ? S.of(context)!.suppliesDeliveryDeliver : S.of(context)!.suppliesDeliveryPickup,
+                        supply.deliveryMode == 'DELIVER' ? context.l10n.suppliesDeliveryDeliver : context.l10n.suppliesDeliveryPickup,
                         style: TextStyle(color: p.text3, fontSize: 11),
                       ),
                     ],
@@ -112,12 +112,12 @@ class MatchTabSupplies extends StatelessWidget {
             // Quantity bar
             Row(
               children: [
-                _buildQtyChip(S.of(context)!.suppliesQtyTotal, '$totalQty ${supply.unit}', p.text2),
+                _buildQtyChip(context.l10n.suppliesQtyTotal, '$totalQty ${supply.unit}', p.text2),
                 const SizedBox(width: 8),
-                _buildQtyChip(S.of(context)!.suppliesQtyAvailable, '$availQty ${supply.unit}', p.ok),
+                _buildQtyChip(context.l10n.suppliesQtyAvailable, '$availQty ${supply.unit}', p.ok),
                 const SizedBox(width: 8),
                 if (committedQty > 0)
-                  _buildQtyChip(S.of(context)!.suppliesQtyCommitted, '$committedQty ${supply.unit}', p.warn),
+                  _buildQtyChip(context.l10n.suppliesQtyCommitted, '$committedQty ${supply.unit}', p.warn),
               ],
             ),
             const SizedBox(height: 8),
@@ -128,7 +128,7 @@ class MatchTabSupplies extends StatelessWidget {
                 TextButton.icon(
                   onPressed: () => _cancelSupply(context, supply),
                   icon: Icon(Icons.cancel_outlined, size: 16, color: p.sos),
-                  label: Text(S.of(context)!.suppliesCancelButton, style: TextStyle(color: p.sos, fontSize: 12)),
+                  label: Text(context.l10n.suppliesCancelButton, style: TextStyle(color: p.sos, fontSize: 12)),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: Size.zero,
@@ -168,7 +168,7 @@ class MatchTabSupplies extends StatelessWidget {
     final pub = mySupplyPublishes.where((pb) =>
         pb.title == supply.resourceType).firstOrNull;
     if (pub == null) {
-      onShowSnack(S.of(context)!.suppliesNotFoundSnack, p.warn);
+      onShowSnack(context.l10n.suppliesNotFoundSnack, p.warn);
       return;
     }
 
@@ -176,19 +176,19 @@ class MatchTabSupplies extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: p.bg2,
-        title: Text(S.of(ctx)!.suppliesCancelDialogTitle, style: TextStyle(color: p.text0)),
+        title: Text(ctx.l10n.suppliesCancelDialogTitle, style: TextStyle(color: p.text0)),
         content: Text(
-          S.of(ctx)!.suppliesCancelDialogContent(readableName),
+          ctx.l10n.suppliesCancelDialogContent(readableName),
           style: TextStyle(color: p.text1),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(S.of(ctx)!.suppliesCancelDialogBack),
+            child: Text(ctx.l10n.suppliesCancelDialogBack),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(S.of(ctx)!.suppliesCancelDialogConfirm, style: TextStyle(color: p.sos)),
+            child: Text(ctx.l10n.suppliesCancelDialogConfirm, style: TextStyle(color: p.sos)),
           ),
         ],
       ),

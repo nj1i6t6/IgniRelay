@@ -1,6 +1,5 @@
 import 'dart:io' show gzip;
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
@@ -61,6 +60,194 @@ class PoiQuery {
           zoom: zoom,
           toleranceMeters: toleranceMeters,
         ));
+  }
+
+  /// 查詢給定座標的「行政區 + 最近道路」（離線、純 MBTiles）。
+  ///
+  /// Stage 7：對應 plan §「DistrictRoadLookup 真實實作」。
+  ///   - 行政區從 `place` 圖層擷取（取最近的 town/village/suburb 等）；
+  ///   - 道路從 `transportation_name` 圖層擷取（取最近的具名 LineString）。
+  ///
+  /// 任一查詢失敗皆回 null（呼叫端 fallback 顯示座標）。
+  Future<({String? district, String? road})> queryDistrictAndRoad(
+    LatLng point, {
+    double districtRadiusMeters = 8000,
+    double roadRadiusMeters = 300,
+  }) async {
+    return compute(
+        _queryDistrictRoadInIsolate,
+        _DistrictRoadParams(
+          dbPath: mbtilesPath,
+          lat: point.latitude,
+          lon: point.longitude,
+          districtRadiusMeters: districtRadiusMeters,
+          roadRadiusMeters: roadRadiusMeters,
+        ));
+  }
+
+  /// 在 isolate 中執行行政區與道路反查。
+  ///
+  /// 設計重點：
+  ///   - place 用 z=12（鄉鎮層級），掃 1×1 tile 已足夠涵蓋 ~3km；
+  ///   - transportation_name 用 z=14（街道層級），掃 3×3 tiles 涵蓋 ~1.5km；
+  ///   - 道路為 LineString，距離取「所有頂點到目標點的最小 haversine」。
+  static ({String? district, String? road}) _queryDistrictRoadInIsolate(
+      _DistrictRoadParams params) {
+    final db = sql.sqlite3.open(params.dbPath, mode: sql.OpenMode.readOnly);
+    try {
+      final district =
+          _findNearestPlace(db, params.lat, params.lon, params.districtRadiusMeters);
+      final road =
+          _findNearestRoad(db, params.lat, params.lon, params.roadRadiusMeters);
+      return (district: district, road: road);
+    } catch (_) {
+      return (district: null, road: null);
+    } finally {
+      db.dispose();
+    }
+  }
+
+  static String? _findNearestPlace(
+      sql.Database db, double lat, double lon, double radiusM) {
+    const z = 12;
+    final tileX = _lngToTileX(lon, z);
+    final tileY = _latToTileY(lat, z);
+    final tileYtms = (1 << z) - 1 - tileY;
+
+    String? bestName;
+    double bestDist = double.infinity;
+
+    for (int dx = -1; dx <= 1; dx++) {
+      for (int dy = -1; dy <= 1; dy++) {
+        final cx = tileX + dx;
+        final cy = tileYtms + dy;
+        if (cx < 0 || cy < 0) continue;
+
+        final rows = db.select(
+          'SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1',
+          [z, cx, cy],
+        );
+        if (rows.isEmpty) continue;
+
+        Uint8List bytes;
+        try {
+          final raw = rows.first['tile_data'] as Uint8List;
+          bytes = Uint8List.fromList(gzip.decode(raw));
+        } catch (_) {
+          continue;
+        }
+        final tile = VectorTile.fromBytes(bytes: bytes);
+        for (final layer in tile.layers) {
+          if (layer.name != 'place') continue;
+          final extent = layer.extent;
+          for (final feature in layer.features) {
+            if (feature.type != VectorTileGeomType.POINT) continue;
+            final geom = feature.decodeGeometry();
+            if (geom == null) continue;
+            List<double>? coords;
+            if (geom is GeometryPoint) {
+              coords = geom.coordinates;
+            } else if (geom is GeometryMultiPoint) {
+              final pts = geom.coordinates;
+              if (pts.isNotEmpty) coords = pts.first;
+            }
+            if (coords == null || coords.length < 2) continue;
+            final actualTileY = (1 << z) - 1 - cy;
+            final fLon =
+                _tileXToLng(cx, coords[0], actualTileY, z, extent, isX: true);
+            final fLat = _tileYToLat(cy, coords[1], actualTileY, z, extent);
+            final dist = _haversineMeters(lat, lon, fLat, fLon);
+            if (dist > radiusM || dist >= bestDist) continue;
+
+            final props = feature.decodeProperties();
+            final klass = _vtStr(props['class']);
+            // 偏好行政區層級：suburb > town > village > city > hamlet > 其他
+            // 不接受 country/state/continent（過於宏觀）
+            if (klass == 'country' || klass == 'state' || klass == 'continent') {
+              continue;
+            }
+            final name = _vtStr(props['name']);
+            if (name.isEmpty) continue;
+            bestDist = dist;
+            bestName = name;
+          }
+        }
+      }
+    }
+    return bestName;
+  }
+
+  static String? _findNearestRoad(
+      sql.Database db, double lat, double lon, double radiusM) {
+    const z = 14;
+    final tileX = _lngToTileX(lon, z);
+    final tileY = _latToTileY(lat, z);
+    final tileYtms = (1 << z) - 1 - tileY;
+
+    String? bestName;
+    double bestDist = double.infinity;
+
+    for (int dx = -1; dx <= 1; dx++) {
+      for (int dy = -1; dy <= 1; dy++) {
+        final cx = tileX + dx;
+        final cy = tileYtms + dy;
+        if (cx < 0 || cy < 0) continue;
+
+        final rows = db.select(
+          'SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1',
+          [z, cx, cy],
+        );
+        if (rows.isEmpty) continue;
+
+        Uint8List bytes;
+        try {
+          final raw = rows.first['tile_data'] as Uint8List;
+          bytes = Uint8List.fromList(gzip.decode(raw));
+        } catch (_) {
+          continue;
+        }
+        final tile = VectorTile.fromBytes(bytes: bytes);
+        for (final layer in tile.layers) {
+          if (layer.name != 'transportation_name') continue;
+          final extent = layer.extent;
+          for (final feature in layer.features) {
+            if (feature.type != VectorTileGeomType.LINESTRING) continue;
+            final geom = feature.decodeGeometry();
+            if (geom == null) continue;
+
+            // 收集 line(s) 所有頂點
+            List<List<double>> verts = [];
+            if (geom is GeometryLineString) {
+              verts = geom.coordinates;
+            } else if (geom is GeometryMultiLineString) {
+              for (final line in geom.coordinates) {
+                verts.addAll(line);
+              }
+            }
+            if (verts.isEmpty) continue;
+
+            final actualTileY = (1 << z) - 1 - cy;
+            double minDist = double.infinity;
+            for (final v in verts) {
+              if (v.length < 2) continue;
+              final fLon =
+                  _tileXToLng(cx, v[0], actualTileY, z, extent, isX: true);
+              final fLat = _tileYToLat(cy, v[1], actualTileY, z, extent);
+              final d = _haversineMeters(lat, lon, fLat, fLon);
+              if (d < minDist) minDist = d;
+            }
+            if (minDist > radiusM || minDist >= bestDist) continue;
+
+            final props = feature.decodeProperties();
+            final name = _vtStr(props['name']);
+            if (name.isEmpty) continue;
+            bestDist = minDist;
+            bestName = name;
+          }
+        }
+      }
+    }
+    return bestName;
   }
 
   /// 在 isolate 中執行：避免解碼圖磚阻塞 UI
@@ -312,7 +499,9 @@ class PoiQuery {
               if (featureLat < params.south ||
                   featureLat > params.north ||
                   featureLon < params.west ||
-                  featureLon > params.east) continue;
+                  featureLon > params.east) {
+                continue;
+              }
 
               final props = feature.decodeProperties();
               final name = _vtStr(props['name']);
@@ -371,7 +560,6 @@ class PoiQuery {
   /// tile-local Y → 緯度 (TMS tile_row)
   static double _tileYToLat(
       int tileRowTms, double localY, int tileYxyz, int z, int extent) {
-    final n = 1 << z;
     // XYZ tileY
     final yTop = tileYxyz;
     final latTop = _tileYToLatitude(yTop, z);
@@ -413,6 +601,22 @@ class _QueryParams {
     required this.lon,
     required this.zoom,
     required this.toleranceMeters,
+  });
+}
+
+class _DistrictRoadParams {
+  final String dbPath;
+  final double lat;
+  final double lon;
+  final double districtRadiusMeters;
+  final double roadRadiusMeters;
+
+  const _DistrictRoadParams({
+    required this.dbPath,
+    required this.lat,
+    required this.lon,
+    required this.districtRadiusMeters,
+    required this.roadRadiusMeters,
   });
 }
 

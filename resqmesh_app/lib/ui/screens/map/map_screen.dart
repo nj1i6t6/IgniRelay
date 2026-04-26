@@ -43,7 +43,7 @@ import 'package:ignirelay_app/ui/screens/map/sheets/hazard_nearby_dialog.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 // NOTE(Stage 4d Round 2): pb.*, LocationService, supply_category_data 原用於
 // _showEventInfo，現已移至 sheets/event_info_sheet.dart，故本檔不再 import。
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -73,10 +73,8 @@ class _MapScreenState extends State<MapScreen>
   String? _mbtilesError; // stores ARB key: 'mapMbtilesNotFound' | 'mapMbtilesLoadFail'
   String? _mbtilesErrorArg; // dynamic arg for mapMbtilesLoadFail
   MbTiles? _mbTiles;
-  MbTilesVectorTileProvider? _tileProvider;
   TileProviders? _tileProviders;
   vtr.Theme? _mapTheme;
-  SpriteStyle? _spriteStyle;
   PoiQuery? _poiQuery;
 
   // ── GPS 定位 ──
@@ -84,10 +82,15 @@ class _MapScreenState extends State<MapScreen>
   StreamSubscription<Position>? _positionStream;
   double _gpsAccuracy = 0;
 
+  // ── 行政區 / 道路反查（DistrictRoadLookup，Stage 7） ──
+  String? _district;
+  String? _road;
+  LatLng? _lastLookupLoc;
+  Timer? _lookupDebounce;
+
   // ── Overlays ──
   List<Polygon> _hazardPolygons = [];
   List<Marker> _hazardCenterMarkers = [];
-  List<Map<String, dynamic>> _hazardData = [];
   List<Marker> _eventMarkers = [];
   // Stage 4d: 與 _eventMarkers 同步的 PinCategory 索引，供叢集 bubble 擇色用。
   List<PinCategory> _eventMarkerCategories = [];
@@ -124,7 +127,7 @@ class _MapScreenState extends State<MapScreen>
   /// Stage 4d 規範：hazard 一律紅（PinCategory.hazard），icon 做次分類。
   /// label 仍由 i18n 給，維持既有鍵值；color 改由 PinPalette 集中管理。
   static (String, IconData, Color) _hazardInfo(BuildContext context, String type) {
-    final l = S.of(context)!;
+    final l = context.l10n;
     final color = PinPalette.color(PinCategory.hazard);
     switch (type) {
       case 'ROADBLOCK': return (l.mapHazardRoadblock, PinPalette.hazardIcon(type), color);
@@ -168,10 +171,39 @@ class _MapScreenState extends State<MapScreen>
     _meshEventSub?.cancel();
     _meshDebounce?.cancel();
     _poiRefreshTimer?.cancel();
+    _lookupDebounce?.cancel();
     _markDescCtrl.dispose();
     _layerSettings.removeListener(_onLayerSettingsChanged);
     _layerSettings.dispose();
     super.dispose();
+  }
+
+  /// Stage 7：以 [DistrictRoadLookup] 反查行政區 + 最近道路。
+  ///
+  /// 為避免位置流頻繁觸發 isolate compute，採用 debounce + 距離閾值：
+  ///   - 1.5 秒 debounce；
+  ///   - 與上次成功位置 > 80 公尺才重查。
+  void _scheduleDistrictRoadLookup(LatLng loc) {
+    final last = _lastLookupLoc;
+    if (last != null) {
+      // 粗算位移：1° 緯度約 111km，台灣經度 1° 約 102km。
+      final dLat = (loc.latitude - last.latitude).abs() * 111000.0;
+      final dLng = (loc.longitude - last.longitude).abs() * 102000.0;
+      if (dLat * dLat + dLng * dLng < 80 * 80) return;
+    }
+    _lookupDebounce?.cancel();
+    _lookupDebounce = Timer(const Duration(milliseconds: 1500), () async {
+      if (!mounted) return;
+      final pq = _poiQuery;
+      if (pq == null) return;
+      final r = await DistrictRoadLookup.lookup(poiQuery: pq, location: loc);
+      if (!mounted) return;
+      setState(() {
+        _district = r.$1;
+        _road = r.$2;
+        _lastLookupLoc = loc;
+      });
+    });
   }
 
   Future<void> _initReporterHex() async {
@@ -188,20 +220,12 @@ class _MapScreenState extends State<MapScreen>
     if (!_mbtilesAvailable || _mbTiles == null) return;
     final theme =
         buildIgniRelayTheme(disabledPoi: _layerSettings.disabledPoiIds);
-    SpriteStyle? sprites;
-    try {
-      sprites = buildIgniRelaySprites();
-    } catch (e) {
-      debugPrint('[Map] rebuildTheme sprite 失敗 (非致命): $e');
-    }
     // 重建 TileProviders → VectorTileLayer 用新 Key 完整重建
     final provider = MbTilesVectorTileProvider(mbtiles: _mbTiles!);
     if (mounted) {
       setState(() {
-        _tileProvider = provider;
         _tileProviders = TileProviders({'openmaptiles': provider});
         _mapTheme = theme;
-        _spriteStyle = sprites;
         _themeGeneration++;
       });
     }
@@ -245,18 +269,15 @@ class _MapScreenState extends State<MapScreen>
       // MBTiles 使用 TMS 座標系 (Y 軸翻轉): tmsY = (2^z - 1) - xyzY
       // 台灣中心 z10/x859/y442(XYZ) → z10/x859/y581(TMS)
       String tileTestResult = 'untested';
-      int tileTestBytes = 0;
       try {
-        final tmsY = ((1 << 10) - 1) - 442; // = 581
+        const tmsY = ((1 << 10) - 1) - 442; // = 581
         final testTile = mbTiles.getTile(z: 10, x: 859, y: tmsY);
         if (testTile != null) {
-          tileTestBytes = testTile.length;
           tileTestResult = 'OK ${testTile.length}B';
         } else {
           // 也試試直接用 XYZ Y 看看（如果 MBTiles 是 XYZ 編碼）
           final testTileXyz = mbTiles.getTile(z: 10, x: 859, y: 442);
           if (testTileXyz != null) {
-            tileTestBytes = testTileXyz.length;
             tileTestResult = 'OK(xyz) ${testTileXyz.length}B';
           } else {
             tileTestResult = 'NULL z10/859/tms$tmsY+xyz442';
@@ -280,10 +301,8 @@ class _MapScreenState extends State<MapScreen>
         setState(() {
           _mbTiles = mbTiles;
           _poiQuery = PoiQuery(mbtilesPath: path, poiDetailsPath: poiDbPath);
-          _tileProvider = provider;
           _tileProviders = TileProviders({'openmaptiles': provider});
           _mapTheme = theme;
-          _spriteStyle = sprites;
           _mbtilesAvailable = true;
 
         });
@@ -365,6 +384,7 @@ class _MapScreenState extends State<MapScreen>
           _userLocation = loc;
           _gpsAccuracy = pos.accuracy;
         });
+        _scheduleDistrictRoadLookup(loc);
         // 只在 GPS 位置落在台灣離線地圖範圍內才移動視角
         if (_isInTaiwanBounds(loc)) {
           setState(() => _center = loc);
@@ -381,10 +401,12 @@ class _MapScreenState extends State<MapScreen>
         ),
       ).listen((pos) {
         if (mounted) {
+          final loc = LatLng(pos.latitude, pos.longitude);
           setState(() {
-            _userLocation = LatLng(pos.latitude, pos.longitude);
+            _userLocation = loc;
             _gpsAccuracy = pos.accuracy;
           });
+          _scheduleDistrictRoadLookup(loc);
         }
       });
     } catch (e) {
@@ -422,15 +444,14 @@ class _MapScreenState extends State<MapScreen>
         setState(() {
           _hazardPolygons = [];
           _hazardCenterMarkers = [];
-          _hazardData = [];
         });
       }
       return;
     }
     final hazards = await _eventManager.getActiveHazards();
+    if (!mounted) return;
     final polygons = <Polygon>[];
     final centerMarkers = <Marker>[];
-    final filteredData = <Map<String, dynamic>>[];
 
     for (final h in hazards) {
       final lat = (h['lat'] as num?)?.toDouble();
@@ -482,8 +503,6 @@ class _MapScreenState extends State<MapScreen>
             ? const StrokePattern.dotted()
             : const StrokePattern.solid(),
       ));
-
-      filteredData.add(h);
 
       // 中心標記（含確認人數 badge）—— 大類一色紅
       final (_, typeIcon, _) = _hazardInfo(context, type);
@@ -546,7 +565,6 @@ class _MapScreenState extends State<MapScreen>
       setState(() {
         _hazardPolygons = polygons;
         _hazardCenterMarkers = centerMarkers;
-        _hazardData = filteredData;
       });
     }
   }
@@ -580,7 +598,7 @@ class _MapScreenState extends State<MapScreen>
     final markers = <Marker>[];
     final categories = <PinCategory>[];
     if (!mounted) return;
-    final evtL = S.of(context)!;
+    final evtL = context.l10n;
     for (final evt in events) {
       final lat = (evt['received_lat'] as num?)?.toDouble();
       final lng = (evt['received_lng'] as num?)?.toDouble();
@@ -813,7 +831,7 @@ class _MapScreenState extends State<MapScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text(S.of(context)!.mapHazardUpdatedSnack), backgroundColor: Colors.green),
+                content: Text(context.l10n.mapHazardUpdatedSnack), backgroundColor: Colors.green),
           );
         }
         _exitMarkingMode();
@@ -846,7 +864,7 @@ class _MapScreenState extends State<MapScreen>
             final (tl, _, _) = _hazardInfo(context, _markType);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(S.of(context)!.mapHazardConfirmSnack(tl, 1)),
+                content: Text(context.l10n.mapHazardConfirmSnack(tl, 1)),
                 backgroundColor: Colors.green,
               ),
             );
@@ -874,7 +892,7 @@ class _MapScreenState extends State<MapScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(S.of(context)!.mapHazardPublishedSnack), backgroundColor: Colors.orange),
+              content: Text(context.l10n.mapHazardPublishedSnack), backgroundColor: Colors.orange),
         );
       }
       _exitMarkingMode();
@@ -882,7 +900,7 @@ class _MapScreenState extends State<MapScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context)!.mapMbtilesLoadFail(e.toString())), backgroundColor: Colors.red),
+          SnackBar(content: Text(context.l10n.mapMbtilesLoadFail(e.toString())), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -918,7 +936,7 @@ class _MapScreenState extends State<MapScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(S.of(context)!
+              content: Text(context.l10n
                   .mapHazardConfirmSnack(typeLabel, confirmCount + 1)),
               backgroundColor: Colors.green,
             ),
@@ -956,7 +974,7 @@ class _MapScreenState extends State<MapScreen>
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(S.of(context)!.mapHazardDeletedSnack),
+            content: Text(context.l10n.mapHazardDeletedSnack),
             backgroundColor: Colors.green),
       );
     }
@@ -967,7 +985,7 @@ class _MapScreenState extends State<MapScreen>
   void _showLayerControlSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: context.igni.bg2,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -994,7 +1012,7 @@ class _MapScreenState extends State<MapScreen>
             _activeSosDesc = desc;
           });
         }
-        final lTriage = S.of(context)!;
+        final lTriage = context.l10n;
         final labels = [
           lTriage.mapTriageBroadcastLabel0,
           lTriage.mapTriageBroadcastLabel1,
@@ -1033,7 +1051,7 @@ class _MapScreenState extends State<MapScreen>
       // 發布取消事件到 Mesh 網路
       await _eventManager.publishEvent(
         urgency: 0, // INFO level
-        description: '${S.of(context)!.mapSosCancelledPrefix}$_activeSosDesc',
+        description: '${context.l10n.mapSosCancelledPrefix}$_activeSosDesc',
         lat: _userLocation?.latitude,
         lng: _userLocation?.longitude,
       );
@@ -1045,7 +1063,7 @@ class _MapScreenState extends State<MapScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.mapSosCancelledSnack),
+            content: Text(context.l10n.mapSosCancelledSnack),
             backgroundColor: Colors.grey[700],
           ),
         );
@@ -1054,7 +1072,7 @@ class _MapScreenState extends State<MapScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context)!.mapSosCancelFailSnack(e.toString())), backgroundColor: Colors.red[700]),
+          SnackBar(content: Text(context.l10n.mapSosCancelFailSnack(e.toString())), backgroundColor: Colors.red[700]),
         );
       }
     }
@@ -1066,7 +1084,7 @@ class _MapScreenState extends State<MapScreen>
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(S.of(context)!.mapGpsNotReady),
+            content: Text(context.l10n.mapGpsNotReady),
             backgroundColor: Colors.orange),
       );
     }
@@ -1086,7 +1104,7 @@ class _MapScreenState extends State<MapScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(S.of(context)!.mapTitle,
+            Text(context.l10n.mapTitle,
                 style: IgniTypography.titleMedium(p.text0)),
             Text(
               '${_eventMarkers.length} EVENTS · ${_hazardCenterMarkers.length} HAZARDS',
@@ -1098,12 +1116,12 @@ class _MapScreenState extends State<MapScreen>
           IconButton(
             icon: Icon(Icons.layers, color: p.text1),
             onPressed: _showLayerControlSheet,
-            tooltip: S.of(context)!.mapLayerControlTooltip,
+            tooltip: context.l10n.mapLayerControlTooltip,
           ),
           IconButton(
             icon: Icon(Icons.legend_toggle, color: p.text1),
             onPressed: () => setState(() => _showLegend = !_showLegend),
-            tooltip: S.of(context)!.mapLegendTooltip,
+            tooltip: context.l10n.mapLegendTooltip,
           ),
           IconButton(
             icon: AnimatedBuilder(
@@ -1115,7 +1133,7 @@ class _MapScreenState extends State<MapScreen>
               child: Icon(Icons.refresh, color: p.text1),
             ),
             onPressed: _refreshWithSpin,
-            tooltip: S.of(context)!.mapRefreshTooltip,
+            tooltip: context.l10n.mapRefreshTooltip,
           ),
         ],
       ),
@@ -1144,9 +1162,9 @@ class _MapScreenState extends State<MapScreen>
               activeSosUrgency: _activeSosUrgency,
               onSosHoldActivated: _openTriageSheet,
               onCancelSos: _cancelSos,
-              sosLabel: S.of(context)!.mapSosButton,
-              sosActiveLabel: S.of(context)!.mapSosSentLabel,
-              sosHoldHint: S.of(context)!.mapSosHoldHint,
+              sosLabel: context.l10n.mapSosButton,
+              sosActiveLabel: context.l10n.mapSosSentLabel,
+              sosHoldHint: context.l10n.mapSosHoldHint,
             ),
     );
   }
@@ -1156,7 +1174,7 @@ class _MapScreenState extends State<MapScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: context.igni.bg2,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1326,8 +1344,8 @@ class _MapScreenState extends State<MapScreen>
           left: 8,
           child: MapLocationHeader(
             userLocation: _userLocation,
-            district: null, // Stage 6+ 接 PoiQuery 反查；現階段走 fallback
-            road: null,
+            district: _district,
+            road: _road,
           ),
         ),
         // 長按提示（非標記模式時顯示）
@@ -1345,7 +1363,7 @@ class _MapScreenState extends State<MapScreen>
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Text(
-                  S.of(context)!.mapLongPressHint,
+                  context.l10n.mapLongPressHint,
                   style: const TextStyle(color: Colors.white, fontSize: 12),
                 ),
               ),

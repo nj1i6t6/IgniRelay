@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// Individual chat room screen with message list and input.
 class ChatRoomScreen extends StatefulWidget {
@@ -108,7 +108,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       _scrollToBottom();
     } else if (!success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(S.of(context)!.chatRoomSendCooldown(_cooldownRemaining))),
+        SnackBar(content: Text(context.l10n.chatRoomSendCooldown(_cooldownRemaining))),
       );
     }
   }
@@ -133,7 +133,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 
   String _shortenPubKey(String? hexKey, BuildContext ctx) {
-    if (hexKey == null || hexKey.length < 8) return S.of(ctx)!.chatRoomAnonymous;
+    if (hexKey == null || hexKey.length < 8) return ctx.l10n.chatRoomAnonymous;
     return hexKey.substring(0, 8);
   }
 
@@ -176,7 +176,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           children: [
             Text(widget.roomName, style: IgniTypography.titleMedium(p.text0)),
             Text(
-              S.of(context)!.chatRoomMessageCount(_messages.length),
+              context.l10n.chatRoomMessageCount(_messages.length),
               style: IgniTypography.monoSmall(p.text2),
             ),
           ],
@@ -196,7 +196,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : _messages.isEmpty
                     ? Center(
-                        child: Text(S.of(context)!.chatRoomEmpty,
+                        child: Text(context.l10n.chatRoomEmpty,
                             style: IgniTypography.bodyMedium(p.text2)))
                     : ListView.builder(
                         controller: _scrollController,
@@ -229,7 +229,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   Icon(Icons.reply, size: 16, color: p.text2),
                   const SizedBox(width: IgniSpacing.sm),
                   Expanded(
-                      child: Text(S.of(context)!.chatRoomReply,
+                      child: Text(context.l10n.chatRoomReply,
                           style: IgniTypography.bodySmall(p.text2))),
                   IconButton(
                     icon: Icon(Icons.close, size: 16, color: p.text2),
@@ -346,7 +346,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             Icon(Icons.lock_outline, size: 16, color: p.text2),
             const SizedBox(width: IgniSpacing.sm),
             Text(
-              S.of(context)!.chatRoomAdminLock,
+              context.l10n.chatRoomAdminLock,
               style: IgniTypography.bodySmall(p.text2),
             ),
           ],
@@ -374,7 +374,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               maxLines: 3,
               minLines: 1,
               decoration: InputDecoration(
-                hintText: S.of(context)!.chatRoomInputHint,
+                hintText: context.l10n.chatRoomInputHint,
                 isDense: true,
               ),
               onSubmitted: (_) => canSend ? _sendMessage() : null,

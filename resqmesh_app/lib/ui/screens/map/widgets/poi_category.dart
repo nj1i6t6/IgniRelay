@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// Stage 4d Round 2：POI 分類 helper。
 ///
@@ -15,7 +15,7 @@ class PoiCategories {
 
   /// i18n 分類名稱（顯示於 sheet 頂部徽章）。
   static String label(BuildContext context, String cls, String sub) {
-    final l = S.of(context)!;
+    final l = context.l10n;
     if (cls == 'hospital' || sub == 'hospital') return l.mapPoiHospital;
     if (sub == 'clinic' || sub == 'doctors') return l.mapPoiClinic;
     if (sub == 'nursing_home') return l.mapPoiNursingHome;

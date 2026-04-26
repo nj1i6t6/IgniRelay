@@ -209,13 +209,13 @@ void main() {
 
     test('presetMinimal ⊂ allFields', () {
       for (final f in MedicalField.presetMinimal) {
-        expect(MedicalField.allFields.contains(f), isTrue, reason: '$f');
+        expect(MedicalField.allFields.contains(f), isTrue, reason: f);
       }
     });
 
     test('presetRecommended ⊂ allFields', () {
       for (final f in MedicalField.presetRecommended) {
-        expect(MedicalField.allFields.contains(f), isTrue, reason: '$f');
+        expect(MedicalField.allFields.contains(f), isTrue, reason: f);
       }
     });
   });

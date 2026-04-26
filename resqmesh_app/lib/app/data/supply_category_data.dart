@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // IgniRelay 烽傳物資類型三級分類資料
@@ -76,7 +76,7 @@ enum ItemCondition {
 // 全部物資分類樹
 // ═══════════════════════════════════════════════════════════════════════════════
 
-final List<SupplyCategory> supplyCategories = const [
+const List<SupplyCategory> supplyCategories = [
   // ─────────────────────────────────────────────────────────────────────────
   // 1. 飲用水 — 災後最優先，成人每日需 2-3L
   // ─────────────────────────────────────────────────────────────────────────
@@ -765,7 +765,7 @@ SupplySubCategory? findSubCategoryByItemCode(String code) {
 
 extension ItemConditionL10n on ItemCondition {
   String localLabel(BuildContext context) {
-    final l = S.of(context)!;
+    final l = context.l10n;
     switch (this) {
       case ItemCondition.brandNew: return l.itemConditionNew;
       case ItemCondition.openedUnused: return l.itemConditionOpenedUnused;
@@ -776,7 +776,7 @@ extension ItemConditionL10n on ItemCondition {
 
 class SupplyCategoryLocalizer {
   static String categoryLabel(BuildContext ctx, String code) {
-    final l = S.of(ctx)!;
+    final l = ctx.l10n;
     switch (code) {
       case 'WATER': return l.supplyCategory_WATER;
       case 'FOOD': return l.supplyCategory_FOOD;
@@ -794,7 +794,7 @@ class SupplyCategoryLocalizer {
   }
 
   static String subCategoryLabel(BuildContext ctx, String code) {
-    final l = S.of(ctx)!;
+    final l = ctx.l10n;
     switch (code) {
       // ── Water ──
       case 'WATER_BOTTLE': return l.supplySubCategory_WATER_BOTTLE;
@@ -877,7 +877,7 @@ class SupplyCategoryLocalizer {
   }
 
   static String itemLabel(BuildContext ctx, String code) {
-    final l = S.of(ctx)!;
+    final l = ctx.l10n;
     switch (code) {
       // ── Water ──
       case 'WATER_BOTTLE_500': return l.supplyItem_WATER_BOTTLE_500;

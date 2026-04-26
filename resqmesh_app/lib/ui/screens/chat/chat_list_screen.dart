@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'package:ignirelay_app/app/services/chat_service.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/ui/screens/chat/chat_join_screen.dart';
 import 'package:ignirelay_app/ui/screens/chat/chat_room_screen.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 /// 烽傳 Ignirelay 聊天室列表分頁（Stage 4b）。
 ///
@@ -78,7 +78,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   Future<void> _autoJoin() async {
     final roomId = await _chatService.autoJoinVillageRoom();
     if (!mounted) return;
-    final s = S.of(context)!;
+    final s = context.l10n;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(roomId != null ? s.chatListAutoJoinSuccess : s.chatListAutoJoinFail),
     ));
@@ -108,7 +108,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   Future<void> _confirmLeave(_RoomTile t) async {
-    final s = S.of(context)!;
+    final s = context.l10n;
     final p = context.igni;
     final confirm = await showDialog<bool>(
       context: context,
@@ -135,7 +135,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   void _showRoomActions(_RoomTile t) {
-    final s = S.of(context)!;
+    final s = context.l10n;
     final p = context.igni;
     showModalBottomSheet(
       context: context,
@@ -165,7 +165,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final s = S.of(context)!;
+    final s = context.l10n;
     final p = context.igni;
     final unreadTotal = _tiles.fold<int>(0, (sum, t) => sum + t.unread);
 
@@ -366,7 +366,7 @@ class _RoomRow extends StatelessWidget {
   }
 
   String _fallbackSubtitle(BuildContext context, String type) {
-    final s = S.of(context)!;
+    final s = context.l10n;
     switch (type) {
       case 'nation':
         return s.chatListRoomNational;
@@ -489,7 +489,7 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = S.of(context)!;
+    final s = context.l10n;
     final p = context.igni;
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: IgniSpacing.xl),

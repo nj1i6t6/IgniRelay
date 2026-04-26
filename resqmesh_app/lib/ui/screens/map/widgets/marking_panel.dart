@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 /// Stage 4d Round 2：標記模式的底部面板。
 ///
@@ -48,7 +49,7 @@ class MarkingPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l = S.of(context)!;
+    final l = context.l10n;
     final (_, _, typeColor) = hazardInfoBuilder(context, markType);
     const types = [
       'ROADBLOCK',
@@ -65,7 +66,7 @@ class MarkingPanel extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
         decoration: BoxDecoration(
-          color: const Color(0xFF1a1a2e).withValues(alpha: 0.97),
+          color: context.igni.bg2.withValues(alpha: 0.97),
           borderRadius:
               const BorderRadius.vertical(top: Radius.circular(20)),
           boxShadow: [

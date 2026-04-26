@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 class HazardDialog extends StatefulWidget {
   final double lat;
@@ -20,12 +21,12 @@ class _HazardDialogState extends State<HazardDialog> {
   bool _publishing = false;
 
   Map<String, (String, IconData, Color)> _hazardTypes(BuildContext context) => {
-    'ROADBLOCK': (S.of(context)!.mapHazardRoadblock, Icons.block, Colors.orange),
-    'FIRE': (S.of(context)!.mapHazardFire, Icons.local_fire_department, Colors.red),
-    'CHEMICAL': (S.of(context)!.mapHazardChemical, Icons.warning_amber, Colors.yellow),
-    'FLOOD': (S.of(context)!.mapHazardFlood, Icons.water, Colors.blue),
-    'BUILDING': (S.of(context)!.mapHazardCollapse, Icons.domain_disabled, Colors.brown),
-    'LANDSLIDE': (S.of(context)!.mapHazardLandslide, Icons.landscape, Colors.grey),
+    'ROADBLOCK': (context.l10n.mapHazardRoadblock, Icons.block, Colors.orange),
+    'FIRE': (context.l10n.mapHazardFire, Icons.local_fire_department, Colors.red),
+    'CHEMICAL': (context.l10n.mapHazardChemical, Icons.warning_amber, Colors.yellow),
+    'FLOOD': (context.l10n.mapHazardFlood, Icons.water, Colors.blue),
+    'BUILDING': (context.l10n.mapHazardCollapse, Icons.domain_disabled, Colors.brown),
+    'LANDSLIDE': (context.l10n.mapHazardLandslide, Icons.landscape, Colors.grey),
   };
 
   Future<void> _publish() async {
@@ -42,7 +43,7 @@ class _HazardDialogState extends State<HazardDialog> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context)!.supplyRegFailSnack(e.toString())), backgroundColor: Colors.red),
+          SnackBar(content: Text(context.l10n.supplyRegFailSnack(e.toString())), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -59,12 +60,12 @@ class _HazardDialogState extends State<HazardDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: context.igni.bg2,
       title: Row(
         children: [
           const Icon(Icons.warning_amber, color: Colors.orange),
           const SizedBox(width: 8),
-          Text(S.of(context)!.hazardDialogTitle, style: const TextStyle(color: Colors.white, fontSize: 18)),
+          Text(context.l10n.hazardDialogTitle, style: const TextStyle(color: Colors.white, fontSize: 18)),
         ],
       ),
       content: Column(
@@ -72,17 +73,19 @@ class _HazardDialogState extends State<HazardDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            S.of(context)!.hazardDialogCoordinate(widget.lat.toStringAsFixed(4), widget.lng.toStringAsFixed(4)),
+            context.l10n.hazardDialogCoordinate(widget.lat.toStringAsFixed(4), widget.lng.toStringAsFixed(4)),
             style: const TextStyle(color: Colors.white38, fontSize: 12),
           ),
           const SizedBox(height: 16),
-          Text(S.of(context)!.hazardDialogTypeLabel, style: const TextStyle(color: Colors.white70)),
+          Text(context.l10n.hazardDialogTypeLabel, style: const TextStyle(color: Colors.white70)),
           const SizedBox(height: 8),
           ..._hazardTypes(context).entries.map((entry) {
             final (label, icon, color) = entry.value;
             return RadioListTile<String>(
               value: entry.key,
+              // ignore: deprecated_member_use — pending RadioGroup migration (Stage 7+)
               groupValue: _selectedType,
+              // ignore: deprecated_member_use
               onChanged: (v) => setState(() => _selectedType = v!),
               activeColor: color,
               contentPadding: EdgeInsets.zero,
@@ -100,10 +103,10 @@ class _HazardDialogState extends State<HazardDialog> {
             );
           }),
           const SizedBox(height: 12),
-          Text(S.of(context)!.hazardDialogSeverityLabel, style: const TextStyle(color: Colors.white70)),
+          Text(context.l10n.hazardDialogSeverityLabel, style: const TextStyle(color: Colors.white70)),
           Row(
             children: [
-              Text(S.of(context)!.hazardDialogSeverityMin,
+              Text(context.l10n.hazardDialogSeverityMin,
                   style: const TextStyle(color: Colors.white38, fontSize: 12)),
               Expanded(
                 child: Slider(
@@ -117,12 +120,12 @@ class _HazardDialogState extends State<HazardDialog> {
                   onChanged: (v) => setState(() => _severity = v),
                 ),
               ),
-              Text(S.of(context)!.hazardDialogSeverityMax,
+              Text(context.l10n.hazardDialogSeverityMax,
                   style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
             ],
           ),
           const SizedBox(height: 8),
-          Text(S.of(context)!.hazardDialogRadiusLabel, style: const TextStyle(color: Colors.white70)),
+          Text(context.l10n.hazardDialogRadiusLabel, style: const TextStyle(color: Colors.white70)),
           Row(
             children: [
               Text('${_radius.round()}m',
@@ -150,7 +153,7 @@ class _HazardDialogState extends State<HazardDialog> {
             style: const TextStyle(color: Colors.white, fontSize: 13),
             maxLines: 2,
             decoration: InputDecoration(
-              hintText: S.of(context)!.hazardDialogDescHint,
+              hintText: context.l10n.hazardDialogDescHint,
               hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
               enabledBorder: OutlineInputBorder(
                 borderSide: const BorderSide(color: Colors.white24),
@@ -168,7 +171,7 @@ class _HazardDialogState extends State<HazardDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: Text(S.of(context)!.hazardDialogCancel, style: const TextStyle(color: Colors.white38)),
+          child: Text(context.l10n.hazardDialogCancel, style: const TextStyle(color: Colors.white38)),
         ),
         ElevatedButton(
           onPressed: _publishing ? null : _publish,
@@ -179,7 +182,7 @@ class _HazardDialogState extends State<HazardDialog> {
                   height: 16,
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: Colors.white))
-              : Text(S.of(context)!.hazardDialogPublish, style: const TextStyle(color: Colors.white)),
+              : Text(context.l10n.hazardDialogPublish, style: const TextStyle(color: Colors.white)),
         ),
       ],
     );

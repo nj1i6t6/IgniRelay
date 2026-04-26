@@ -91,10 +91,10 @@ class DistrictRoadLookup {
   }) async {
     if (poiQuery == null) return (null, null);
     try {
-      // PoiQuery 目前只有 POI 查詢能力；行政區/道路屬於向量圖磚 place/road
-      // 圖層，尚未在 PoiQuery 開介面。保留接口與註解，Stage 6+ 再補實作。
-      // 現階段一律 fallback。
-      return (null, null);
+      // Stage 7：實接 PoiQuery.queryDistrictAndRoad（離線 vector tile 反查）。
+      // place 圖層 → 行政區，transportation_name 圖層 → 最近道路。
+      final result = await poiQuery.queryDistrictAndRoad(location);
+      return (result.district, result.road);
     } catch (_) {
       return (null, null);
     }

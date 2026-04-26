@@ -26,6 +26,7 @@ import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
 import 'package:ignirelay_app/app/controllers/mesh_runtime_controller.dart';
 import 'package:ignirelay_app/app/crdt/hlc.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -276,7 +277,7 @@ class _StartupRouterState extends State<_StartupRouter> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                  content: Text(S.of(context)!.mainBleFailSnack(e.toString())),
+                  content: Text(context.l10n.mainBleFailSnack(e.toString())),
                   backgroundColor: Colors.red),
             );
           }
@@ -311,17 +312,17 @@ class _StartupRouterState extends State<_StartupRouter> {
           children: [
             const Icon(Icons.bluetooth_disabled, color: Colors.orangeAccent),
             const SizedBox(width: 8),
-            Text(S.of(ctx)!.mainBluetoothDialogTitle, style: const TextStyle(color: Colors.white)),
+            Text(ctx.l10n.mainBluetoothDialogTitle, style: const TextStyle(color: Colors.white)),
           ],
         ),
         content: Text(
-          S.of(ctx)!.mainBluetoothDialogContent,
+          ctx.l10n.mainBluetoothDialogContent,
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(S.of(ctx)!.mainBluetoothDialogCancel, style: const TextStyle(color: Colors.white38)),
+            child: Text(ctx.l10n.mainBluetoothDialogCancel, style: const TextStyle(color: Colors.white38)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -329,7 +330,7 @@ class _StartupRouterState extends State<_StartupRouter> {
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(S.of(ctx)!.mainBluetoothDialogConfirm),
+            child: Text(ctx.l10n.mainBluetoothDialogConfirm),
           ),
         ],
       ),
@@ -361,7 +362,7 @@ class _StartupRouterState extends State<_StartupRouter> {
     if (!allGranted && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(S.of(context)!.mainPermissionSnack),
+          content: Text(context.l10n.mainPermissionSnack),
           backgroundColor: Colors.orange,
           duration: const Duration(seconds: 5),
         ),

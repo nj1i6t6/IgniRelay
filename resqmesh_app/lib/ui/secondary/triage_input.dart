@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 class TriageInputWidget extends StatefulWidget {
   final Function(int urgencyLevel, String description,
@@ -108,7 +108,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
           ),
           const SizedBox(height: 16),
           Text(
-            S.of(context)!.triageTitle,
+            context.l10n.triageTitle,
             style: const TextStyle(
                 fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
@@ -118,7 +118,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
             style: const TextStyle(color: Colors.white),
             maxLines: 2,
             decoration: InputDecoration(
-              hintText: S.of(context)!.triageDescHint,
+              hintText: context.l10n.triageDescHint,
               hintStyle: const TextStyle(color: Colors.white38),
               enabledBorder: OutlineInputBorder(
                 borderSide: const BorderSide(color: Colors.white24),
@@ -161,7 +161,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        S.of(context)!.triageMedicalCardToggle,
+                        context.l10n.triageMedicalCardToggle,
                         style: TextStyle(
                           color: _attachMedicalCard
                               ? Colors.white
@@ -171,7 +171,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
                       ),
                     ),
                     Text(
-                      _attachMedicalCard ? S.of(context)!.triageMedicalCardOn : S.of(context)!.triageMedicalCardOff,
+                      _attachMedicalCard ? context.l10n.triageMedicalCardOn : context.l10n.triageMedicalCardOff,
                       style: TextStyle(
                         color: _attachMedicalCard
                             ? Colors.redAccent
@@ -191,7 +191,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
             child: ElevatedButton.icon(
               onPressed: () => _submit(2),
               icon: const Icon(Icons.warning, color: Colors.black, size: 18),
-              label: Text(S.of(context)!.triageSosYellowButton,
+              label: Text(context.l10n.triageSosYellowButton,
                   style: const TextStyle(
                       color: Colors.black,
                       fontSize: 15,
@@ -248,10 +248,10 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
                         Flexible(
                           child: Text(
                             _isSosRedUnlocked
-                                ? S.of(context)!.triageSosRedButton
+                                ? context.l10n.triageSosRedButton
                                 : _isHolding
-                                    ? S.of(context)!.triageSosRedCountdown(_sosCountdown)
-                                    : S.of(context)!.triageSosRedHoldHint,
+                                    ? context.l10n.triageSosRedCountdown(_sosCountdown)
+                                    : context.l10n.triageSosRedHoldHint,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 15,

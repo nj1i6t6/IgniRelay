@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POI 類別定義
@@ -71,18 +71,18 @@ class MapLayerSettings extends ChangeNotifier {
 
   // ── 常量 ──
   static List<PoiCategory> getPoiCategories(BuildContext context) => [
-    PoiCategory('resq_hospital', S.of(context)!.mapLayerPoiHospital, Icons.local_hospital, Colors.red),
-    PoiCategory('resq_pharmacy', S.of(context)!.mapLayerPoiPharmacy, Icons.local_pharmacy, Colors.purple),
-    PoiCategory('resq_police', S.of(context)!.mapLayerPoiPolice, Icons.local_police, const Color(0xFF3366ff)),
-    PoiCategory('resq_school', S.of(context)!.mapLayerPoiSchool, Icons.school, Colors.orange),
-    PoiCategory('resq_grocery', S.of(context)!.mapLayerPoiSupermarket, Icons.store, Colors.green),
+    PoiCategory('resq_hospital', context.l10n.mapLayerPoiHospital, Icons.local_hospital, Colors.red),
+    PoiCategory('resq_pharmacy', context.l10n.mapLayerPoiPharmacy, Icons.local_pharmacy, Colors.purple),
+    PoiCategory('resq_police', context.l10n.mapLayerPoiPolice, Icons.local_police, const Color(0xFF3366ff)),
+    PoiCategory('resq_school', context.l10n.mapLayerPoiSchool, Icons.school, Colors.orange),
+    PoiCategory('resq_grocery', context.l10n.mapLayerPoiSupermarket, Icons.store, Colors.green),
   ];
 
   static List<({String label, String desc, int min})> getCredibilityLevels(BuildContext context) => [
-    (label: S.of(context)!.mapLayerCredAll, desc: S.of(context)!.mapLayerCredAllDesc, min: 1),
-    (label: S.of(context)!.mapLayerCred2, desc: S.of(context)!.mapLayerCred2Desc, min: 2),
-    (label: S.of(context)!.mapLayerCred3, desc: S.of(context)!.mapLayerCred3Desc, min: 3),
-    (label: S.of(context)!.mapLayerCred5, desc: S.of(context)!.mapLayerCred5Desc, min: 5),
+    (label: context.l10n.mapLayerCredAll, desc: context.l10n.mapLayerCredAllDesc, min: 1),
+    (label: context.l10n.mapLayerCred2, desc: context.l10n.mapLayerCred2Desc, min: 2),
+    (label: context.l10n.mapLayerCred3, desc: context.l10n.mapLayerCred3Desc, min: 3),
+    (label: context.l10n.mapLayerCred5, desc: context.l10n.mapLayerCred5Desc, min: 5),
   ];
 }
 
@@ -124,7 +124,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
             children: [
               const Icon(Icons.layers, color: Colors.white, size: 22),
               const SizedBox(width: 8),
-              Text(S.of(context)!.mapLayerTitle,
+              Text(context.l10n.mapLayerTitle,
                   style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
@@ -135,7 +135,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
 
           // ═══════════ POI 區段 ═══════════
           _sectionHeader(
-            S.of(context)!.mapLayerPoiSection,
+            context.l10n.mapLayerPoiSection,
             Icons.place,
             s.showPoi,
             (v) => setState(() => s.showPoi = v),
@@ -148,7 +148,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
 
           // ═══════════ 危險區域區段 ═══════════
           _sectionHeader(
-            S.of(context)!.mapLayerHazardSection,
+            context.l10n.mapLayerHazardSection,
             Icons.warning_amber,
             s.showHazards,
             (v) => setState(() => s.showHazards = v),
@@ -156,7 +156,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
           if (s.showHazards) ...[
             const SizedBox(height: 4),
             _subToggle(
-              S.of(context)!.mapLayerHazardShowOthers,
+              context.l10n.mapLayerHazardShowOthers,
               s.showOtherHazards,
               (v) => setState(() => s.showOtherHazards = v),
             ),
@@ -164,7 +164,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 20),
-                child: Text(S.of(context)!.mapLayerHazardMinCredibility,
+                child: Text(context.l10n.mapLayerHazardMinCredibility,
                     style: const TextStyle(color: Colors.white54, fontSize: 12)),
               ),
               const SizedBox(height: 6),
@@ -216,7 +216,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
         Switch(
           value: value,
           onChanged: onChanged,
-          activeColor: Colors.greenAccent,
+          activeThumbColor: Colors.greenAccent,
         ),
       ],
     );
@@ -233,7 +233,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: Colors.greenAccent,
+            activeThumbColor: Colors.greenAccent,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ],
@@ -254,7 +254,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
           Switch(
             value: s.poiIsEnabled(cat.id),
             onChanged: (v) => setState(() => s.setPoiEnabled(cat.id, v)),
-            activeColor: cat.color,
+            activeThumbColor: cat.color,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ],

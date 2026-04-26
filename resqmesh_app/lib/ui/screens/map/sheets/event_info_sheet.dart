@@ -6,7 +6,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 import 'package:ignirelay_app/app/services/location_service.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 /// Stage 4d Round 2：Mesh 事件詳情 BottomSheet。
 ///
@@ -25,7 +26,7 @@ class EventInfoSheet {
   }) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: context.igni.bg2,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -50,7 +51,7 @@ class _EventInfoSheetBody extends StatelessWidget {
     final lng = (evt['received_lng'] as num?)?.toDouble() ?? 0;
     final eventId = (evt['event_id'] as String?) ?? '';
 
-    final l = S.of(context)!;
+    final l = context.l10n;
 
     // 事件類型
     String typeName;

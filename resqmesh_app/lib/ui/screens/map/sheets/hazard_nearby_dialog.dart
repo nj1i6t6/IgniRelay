@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 /// Stage 4d Round 2：標記模式中，若附近已有同類型危險回報時的提示對話框。
 ///
@@ -21,11 +22,11 @@ class HazardNearbyDialog {
     required int confirmCount,
     required String typeLabel,
   }) {
-    final l = S.of(context)!;
+    final l = context.l10n;
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
+        backgroundColor: ctx.igni.bg2,
         title: Row(children: [
           const Icon(Icons.people, color: Colors.orange),
           const SizedBox(width: 8),

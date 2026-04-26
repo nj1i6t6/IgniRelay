@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -528,15 +527,22 @@ class DatabaseHelper {
   Future<void> saveMedicalCard(List<int> pubKey, String medicalCardJson) =>
       _medicalCardRepo.saveMedicalCard(pubKey, medicalCardJson);
 
-  /// 寫入除錯日誌（fire-and-forget，不影響效能）
-  void writeDebugLog(String source, String message) {
-    database.then((db) {
-      db.insert('Debug_Logs', {
+  /// 寫入除錯日誌。
+  ///
+  /// 預設 fire-and-forget（呼叫端不需 await，效能不受影響）；
+  /// Stage 7 起回傳 `Future<void>` 以便測試或必要時呼叫端可選擇 `await`，
+  /// 解決原本 `void` 介面導致測試只能用 `Future.delayed` 等待造成的偶發 flake。
+  Future<void> writeDebugLog(String source, String message) async {
+    try {
+      final db = await database;
+      await db.insert('Debug_Logs', {
         'timestamp': DateTime.now().millisecondsSinceEpoch,
         'source': source,
         'message': message,
-      }).catchError((_) => 0);
-    }).catchError((_) => null);
+      });
+    } catch (_) {
+      // 任何失敗皆吞掉：debug log 不應影響主流程
+    }
   }
 
   /// 匯出全部除錯日誌

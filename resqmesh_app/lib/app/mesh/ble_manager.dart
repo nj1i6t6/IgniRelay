@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/iblt.dart';
@@ -172,12 +171,12 @@ class BleManager {
   }
 
   void _scheduleNordicScanRestart() {
-    Future.delayed(Duration(seconds: kScanDurationSec), () async {
+    Future.delayed(const Duration(seconds: kScanDurationSec), () async {
       if (!_isActive) return;
       await NativeBridge.stopNordicScan();
       _isScanning = false;
       _dlog('Nordic scan cycle done, restart in ${kScanRestartDelaySec}s');
-      Future.delayed(Duration(seconds: kScanRestartDelaySec), () {
+      Future.delayed(const Duration(seconds: kScanRestartDelaySec), () {
         if (_isActive) _startNativeScan();
       });
     });
@@ -729,12 +728,12 @@ class BleManager {
     final last = _peerCooldown[deviceId];
     if (last == null) return false;
     return DateTime.now().difference(last) <
-        Duration(seconds: kPeerCooldownSec);
+        const Duration(seconds: kPeerCooldownSec);
   }
 
   void _cleanupCooldowns() {
     _peerCooldown.removeWhere((_, time) =>
-        DateTime.now().difference(time) > Duration(seconds: kPeerCooldownSec));
+        DateTime.now().difference(time) > const Duration(seconds: kPeerCooldownSec));
     _knownPeers.clear();
     // Stage 6：cooldown 過期意味著此 peer 已可重試 → 連帶從 _cancelledSyncs
     // 移除；正常情況下這保證 _cancelledSyncs 大小跟著 cooldown 縮減而非無界堆積。

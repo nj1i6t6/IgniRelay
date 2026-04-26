@@ -5,7 +5,7 @@ import 'package:health/health.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/models/medical_card.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 class MedicalCardScreen extends StatefulWidget {
   const MedicalCardScreen({super.key});
@@ -123,7 +123,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.medicalSavedSnack),
+            content: Text(context.l10n.medicalSavedSnack),
             backgroundColor: Colors.green,
           ),
         );
@@ -133,7 +133,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.medicalSaveFailSnack(e.toString())),
+            content: Text(context.l10n.medicalSaveFailSnack(e.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -147,7 +147,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
     setState(() => _card.applyPreset(preset));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(S.of(context)!.medicalPresetApplied(presetName)),
+        content: Text(context.l10n.medicalPresetApplied(presetName)),
         backgroundColor: const Color(0xFF1a1a2e),
         duration: const Duration(seconds: 1),
       ),
@@ -159,7 +159,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
       appBar: AppBar(
-        title: Text(S.of(context)!.medicalTitle, style: const TextStyle(color: Colors.white)),
+        title: Text(context.l10n.medicalTitle, style: const TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -187,7 +187,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            S.of(context)!.medicalSosInfo,
+                            context.l10n.medicalSosInfo,
                             style: const TextStyle(
                                 color: Colors.white70, fontSize: 12),
                           ),
@@ -206,71 +206,71 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   const SizedBox(height: 20),
 
                   // ── 基本生理 ──
-                  _buildSectionHeader(S.of(context)!.medicalSectionBasic, Icons.person_outline),
+                  _buildSectionHeader(context.l10n.medicalSectionBasic, Icons.person_outline),
                   _buildTextField(
                     field: MedicalField.name,
-                    label: S.of(context)!.medicalFieldName,
+                    label: context.l10n.medicalFieldName,
                     controller: _nameCtrl,
-                    hint: S.of(context)!.medicalHintName,
+                    hint: context.l10n.medicalHintName,
                     icon: Icons.badge_outlined,
                   ),
                   _buildNumberField(
                     field: MedicalField.age,
-                    label: S.of(context)!.medicalFieldAge,
+                    label: context.l10n.medicalFieldAge,
                     controller: _ageCtrl,
-                    hint: S.of(context)!.medicalHintAge,
+                    hint: context.l10n.medicalHintAge,
                     icon: Icons.cake_outlined,
-                    suffix: S.of(context)!.medicalSuffixAge,
+                    suffix: context.l10n.medicalSuffixAge,
                   ),
                   _buildNumberField(
                     field: MedicalField.heightCm,
-                    label: S.of(context)!.medicalFieldHeight,
+                    label: context.l10n.medicalFieldHeight,
                     controller: _heightCtrl,
-                    hint: S.of(context)!.medicalHintHeight,
+                    hint: context.l10n.medicalHintHeight,
                     icon: Icons.height,
-                    suffix: S.of(context)!.medicalSuffixHeight,
+                    suffix: context.l10n.medicalSuffixHeight,
                   ),
                   _buildNumberField(
                     field: MedicalField.weightKg,
-                    label: S.of(context)!.medicalFieldWeight,
+                    label: context.l10n.medicalFieldWeight,
                     controller: _weightCtrl,
-                    hint: S.of(context)!.medicalHintWeight,
+                    hint: context.l10n.medicalHintWeight,
                     icon: Icons.monitor_weight_outlined,
-                    suffix: S.of(context)!.medicalSuffixWeight,
+                    suffix: context.l10n.medicalSuffixWeight,
                   ),
                   _buildBloodTypeField(),
                   const SizedBox(height: 20),
 
                   // ── 醫療背景 ──
-                  _buildSectionHeader(S.of(context)!.medicalSectionBackground, Icons.medical_services_outlined),
+                  _buildSectionHeader(context.l10n.medicalSectionBackground, Icons.medical_services_outlined),
                   _buildTextField(
                     field: MedicalField.conditions,
-                    label: S.of(context)!.medicalFieldConditions,
+                    label: context.l10n.medicalFieldConditions,
                     controller: _conditionsCtrl,
-                    hint: S.of(context)!.medicalHintConditions,
+                    hint: context.l10n.medicalHintConditions,
                     icon: Icons.healing_outlined,
                     maxLines: 2,
                   ),
                   _buildAllergySection(),
                   _buildTextField(
                     field: MedicalField.medications,
-                    label: S.of(context)!.medicalFieldMedications,
+                    label: context.l10n.medicalFieldMedications,
                     controller: _medicationsCtrl,
-                    hint: S.of(context)!.medicalHintMedications,
+                    hint: context.l10n.medicalHintMedications,
                     icon: Icons.medication_outlined,
                     maxLines: 2,
                   ),
                   const SizedBox(height: 20),
 
                   // ── 急救資訊 ──
-                  _buildSectionHeader(S.of(context)!.medicalSectionEmergency, Icons.emergency_outlined),
+                  _buildSectionHeader(context.l10n.medicalSectionEmergency, Icons.emergency_outlined),
                   _buildEmergencyContactSection(),
                   _buildOrganDonorField(),
                   _buildTextField(
                     field: MedicalField.primaryLanguage,
-                    label: S.of(context)!.medicalFieldPrimaryLanguage,
+                    label: context.l10n.medicalFieldPrimaryLanguage,
                     controller: _languageCtrl,
-                    hint: S.of(context)!.medicalHintLanguage,
+                    hint: context.l10n.medicalHintLanguage,
                     icon: Icons.language,
                   ),
                 ],
@@ -303,7 +303,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                             ),
                           )
                         : const Icon(Icons.save, size: 18),
-                    label: Text(_saving ? S.of(context)!.medicalSaving : S.of(context)!.medicalSaveButton,
+                    label: Text(_saving ? context.l10n.medicalSaving : context.l10n.medicalSaveButton,
                         style: const TextStyle(
                             fontSize: 15, fontWeight: FontWeight.bold)),
                   ),
@@ -315,7 +315,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
 
   // ── 快速預設列 ──
   Widget _buildPresetRow() {
-    final s = S.of(context)!;
+    final s = context.l10n;
     return Row(
       children: [
         Text(s.medicalPresetLabel,
@@ -341,7 +341,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
       ),
       onPressed: _importFromHealthConnect,
       icon: const Icon(Icons.download, size: 18),
-      label: Text(S.of(context)!.medicalHealthImportButton, style: const TextStyle(fontSize: 13)),
+      label: Text(context.l10n.medicalHealthImportButton, style: const TextStyle(fontSize: 13)),
     );
   }
 
@@ -367,19 +367,19 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: Text(S.of(context)!.medicalHealthConnectRequired),
-            content: Text(S.of(context)!.medicalHealthConnectInstallGuide),
+            title: Text(context.l10n.medicalHealthConnectRequired),
+            content: Text(context.l10n.medicalHealthConnectInstallGuide),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: Text(S.of(context)!.medicalHealthConnectDismiss),
+                child: Text(context.l10n.medicalHealthConnectDismiss),
               ),
               TextButton(
                 onPressed: () {
                   Navigator.pop(ctx);
                   health.installHealthConnect();
                 },
-                child: Text(S.of(context)!.medicalHealthConnectInstall),
+                child: Text(context.l10n.medicalHealthConnectInstall),
               ),
             ],
           ),
@@ -398,12 +398,12 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
           showDialog(
             context: context,
             builder: (ctx) => AlertDialog(
-              title: Text(S.of(context)!.medicalHealthConnectAuthFail),
-              content: Text(S.of(context)!.medicalHealthConnectAuthGuide),
+              title: Text(context.l10n.medicalHealthConnectAuthFail),
+              content: Text(context.l10n.medicalHealthConnectAuthGuide),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: Text(S.of(context)!.medicalHealthConnectDismiss),
+                  child: Text(context.l10n.medicalHealthConnectDismiss),
                 ),
               ],
             ),
@@ -425,7 +425,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(S.of(context)!.medicalHealthConnectNoData),
+              content: Text(context.l10n.medicalHealthConnectNoData),
               backgroundColor: Colors.orange,
             ),
           );
@@ -473,8 +473,8 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(imported > 0
-                ? S.of(context)!.medicalHealthConnectImported(imported)
-                : S.of(context)!.medicalHealthConnectNoNewData),
+                ? context.l10n.medicalHealthConnectImported(imported)
+                : context.l10n.medicalHealthConnectNoNewData),
             backgroundColor: imported > 0 ? Colors.green : Colors.orange,
           ),
         );
@@ -483,7 +483,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.medicalHealthConnectFailSnack(e.toString())),
+            content: Text(context.l10n.medicalHealthConnectFailSnack(e.toString())),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),
@@ -716,12 +716,12 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
         children: [
           Expanded(
             child: DropdownButtonFormField<String>(
-              value:
+              initialValue:
                   _bloodTypes.contains(_card.bloodType) ? _card.bloodType : '',
               dropdownColor: const Color(0xFF1a1a2e),
               style: const TextStyle(color: Colors.white, fontSize: 14),
               decoration: InputDecoration(
-                labelText: S.of(context)!.medicalFieldBloodType,
+                labelText: context.l10n.medicalFieldBloodType,
                 labelStyle:
                     const TextStyle(color: Colors.white38, fontSize: 13),
                 prefixIcon: const Icon(Icons.bloodtype_outlined,
@@ -742,7 +742,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
               items: _bloodTypes.map((bt) {
                 return DropdownMenuItem(
                   value: bt,
-                  child: Text(bt.isEmpty ? S.of(context)!.medicalBloodTypeNone : bt),
+                  child: Text(bt.isEmpty ? context.l10n.medicalBloodTypeNone : bt),
                 );
               }).toList(),
               onChanged: (v) => setState(() => _card.bloodType = v ?? ''),
@@ -767,7 +767,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
               const Icon(Icons.warning_amber_outlined,
                   color: Colors.white38, size: 18),
               const SizedBox(width: 8),
-              Text(S.of(context)!.medicalAllergenLabel,
+              Text(context.l10n.medicalAllergenLabel,
                   style: const TextStyle(color: Colors.white54, fontSize: 13)),
               const Spacer(),
               _buildSosToggle(MedicalField.allergies),
@@ -812,7 +812,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   controller: _allergenCtrl,
                   style: const TextStyle(color: Colors.white, fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: S.of(context)!.medicalAllergenHint,
+                    hintText: context.l10n.medicalAllergenHint,
                     hintStyle:
                         const TextStyle(color: Colors.white24, fontSize: 12),
                     enabledBorder: OutlineInputBorder(
@@ -837,7 +837,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   controller: _reactionCtrl,
                   style: const TextStyle(color: Colors.white, fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: S.of(context)!.medicalReactionHint,
+                    hintText: context.l10n.medicalReactionHint,
                     hintStyle:
                         const TextStyle(color: Colors.white24, fontSize: 12),
                     enabledBorder: OutlineInputBorder(
@@ -864,7 +864,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   setState(() {
                     _card.allergies.add(AllergyEntry(
                       allergen: allergen,
-                      reaction: reaction.isNotEmpty ? reaction : S.of(context)!.medicalReactionUnknown,
+                      reaction: reaction.isNotEmpty ? reaction : context.l10n.medicalReactionUnknown,
                     ));
                     _allergenCtrl.clear();
                     _reactionCtrl.clear();
@@ -903,7 +903,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   keyboardType: TextInputType.phone,
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
-                    labelText: S.of(context)!.medicalEcPhoneLabel,
+                    labelText: context.l10n.medicalEcPhoneLabel,
                     labelStyle:
                         const TextStyle(color: Colors.white38, fontSize: 13),
                     hintText: '0912-345-678',
@@ -938,10 +938,10 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   controller: _ecRelationCtrl,
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
-                    labelText: S.of(context)!.medicalEcRelationLabel,
+                    labelText: context.l10n.medicalEcRelationLabel,
                     labelStyle:
                         const TextStyle(color: Colors.white38, fontSize: 13),
-                    hintText: S.of(context)!.medicalEcRelationHint,
+                    hintText: context.l10n.medicalEcRelationHint,
                     hintStyle:
                         const TextStyle(color: Colors.white24, fontSize: 13),
                     prefixIcon: const Icon(Icons.people_outline,
@@ -990,7 +990,7 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                   const Icon(Icons.volunteer_activism_outlined,
                       color: Colors.white38, size: 18),
                   const SizedBox(width: 12),
-                  Text(S.of(context)!.medicalOrganDonorLabel,
+                  Text(context.l10n.medicalOrganDonorLabel,
                       style: const TextStyle(color: Colors.white54, fontSize: 13)),
                   const Spacer(),
                   DropdownButton<bool?>(
@@ -999,9 +999,9 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
                     underline: const SizedBox(),
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     items: [
-                      DropdownMenuItem(value: null, child: Text(S.of(context)!.medicalOrganDonorNone)),
-                      DropdownMenuItem(value: true, child: Text(S.of(context)!.medicalOrganDonorYes)),
-                      DropdownMenuItem(value: false, child: Text(S.of(context)!.medicalOrganDonorNo)),
+                      DropdownMenuItem(value: null, child: Text(context.l10n.medicalOrganDonorNone)),
+                      DropdownMenuItem(value: true, child: Text(context.l10n.medicalOrganDonorYes)),
+                      DropdownMenuItem(value: false, child: Text(context.l10n.medicalOrganDonorNo)),
                     ],
                     onChanged: (v) => setState(() => _card.organDonor = v),
                   ),

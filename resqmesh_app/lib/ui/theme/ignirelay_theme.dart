@@ -86,88 +86,14 @@ Theme buildIgniRelayTheme({Logger? logger, Set<String>? disabledPoi}) {
     }
   }
 
-  // ── 5. 救災 POI 定義 (5 類) ──
-  final poiDefs = <Map<String, dynamic>>[
-    {
-      'id': 'resq_grocery',
-      'icon': 'resq_grocery',
-      'minzoom': 14,
-      'filter': [
-        'all',
-        ['==', '\$type', 'Point'],
-        ['in', 'class', 'grocery']
-      ],
-      'color': '#1B8C1B',
-      'iconSize': 0.7,
-    },
-    {
-      'id': 'resq_pharmacy',
-      'icon': 'resq_pharmacy',
-      'minzoom': 13,
-      'filter': [
-        'all',
-        ['==', '\$type', 'Point'],
-        ['==', 'subclass', 'pharmacy'],
-      ],
-      'color': '#9C27B0',
-      'iconSize': 0.7,
-    },
-    {
-      'id': 'resq_school',
-      'icon': 'resq_school',
-      'minzoom': 13,
-      'filter': [
-        'all',
-        ['==', '\$type', 'Point'],
-        ['in', 'class', 'school', 'college'],
-      ],
-      'color': '#E65100',
-      'iconSize': 0.75,
-    },
-    {
-      'id': 'resq_police',
-      'icon': 'resq_police',
-      'minzoom': 12,
-      'filter': [
-        'all',
-        ['==', '\$type', 'Point'],
-        [
-          'any',
-          ['==', 'class', 'police'],
-          ['==', 'subclass', 'fire_station'],
-        ],
-      ],
-      'color': '#0D47A1',
-      'iconSize': 0.8,
-    },
-    {
-      'id': 'resq_hospital',
-      'icon': 'resq_hospital',
-      'minzoom': 12,
-      'filter': [
-        'all',
-        ['==', '\$type', 'Point'],
-        [
-          'any',
-          ['==', 'class', 'hospital'],
-          ['==', 'subclass', 'doctors'],
-        ],
-      ],
-      'color': '#C62828',
-      'iconSize': 0.9,
-    },
-  ];
+  // ── 5. 救災 POI 定義 (5 類)：vector tile symbol layer 已移除（見 7A），
+  // 五大類別保留於 lib/ui/screens/map/widgets/poi_category.dart 並由 Marker 渲染。
 
   // ── 7. 碰撞優先權排序：POI文字 > 主幹道 > 小路 > 地名 ──
   // 先渲染的 symbol 先佔據 label space → 碰撞優先權由高到低
-
-  // 依據 disabledPoi 過濾啟用的 POI 類別
-  final enabledDefs = (disabledPoi != null && disabledPoi.isNotEmpty)
-      ? poiDefs.where((d) => !disabledPoi.contains(d['id'])).toList()
-      : poiDefs;
-
+  //
   // 7A. 救災 POI 文字層已移除 — 改用 Flutter Marker 圓點顯示五大類別 POI
-  // 不再在 vector tile 層渲染彩色文字名稱
+  // 不再在 vector tile 層渲染彩色文字名稱（disabledPoi 過濾改由 Marker 層處理）。
 
   // 7B. 主幹道路名 (次高碰撞優先，minzoom 12)
   if (roadLabelOriginal != null) {
@@ -272,55 +198,6 @@ Map<String, dynamic> _roadLabelLayer({
   };
 }
 
-/// 產生救災 POI 圖標層 (無 text-field → 繞過碰撞偵測，永遠顯示)
-Map<String, dynamic> _poiIconLayer({
-  required String id,
-  required String iconImage,
-  required int minzoom,
-  required List<dynamic> filter,
-  double iconSize = 0.8,
-}) {
-  return {
-    'id': id,
-    'type': 'symbol',
-    'source': 'openmaptiles',
-    'source-layer': 'poi',
-    'minzoom': minzoom,
-    'filter': filter,
-    'layout': {
-      'icon-image': iconImage,
-      'icon-size': iconSize,
-    },
-    'paint': <String, dynamic>{},
-  };
-}
-
-/// 產生救災 POI 文字層 (有 text-field → 參與碰撞偵測，但排在 road_label 之前有優先權)
-Map<String, dynamic> _poiTextLayer({
-  required String id,
-  required int minzoom,
-  required List<dynamic> filter,
-  required String textColor,
-}) {
-  return {
-    'id': id,
-    'type': 'symbol',
-    'source': 'openmaptiles',
-    'source-layer': 'poi',
-    'minzoom': minzoom,
-    'filter': filter,
-    'layout': {
-      'text-field': '{name}',
-      'text-font': ['Roboto Medium'],
-      'text-size': 11,
-      'text-anchor': 'top',
-      'text-offset': [0, 1.0],
-      'text-max-width': 8,
-    },
-    'paint': {
-      'text-color': textColor,
-      'text-halo-color': '#ffffff',
-      'text-halo-width': 2.0,
-    },
-  };
-}
+// _poiIconLayer / _poiTextLayer 已不再使用：救災 POI 改由 Flutter Marker 渲染
+// （見 lib/ui/screens/map/widgets/poi_category.dart 與 map_screen 的 _refreshPoiMarkers）。
+// 此處原 vector tile symbol layer 保留於 git 史。

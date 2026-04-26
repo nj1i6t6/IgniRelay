@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 class OnboardingScreen extends StatefulWidget {
   final VoidCallback onComplete;
@@ -25,10 +25,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     Color(0xFFFFD700), // L3 Gold
   ];
   List<String> _badgeNames(BuildContext context) => [
-    S.of(context)!.onboardingBadgeL0,
-    S.of(context)!.onboardingBadgeL1,
-    S.of(context)!.onboardingBadgeL2,
-    S.of(context)!.onboardingBadgeL3,
+    context.l10n.onboardingBadgeL0,
+    context.l10n.onboardingBadgeL1,
+    context.l10n.onboardingBadgeL2,
+    context.l10n.onboardingBadgeL3,
   ];
 
   @override
@@ -59,9 +59,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a2e),
-        title: Text(S.of(ctx)!.onboardingUpgradeDialogTitle, style: const TextStyle(color: Colors.white)),
+        title: Text(ctx.l10n.onboardingUpgradeDialogTitle, style: const TextStyle(color: Colors.white)),
         content: Text(
-          S.of(ctx)!.onboardingUpgradeDialogContent,
+          ctx.l10n.onboardingUpgradeDialogContent,
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -72,11 +72,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               setState(() => _level = 1);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(S.of(context)!.onboardingUpgradeSnack)),
+                  SnackBar(content: Text(context.l10n.onboardingUpgradeSnack)),
                 );
               }
             },
-            child: Text(S.of(ctx)!.onboardingUpgradeDialogConfirm, style: const TextStyle(color: Colors.amber)),
+            child: Text(ctx.l10n.onboardingUpgradeDialogConfirm, style: const TextStyle(color: Colors.amber)),
           ),
         ],
       ),
@@ -133,7 +133,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       color: color, fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               Text(
-                S.of(context)!.onboardingDeviceId(_pubKeyHex),
+                context.l10n.onboardingDeviceId(_pubKeyHex),
                 style: const TextStyle(
                     color: Colors.grey, fontSize: 12, fontFamily: 'monospace'),
               ),
@@ -141,7 +141,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
               // 標題
               Text(
-                S.of(context)!.onboardingTitle,
+                context.l10n.onboardingTitle,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                     color: Colors.white,
@@ -151,7 +151,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                S.of(context)!.onboardingDesc,
+                context.l10n.onboardingDesc,
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white54, fontSize: 14, height: 1.6),
               ),
@@ -162,7 +162,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 controller: _nicknameCtrl,
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
-                  labelText: S.of(context)!.onboardingNicknameHint,
+                  labelText: context.l10n.onboardingNicknameHint,
                   labelStyle: const TextStyle(color: Colors.white54),
                   prefixIcon: const Icon(Icons.person, color: Colors.white54),
                   enabledBorder: OutlineInputBorder(
@@ -183,7 +183,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   onPressed: _upgradeToL1,
                   icon:
                       const Icon(Icons.verified_user, color: Color(0xFFCD7F32)),
-                  label: Text(S.of(context)!.onboardingUpgradeButton,
+                  label: Text(context.l10n.onboardingUpgradeButton,
                       style: const TextStyle(color: Color(0xFFCD7F32))),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFFCD7F32)),
@@ -206,7 +206,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         borderRadius: BorderRadius.circular(12)),
                   ),
                   child: Text(
-                    S.of(context)!.onboardingStartButton,
+                    context.l10n.onboardingStartButton,
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,

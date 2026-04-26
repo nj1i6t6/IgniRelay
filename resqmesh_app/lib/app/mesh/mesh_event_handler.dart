@@ -7,7 +7,6 @@ import 'package:ignirelay_app/app/crdt/hlc.dart';
 import 'package:ignirelay_app/app/crypto/signer.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
-import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 
@@ -499,33 +498,6 @@ class MeshEventHandler {
     // New handshake flow uses slot 16 (handshakeComplete) via NegotiationManager
     // Just log that we received it; don't process
     debugPrint('[MeshEventHandler] Received legacy physicalHandshake, ignoring');
-  }
-
-  /// 處理 LOCATION_UPDATE（向後相容保留，實際由 NegotiationManager 處理）
-  Future<void> _handleLocationUpdateEvent(Map<String, dynamic> row) async {
-    // Location updates are now handled by NegotiationManager via handleRemoteEvent
-    // This handler is kept for backward compat but delegates up
-  }
-
-  /// 輔助：取得自己的公鑰 bytes
-  Future<List<int>> _getMyPubKeyBytes() async {
-    try {
-      final identity = (await _getIdentityManager());
-      return await identity.getPublicKeyBytes();
-    } catch (_) {
-      return [];
-    }
-  }
-
-  dynamic _identityManagerCached;
-  Future<dynamic> _getIdentityManager() async {
-    _identityManagerCached ??= (await _loadIdentityManager());
-    return _identityManagerCached;
-  }
-
-  Future<dynamic> _loadIdentityManager() async {
-    // 動態取得 IdentityManager 以避免循環依賴
-    return IdentityManager();
   }
 
   // ── Wire Payload 編解碼 ────────────────────────────────────────

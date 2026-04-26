@@ -13,7 +13,7 @@ import 'package:ignirelay_app/app/controllers/mesh_runtime_controller.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/tier_manager.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 class SurvivalModeScreen extends StatefulWidget {
   const SurvivalModeScreen({super.key});
@@ -112,7 +112,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       if (!mounted) return;
       setState(() {
         _bleConnectedCount++;
-        _recentEvents.insert(0, S.of(context)!.survivalMeshReceived(event.data.length));
+        _recentEvents.insert(0, context.l10n.survivalMeshReceived(event.data.length));
         if (_recentEvents.length > 5) _recentEvents.removeLast();
       });
     });
@@ -184,7 +184,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(S.of(context)!.survivalDataMuleFailSnack),
+              content: Text(context.l10n.survivalDataMuleFailSnack),
               backgroundColor: Colors.orange,
             ),
           );
@@ -214,7 +214,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
         if (!allGranted && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(S.of(context)!.survivalBleFailSnack('Missing BLE permissions')),
+              content: Text(context.l10n.survivalBleFailSnack('Missing BLE permissions')),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 3),
             ),
@@ -232,7 +232,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(S.of(context)!.survivalBleFailSnack(e.toString())),
+              content: Text(context.l10n.survivalBleFailSnack(e.toString())),
               backgroundColor: Colors.red,
               duration: const Duration(seconds: 5),
             ),
@@ -324,7 +324,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.survivalExportSuccess(file.path.split('/').last)),
+            content: Text(context.l10n.survivalExportSuccess(file.path.split('/').last)),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 5),
           ),
@@ -334,7 +334,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.survivalExportFail(e.toString())),
+            content: Text(context.l10n.survivalExportFail(e.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -375,7 +375,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
               ),
               const SizedBox(height: 12),
               Text(
-                TierManager().getTierLabel(S.of(context)!),
+                TierManager().getTierLabel(context.l10n),
                 style: TextStyle(
                   color: muleColor,
                   fontSize: 20,
@@ -400,7 +400,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
-                        S.of(context)!.survivalBattery(_batteryLevel),
+                        context.l10n.survivalBattery(_batteryLevel),
                         style: TextStyle(color: batteryColor, fontSize: 13),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -419,7 +419,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                S.of(context)!.survivalListening,
+                context.l10n.survivalListening,
                 style: const TextStyle(color: Colors.grey, fontSize: 13),
               ),
 
@@ -432,7 +432,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                   Expanded(
                     child: _ControlButton(
                       icon: Icons.router,
-                      label: _isDataMule ? S.of(context)!.survivalDataMuleDisable : S.of(context)!.survivalDataMuleEnable,
+                      label: _isDataMule ? context.l10n.survivalDataMuleDisable : context.l10n.survivalDataMuleEnable,
                       color: _isDataMule ? Colors.cyan : Colors.white24,
                       onTap: _toggleDataMule,
                       onInfoTap: () => _showDataMuleExplanation(),
@@ -442,7 +442,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                   Expanded(
                     child: _ControlButton(
                       icon: Icons.bluetooth,
-                      label: _isBleActive ? S.of(context)!.survivalBlePause : S.of(context)!.survivalBleResume,
+                      label: _isBleActive ? context.l10n.survivalBlePause : context.l10n.survivalBleResume,
                       color: _isBleActive ? Colors.blueAccent : Colors.white24,
                       onTap: _toggleBle,
                     ),
@@ -455,9 +455,9 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
               // 統計
               Row(
                 children: [
-                  _StatChip(label: S.of(context)!.survivalStatsLocalEvents, value: '$_totalEventCount'),
+                  _StatChip(label: context.l10n.survivalStatsLocalEvents, value: '$_totalEventCount'),
                   const SizedBox(width: 8),
-                  _StatChip(label: S.of(context)!.survivalStatsBleConnections, value: '$_bleConnectedCount'),
+                  _StatChip(label: context.l10n.survivalStatsBleConnections, value: '$_bleConnectedCount'),
                 ],
               ),
 
@@ -469,7 +469,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    S.of(context)!.survivalRecentEvents,
+                    context.l10n.survivalRecentEvents,
                     style: const TextStyle(color: Colors.white38, fontSize: 12),
                   ),
                 ),
@@ -557,7 +557,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
               ),
               onPressed: _exportLogs,
               icon: const Icon(Icons.download, size: 16),
-              label: Text(S.of(context)!.survivalExportButton, style: const TextStyle(fontSize: 12)),
+              label: Text(context.l10n.survivalExportButton, style: const TextStyle(fontSize: 12)),
             ),
           ),
           const SizedBox(height: 10),
@@ -616,11 +616,17 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                 itemBuilder: (_, i) {
                   final log = logs[logs.length - 1 - i];
                   Color c = Colors.greenAccent.withValues(alpha: 0.7);
-                  if (log.contains('ERROR')) c = Colors.red;
-                  else if (log.contains('SKIP')) c = Colors.orange;
-                  else if (log.contains('SENT')) c = Colors.lightBlueAccent;
-                  else if (log.contains('RECV')) c = Colors.purpleAccent;
-                  else if (log.contains('SCAN') || log.contains('BLOOM')) c = Colors.yellow;
+                  if (log.contains('ERROR')) {
+                    c = Colors.red;
+                  } else if (log.contains('SKIP')) {
+                    c = Colors.orange;
+                  } else if (log.contains('SENT')) {
+                    c = Colors.lightBlueAccent;
+                  } else if (log.contains('RECV')) {
+                    c = Colors.purpleAccent;
+                  } else if (log.contains('SCAN') || log.contains('BLOOM')) {
+                    c = Colors.yellow;
+                  }
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 1),
                     child: Text(log, style: TextStyle(color: c, fontSize: 9, fontFamily: 'monospace'), maxLines: 2, overflow: TextOverflow.ellipsis),
@@ -660,19 +666,19 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
             const Icon(Icons.router, color: Colors.cyanAccent, size: 22),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(S.of(context)!.survivalDataMuleDialogTitle,
+              child: Text(context.l10n.survivalDataMuleDialogTitle,
                   style: const TextStyle(color: Colors.white, fontSize: 16)),
             ),
           ],
         ),
         content: Text(
-          S.of(context)!.survivalDataMuleDialogContent,
+          context.l10n.survivalDataMuleDialogContent,
           style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(S.of(context)!.survivalDataMuleDialogDismiss, style: const TextStyle(color: Colors.cyanAccent)),
+            child: Text(context.l10n.survivalDataMuleDialogDismiss, style: const TextStyle(color: Colors.cyanAccent)),
           ),
         ],
       ),

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 import 'package:ignirelay_app/app/services/negotiation_events.dart';
 import 'package:ignirelay_app/app/services/match_repository.dart';
@@ -22,6 +21,7 @@ import 'package:ignirelay_app/ui/screens/match/match_tab_supplies.dart';
 import 'package:ignirelay_app/ui/screens/match/match_tab_requests.dart';
 import 'package:ignirelay_app/ui/screens/match/match_tab_negotiations.dart';
 import 'package:ignirelay_app/ui/screens/match/match_tab_community.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 // =============================================================================
 // MatchScreen — 4-tab layout following three-layer architecture
@@ -184,17 +184,17 @@ class _MatchScreenState extends State<MatchScreen>
     _loadAll();
     // Show snackbar for key events
     if (event is NegotiationAccepted) {
-      _showSnack(S.of(context)!.matchNegAcceptedSnack, Colors.green);
+      _showSnack(context.l10n.matchNegAcceptedSnack, Colors.green);
     } else if (event is NegotiationDeclined) {
-      _showSnack(S.of(context)!.matchNegDeclinedSnack, Colors.orange);
+      _showSnack(context.l10n.matchNegDeclinedSnack, Colors.orange);
     } else if (event is NegotiationCancelled) {
-      _showSnack(S.of(context)!.matchNegCancelledSnack, Colors.grey);
+      _showSnack(context.l10n.matchNegCancelledSnack, Colors.grey);
     } else if (event is NegotiationCompleted) {
-      _showSnack(S.of(context)!.matchHandoffCompleteSnack, Colors.green);
+      _showSnack(context.l10n.matchHandoffCompleteSnack, Colors.green);
     } else if (event is NegotiationExpired) {
-      _showSnack(S.of(context)!.matchNegExpiredSnack, Colors.orange);
+      _showSnack(context.l10n.matchNegExpiredSnack, Colors.orange);
     } else if (event is OversoldDetected) {
-      _showSnack(S.of(context)!.matchOverQuantityWarning, Colors.red);
+      _showSnack(context.l10n.matchOverQuantityWarning, Colors.red);
     }
   }
 
@@ -213,7 +213,7 @@ class _MatchScreenState extends State<MatchScreen>
   Widget build(BuildContext context) {
     super.build(context);
     final p = context.igni;
-    final s = S.of(context)!;
+    final s = context.l10n;
 
     return Stack(
       children: [
@@ -401,8 +401,8 @@ class _MatchScreenState extends State<MatchScreen>
             ),
             child: Text(
               _locationService.permDeniedForever
-                  ? S.of(context)!.matchGpsOpenSettings
-                  : S.of(context)!.matchGpsEnableLocation,
+                  ? context.l10n.matchGpsOpenSettings
+                  : context.l10n.matchGpsEnableLocation,
               style: IgniTypography.labelSmall(p.warn),
             ),
           ),
@@ -423,12 +423,12 @@ class _MatchScreenState extends State<MatchScreen>
           Icon(Icons.error_outline, color: p.sos, size: 18),
           const SizedBox(width: IgniSpacing.sm),
           Expanded(
-            child: Text(S.of(context)!.matchLoadError(_error ?? ''),
+            child: Text(context.l10n.matchLoadError(_error ?? ''),
                 style: IgniTypography.bodySmall(p.text1)),
           ),
           TextButton(
             onPressed: _loadAll,
-            child: Text(S.of(context)!.matchRetry,
+            child: Text(context.l10n.matchRetry,
                 style: IgniTypography.labelSmall(p.sos)),
           ),
         ],
@@ -446,11 +446,11 @@ class _MatchScreenState extends State<MatchScreen>
     try {
       await _eventManager.cancelSupply(pub.eventId);
       if (!mounted) return;
-      _showSnack(S.of(context)!.matchCancelSupplySnack(readableName), Colors.grey[700]!);
+      _showSnack(context.l10n.matchCancelSupplySnack(readableName), Colors.grey[700]!);
       _loadAll();
     } catch (e) {
       if (!mounted) return;
-      _showSnack(S.of(context)!.matchCancelFailSnack(e.toString()), Colors.red[700]!);
+      _showSnack(context.l10n.matchCancelFailSnack(e.toString()), Colors.red[700]!);
     }
   }
 
@@ -469,11 +469,11 @@ class _MatchScreenState extends State<MatchScreen>
         agreedQty: agreedQty,
       );
       if (!mounted) return;
-      _showSnack(S.of(context)!.matchAcceptSnack, Colors.green);
+      _showSnack(context.l10n.matchAcceptSnack, Colors.green);
       _loadAll();
     } catch (e) {
       if (!mounted) return;
-      _showSnack(S.of(context)!.matchAcceptFailSnack(e.toString()), Colors.red[700]!);
+      _showSnack(context.l10n.matchAcceptFailSnack(e.toString()), Colors.red[700]!);
     }
   }
 
@@ -489,11 +489,11 @@ class _MatchScreenState extends State<MatchScreen>
         reason: 'USER_DECLINED',
       );
       if (!mounted) return;
-      _showSnack(S.of(context)!.matchDeclineSnack, Colors.grey);
+      _showSnack(context.l10n.matchDeclineSnack, Colors.grey);
       _loadAll();
     } catch (e) {
       if (!mounted) return;
-      _showSnack(S.of(context)!.matchDeclineFailSnack(e.toString()), Colors.red[700]!);
+      _showSnack(context.l10n.matchDeclineFailSnack(e.toString()), Colors.red[700]!);
     }
   }
 
@@ -502,11 +502,11 @@ class _MatchScreenState extends State<MatchScreen>
     try {
       await _eventManager.cancelRequest(request.eventId);
       if (!mounted) return;
-      _showSnack(S.of(context)!.matchCancelRequestSnack(readableName), Colors.grey[700]!);
+      _showSnack(context.l10n.matchCancelRequestSnack(readableName), Colors.grey[700]!);
       _loadAll();
     } catch (e) {
       if (!mounted) return;
-      _showSnack(S.of(context)!.matchCancelFailSnack(e.toString()), Colors.red[700]!);
+      _showSnack(context.l10n.matchCancelFailSnack(e.toString()), Colors.red[700]!);
     }
   }
 
@@ -523,11 +523,11 @@ class _MatchScreenState extends State<MatchScreen>
         reason: 'USER_CANCELLED',
       );
       if (!mounted) return;
-      _showSnack(S.of(context)!.matchNegCancelledSnack, Colors.grey);
+      _showSnack(context.l10n.matchNegCancelledSnack, Colors.grey);
       _loadAll();
     } catch (e) {
       if (!mounted) return;
-      _showSnack(S.of(context)!.matchCancelFailSnack(e.toString()), Colors.red[700]!);
+      _showSnack(context.l10n.matchCancelFailSnack(e.toString()), Colors.red[700]!);
     }
   }
 
@@ -585,7 +585,7 @@ class _MatchScreenState extends State<MatchScreen>
         await _eventManager.publishRequest(
           resourceType: item.resourceType,
           quantity: qty,
-          note: S.of(context)!.matchCommunityNote,
+          note: context.l10n.matchCommunityNote,
           maxRangeMeters: 5000,
           mobilityMode: 'CAN_GO',
           lat: loc?.latitude,
@@ -606,15 +606,15 @@ class _MatchScreenState extends State<MatchScreen>
       if (mounted) {
         _showSnack(
           isSupply
-              ? S.of(context)!.matchCommunityRequestSnack(qty, readableName)
-              : S.of(context)!.matchCommunitySupplySnack(qty, readableName),
+              ? context.l10n.matchCommunityRequestSnack(qty, readableName)
+              : context.l10n.matchCommunitySupplySnack(qty, readableName),
           Colors.green[700]!,
         );
         _loadAll();
       }
     } catch (e) {
       if (!mounted) return;
-      _showSnack(S.of(context)!.matchCommunityFailSnack(e.toString()), Colors.red[700]!);
+      _showSnack(context.l10n.matchCommunityFailSnack(e.toString()), Colors.red[700]!);
     }
   }
 
@@ -679,13 +679,13 @@ class _MatchScreenState extends State<MatchScreen>
   String _urgencyLabel(int urgency) {
     switch (urgency) {
       case 3:
-        return S.of(context)!.matchUrgencyEmergency;
+        return context.l10n.matchUrgencyEmergency;
       case 2:
-        return S.of(context)!.matchUrgencyHelp;
+        return context.l10n.matchUrgencyHelp;
       case 1:
-        return S.of(context)!.matchUrgencySupply;
+        return context.l10n.matchUrgencySupply;
       default:
-        return S.of(context)!.matchUrgencyInfo;
+        return context.l10n.matchUrgencyInfo;
     }
   }
 
@@ -705,7 +705,7 @@ class _MatchScreenState extends State<MatchScreen>
   String _formatCountdown(int expiresAtMs) {
     final now = DateTime.now().millisecondsSinceEpoch;
     final diffMs = expiresAtMs - now;
-    if (diffMs <= 0) return S.of(context)!.matchCountdownExpired;
+    if (diffMs <= 0) return context.l10n.matchCountdownExpired;
     final minutes = (diffMs / 60000).floor();
     final seconds = ((diffMs % 60000) / 1000).floor();
     if (minutes >= 60) {

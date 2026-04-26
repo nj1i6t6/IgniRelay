@@ -45,12 +45,8 @@ void main() {
 
       // 模擬收到的聊天事件 payload
       final eventId = 'chat-evt-${DateTime.now().microsecondsSinceEpoch}';
-      final payloadMap = {
-        'room_id': roomId,
-        'room_type': 'village',
-        'content': '測試訊息 from other device',
-      };
-      // 注：payload 在此版本測試不直接寫入；保留 payloadMap 文件化欄位即可。
+      // 注：payload 在此版本測試不直接寫入（handleIncomingData 需完整簽名驗證），
+      // 改在下方直接 INSERT Chat_Messages 模擬行為，故此處不需構造 payload map。
       final senderPubKey = List<int>.generate(32, (i) => i + 1);
       final hlcTimestamp = DateTime.now().millisecondsSinceEpoch;
 

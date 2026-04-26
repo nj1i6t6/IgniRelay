@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/geo_context_resolver.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 /// 物資需求發佈頁面（全頁 Scaffold，與供給登記頁面統一風格）
 class ResourceRequestScreen extends StatefulWidget {
@@ -74,7 +75,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.reqSheetSuccessSnack),
+            content: Text(context.l10n.reqSheetSuccessSnack),
             backgroundColor: Colors.green[700],
           ),
         );
@@ -90,7 +91,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context)!.reqSheetFailSnack(e.toString())), backgroundColor: Colors.red[700]),
+          SnackBar(content: Text(context.l10n.reqSheetFailSnack(e.toString())), backgroundColor: Colors.red[700]),
         );
       }
     } finally {
@@ -100,11 +101,12 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     return Scaffold(
-      backgroundColor: const Color(0xFF0d0d1a),
+      backgroundColor: p.bg0,
       appBar: AppBar(
-        title: Text(S.of(context)!.reqSheetTitle, style: const TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF1a1a2e),
+        title: Text(context.l10n.reqSheetTitle, style: const TextStyle(color: Colors.white)),
+        backgroundColor: p.bg2,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Form(
@@ -113,7 +115,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
           padding: const EdgeInsets.all(20),
           children: [
             // ── 第一層：物資大類 ──
-            Text(S.of(context)!.reqSheetCategoryLabel,
+            Text(context.l10n.reqSheetCategoryLabel,
                 style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             Wrap(
@@ -134,7 +136,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                     decoration: BoxDecoration(
                       color: selected
                           ? cat.color.withValues(alpha: 0.3)
-                          : const Color(0xFF1a1a2e),
+                          : p.bg2,
                       border: Border.all(
                           color: selected ? cat.color : Colors.white24),
                       borderRadius: BorderRadius.circular(20),
@@ -163,7 +165,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
 
             // ── 第二層：子類別 ──
             if (_selectedCategory != null) ...[
-              Text('${SupplyCategoryLocalizer.categoryLabel(context, _selectedCategory!.code)} ${S.of(context)!.reqSheetSubCategoryLabel}',
+              Text('${SupplyCategoryLocalizer.categoryLabel(context, _selectedCategory!.code)} ${context.l10n.reqSheetSubCategoryLabel}',
                   style: const TextStyle(color: Colors.white70, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
@@ -176,7 +178,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                     selected: selected,
                     selectedColor:
                         _selectedCategory!.color.withValues(alpha: 0.3),
-                    backgroundColor: const Color(0xFF1a1a2e),
+                    backgroundColor: p.bg2,
                     labelStyle: TextStyle(
                       color:
                           selected ? _selectedCategory!.color : Colors.white54,
@@ -198,7 +200,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
             // ── 第三層：具體品項 ──
             if (_selectedSubCategory != null &&
                 _selectedSubCategory!.items.isNotEmpty) ...[
-              Text(S.of(context)!.reqSheetItemLabel,
+              Text(context.l10n.reqSheetItemLabel,
                   style: const TextStyle(color: Colors.white70, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
@@ -258,36 +260,36 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
               style: const TextStyle(color: Colors.white),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: _inputDecoration(S.of(context)!.reqSheetQtyLabel, Icons.numbers),
-              validator: (v) => (v == null || v.isEmpty) ? S.of(context)!.supplyRegQtyValidator : null,
+              decoration: _inputDecoration(context.l10n.reqSheetQtyLabel, Icons.numbers),
+              validator: (v) => (v == null || v.isEmpty) ? context.l10n.supplyRegQtyValidator : null,
             ),
             const SizedBox(height: 20),
 
             // ── 交接方式 ──
-            Text(S.of(context)!.reqSheetMobilitySection,
+            Text(context.l10n.reqSheetMobilitySection,
                 style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             _buildMobilityOption(
               mode: 'CAN_GO',
               icon: Icons.directions_walk,
-              label: S.of(context)!.reqSheetMobilityPickup,
-              subtitle: S.of(context)!.reqSheetMobilityPickupDesc,
+              label: context.l10n.reqSheetMobilityPickup,
+              subtitle: context.l10n.reqSheetMobilityPickupDesc,
               activeColor: Colors.greenAccent,
             ),
             const SizedBox(height: 8),
             _buildMobilityOption(
               mode: 'NEED_DELIVER',
               icon: Icons.accessibility_new,
-              label: S.of(context)!.reqSheetMobilityDelivery,
-              subtitle: S.of(context)!.reqSheetMobilityDeliveryDesc,
+              label: context.l10n.reqSheetMobilityDelivery,
+              subtitle: context.l10n.reqSheetMobilityDeliveryDesc,
               activeColor: Colors.orange,
             ),
             const SizedBox(height: 8),
             _buildMobilityOption(
               mode: 'DROP_OFF',
               icon: Icons.inventory_2,
-              label: S.of(context)!.reqSheetMobilityDropoff,
-              subtitle: S.of(context)!.reqSheetMobilityDropoffDesc,
+              label: context.l10n.reqSheetMobilityDropoff,
+              subtitle: context.l10n.reqSheetMobilityDropoffDesc,
               activeColor: Colors.amber,
             ),
             const SizedBox(height: 20),
@@ -299,7 +301,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    S.of(context)!.reqSheetRange((_maxRange / 1000).toStringAsFixed(1)),
+                    context.l10n.reqSheetRange((_maxRange / 1000).toStringAsFixed(1)),
                     style: const TextStyle(color: Colors.white70),
                   ),
                 ),
@@ -316,7 +318,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
               onChanged: (v) => setState(() => _maxRange = v),
             ),
             Text(
-              S.of(context)!.supplyRegRangeNote,
+              context.l10n.supplyRegRangeNote,
               style: const TextStyle(color: Colors.white30, fontSize: 11),
             ),
             const SizedBox(height: 16),
@@ -326,7 +328,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
               controller: _descCtrl,
               style: const TextStyle(color: Colors.white),
               maxLines: 2,
-              decoration: _inputDecoration(S.of(context)!.supplyRegNoteHint, Icons.notes),
+              decoration: _inputDecoration(context.l10n.supplyRegNoteHint, Icons.notes),
             ),
             const SizedBox(height: 24),
 
@@ -345,7 +347,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                     : const Icon(Icons.broadcast_on_personal,
                         color: Colors.white),
                 label: Text(
-                  _publishing ? S.of(context)!.reqSheetPublishing : S.of(context)!.reqSheetPublishButton,
+                  _publishing ? context.l10n.reqSheetPublishing : context.l10n.reqSheetPublishButton,
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
                 style: ElevatedButton.styleFrom(
@@ -378,7 +380,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
         decoration: BoxDecoration(
           color: selected
               ? activeColor.withValues(alpha: 0.15)
-              : const Color(0xFF1a1a2e),
+              : context.igni.bg2,
           border: Border.all(
               color: selected ? activeColor : Colors.white24),
           borderRadius: BorderRadius.circular(12),

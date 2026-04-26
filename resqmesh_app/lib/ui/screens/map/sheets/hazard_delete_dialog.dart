@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 /// Stage 4d Round 2：刪除危險標記確認對話框。
 ///
@@ -12,11 +13,11 @@ class HazardDeleteDialog {
 
   /// 顯示刪除確認對話框。使用者按「確認刪除」回 true，否則 false。
   static Future<bool> show(BuildContext context) async {
-    final l = S.of(context)!;
+    final l = context.l10n;
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
+        backgroundColor: ctx.igni.bg2,
         title: Text(l.mapHazardDeleteTitle,
             style: const TextStyle(color: Colors.white, fontSize: 16)),
         content: Text(l.mapHazardDeleteContent,

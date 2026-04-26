@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/ui/screens/map/widgets/poi_category.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 /// Stage 4d Round 2：POI 詳情 BottomSheet。
 ///
@@ -16,7 +17,7 @@ class PoiInfoSheet {
   static void show(BuildContext context, Map<String, String> poi) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: context.igni.bg2,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -58,7 +59,7 @@ class _PoiInfoSheetBody extends StatelessWidget {
 
     final category = PoiCategories.label(context, cls, sub);
     final categoryColor = PoiCategories.color(cls, sub);
-    final l = S.of(context)!;
+    final l = context.l10n;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -169,7 +170,7 @@ class _PoiHoursRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lines = _formatOpeningHours(context, raw);
-    final l = S.of(context)!;
+    final l = context.l10n;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -204,7 +205,7 @@ class _PoiHoursRow extends StatelessWidget {
   ///     "週三        09:00-12:00",
   ///     "週日        公休"]
   static List<String> _formatOpeningHours(BuildContext context, String raw) {
-    final l = S.of(context)!;
+    final l = context.l10n;
     final dayMap = {
       'Mo': l.mapDayMonday,
       'Tu': l.mapDayTuesday,

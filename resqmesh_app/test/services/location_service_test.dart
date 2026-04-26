@@ -10,27 +10,27 @@ import 'package:ignirelay_app/app/services/location_service.dart';
 void main() {
   group('LocationService — Static Utilities', () {
     test('haversineMeters: same point = 0', () {
-      final p = LatLng(25.033, 121.565);
+      const p = LatLng(25.033, 121.565);
       expect(LocationService.haversineMeters(p, p), closeTo(0, 0.01));
     });
 
     test('haversineMeters: Taipei to Kaohsiung ~300 km', () {
-      final taipei = LatLng(25.033, 121.565);
-      final kaohsiung = LatLng(22.627, 120.301);
+      const taipei = LatLng(25.033, 121.565);
+      const kaohsiung = LatLng(22.627, 120.301);
       final dist = LocationService.haversineMeters(taipei, kaohsiung);
       expect(dist, greaterThan(280000));
       expect(dist, lessThan(320000));
     });
 
     test('bearing: due east ≈ 90°', () {
-      final from = LatLng(0, 0);
-      final to = LatLng(0, 1);
+      const from = LatLng(0, 0);
+      const to = LatLng(0, 1);
       expect(LocationService.bearing(from, to), closeTo(90, 1));
     });
 
     test('bearing: due north ≈ 0°', () {
-      final from = LatLng(0, 0);
-      final to = LatLng(1, 0);
+      const from = LatLng(0, 0);
+      const to = LatLng(1, 0);
       expect(LocationService.bearing(from, to), closeTo(0, 1));
     });
 

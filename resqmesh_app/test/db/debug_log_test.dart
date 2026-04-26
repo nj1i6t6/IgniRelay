@@ -24,10 +24,8 @@ void main() {
   group('DatabaseHelper — Debug Log Persistence (Bug 2)', () {
     test('writeDebugLog inserts a record', () async {
       final dbHelper = DatabaseHelper();
-      dbHelper.writeDebugLog('TEST', 'unit test log entry');
-
-      // 給 fire-and-forget 操作一點時間完成
-      await Future.delayed(const Duration(milliseconds: 200));
+      // Stage 7：writeDebugLog 已可 await，移除 Future.delayed 等待 flake
+      await dbHelper.writeDebugLog('TEST', 'unit test log entry');
 
       final logs = await dbHelper.exportDebugLogs();
       final found = logs.where((r) => r['message'] == 'unit test log entry');
@@ -36,11 +34,9 @@ void main() {
 
     test('exportDebugLogs returns records in insertion order', () async {
       final dbHelper = DatabaseHelper();
-      dbHelper.writeDebugLog('TEST', 'order-A');
-      dbHelper.writeDebugLog('TEST', 'order-B');
-      dbHelper.writeDebugLog('TEST', 'order-C');
-
-      await Future.delayed(const Duration(milliseconds: 300));
+      await dbHelper.writeDebugLog('TEST', 'order-A');
+      await dbHelper.writeDebugLog('TEST', 'order-B');
+      await dbHelper.writeDebugLog('TEST', 'order-C');
 
       final logs = await dbHelper.exportDebugLogs();
       final testLogs =
@@ -58,10 +54,8 @@ void main() {
     test('writeDebugLog stores source field correctly', () async {
       final dbHelper = DatabaseHelper();
       final ts = DateTime.now().microsecondsSinceEpoch;
-      dbHelper.writeDebugLog('BLE', 'ble source test $ts');
-      dbHelper.writeDebugLog('MESH', 'mesh source test $ts');
-
-      await Future.delayed(const Duration(milliseconds: 500));
+      await dbHelper.writeDebugLog('BLE', 'ble source test $ts');
+      await dbHelper.writeDebugLog('MESH', 'mesh source test $ts');
 
       final logs = await dbHelper.exportDebugLogs();
       final bleLogs = logs.where(
@@ -97,9 +91,8 @@ void main() {
 
     test('purgeDebugLogs keeps recent entries (<24h)', () async {
       final dbHelper = DatabaseHelper();
-      dbHelper.writeDebugLog('TEST', 'recent-keep-test');
+      await dbHelper.writeDebugLog('TEST', 'recent-keep-test');
 
-      await Future.delayed(const Duration(milliseconds: 200));
       await dbHelper.purgeDebugLogs();
 
       final logs = await dbHelper.exportDebugLogs();

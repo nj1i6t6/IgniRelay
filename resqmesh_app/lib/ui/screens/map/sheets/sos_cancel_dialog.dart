@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 /// Stage 4d Round 2：取消 SOS 求救確認對話框。
 ///
@@ -12,11 +13,11 @@ class SosCancelDialog {
 
   /// 顯示「取消 SOS 嗎？」對話框。使用者選「是」回 true，否則 false。
   static Future<bool> show(BuildContext context) async {
-    final l = S.of(context)!;
+    final l = context.l10n;
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
+        backgroundColor: ctx.igni.bg2,
         title: Text(l.mapCancelSosTitle,
             style: const TextStyle(color: Colors.white)),
         content: Text(

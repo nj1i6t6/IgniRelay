@@ -16,7 +16,6 @@ import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/crypto/signer.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
-import 'package:ignirelay_app/platform/mesh_transport.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 
 // 每次呼叫回傳唯一 event ID

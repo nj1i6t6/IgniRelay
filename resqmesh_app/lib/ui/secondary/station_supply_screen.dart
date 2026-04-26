@@ -9,8 +9,8 @@ import 'package:ignirelay_app/app/geo/village_geofence.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/event_types.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
-import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 // =============================================================================
 // 據點物資管理畫面 (Station Supply Screen)
@@ -128,7 +128,7 @@ class _StationSupplyScreenState extends State<StationSupplyScreen>
       return Scaffold(
         backgroundColor: const Color(0xFF0d0d1a),
         appBar: AppBar(
-          title: Text(S.of(context)!.stationTitle, style: const TextStyle(color: Colors.white)),
+          title: Text(context.l10n.stationTitle, style: const TextStyle(color: Colors.white)),
           backgroundColor: const Color(0xFF1a1a2e),
           iconTheme: const IconThemeData(color: Colors.white),
         ),
@@ -141,17 +141,17 @@ class _StationSupplyScreenState extends State<StationSupplyScreen>
                 const Icon(Icons.lock_outline, color: Colors.white38, size: 64),
                 const SizedBox(height: 16),
                 Text(
-                  S.of(context)!.stationAuthRequired,
+                  context.l10n.stationAuthRequired,
                   style: const TextStyle(color: Colors.white70, fontSize: 18),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  S.of(context)!.stationAuthCurrentLevel(_identity.getIdentityLevel()),
+                  context.l10n.stationAuthCurrentLevel(_identity.getIdentityLevel()),
                   style: const TextStyle(color: Colors.white38, fontSize: 14),
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  S.of(context)!.stationAuthDesc,
+                  context.l10n.stationAuthDesc,
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white30, fontSize: 13),
                 ),
@@ -165,7 +165,7 @@ class _StationSupplyScreenState extends State<StationSupplyScreen>
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
       appBar: AppBar(
-        title: Text(S.of(context)!.stationTitle, style: const TextStyle(color: Colors.white)),
+        title: Text(context.l10n.stationTitle, style: const TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
         bottom: TabBar(
@@ -174,8 +174,8 @@ class _StationSupplyScreenState extends State<StationSupplyScreen>
           labelColor: Colors.orangeAccent,
           unselectedLabelColor: Colors.white54,
           tabs: [
-            Tab(icon: const Icon(Icons.add_business), text: S.of(context)!.stationTabAdd),
-            Tab(icon: const Icon(Icons.inventory_2), text: S.of(context)!.stationTabManage),
+            Tab(icon: const Icon(Icons.add_business), text: context.l10n.stationTabAdd),
+            Tab(icon: const Icon(Icons.inventory_2), text: context.l10n.stationTabManage),
           ],
         ),
       ),
@@ -297,7 +297,7 @@ class _RegisterTabState extends State<_RegisterTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.stationPublishSuccess),
+            content: Text(context.l10n.stationPublishSuccess),
             backgroundColor: Colors.green[700],
           ),
         );
@@ -314,7 +314,7 @@ class _RegisterTabState extends State<_RegisterTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(S.of(context)!.stationRemoveFailSnack(e.toString())), backgroundColor: Colors.red[700]),
+              content: Text(context.l10n.stationRemoveFailSnack(e.toString())), backgroundColor: Colors.red[700]),
         );
       }
     } finally {
@@ -330,7 +330,7 @@ class _RegisterTabState extends State<_RegisterTab> {
         padding: const EdgeInsets.all(20),
         children: [
           // ── 物資大類 ──
-          Text(S.of(context)!.stationCategoryLabel,
+          Text(context.l10n.stationCategoryLabel,
               style: const TextStyle(color: Colors.white70, fontSize: 14)),
           const SizedBox(height: 8),
           Wrap(
@@ -379,7 +379,7 @@ class _RegisterTabState extends State<_RegisterTab> {
 
           // ── 物資子類 ──
           if (_selectedCategory != null) ...[
-            Text('${SupplyCategoryLocalizer.categoryLabel(context, _selectedCategory!.code)} ${S.of(context)!.stationSubCategoryLabel}',
+            Text('${SupplyCategoryLocalizer.categoryLabel(context, _selectedCategory!.code)} ${context.l10n.stationSubCategoryLabel}',
                 style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             Wrap(
@@ -414,7 +414,7 @@ class _RegisterTabState extends State<_RegisterTab> {
           // ── 具體品項 ──
           if (_selectedSubCategory != null &&
               _selectedSubCategory!.items.isNotEmpty) ...[
-            Text(S.of(context)!.stationItemLabel,
+            Text(context.l10n.stationItemLabel,
                 style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             Wrap(
@@ -469,23 +469,23 @@ class _RegisterTabState extends State<_RegisterTab> {
           const SizedBox(height: 24),
 
           // ── 總庫存數量 ──
-          _sectionTitle(S.of(context)!.stationQtyLabel),
+          _sectionTitle(context.l10n.stationQtyLabel),
           const SizedBox(height: 8),
           TextFormField(
             controller: _quantityCtrl,
             style: const TextStyle(color: Colors.white),
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: _inputDecoration(S.of(context)!.stationTotalQtyLabel, Icons.inventory),
+            decoration: _inputDecoration(context.l10n.stationTotalQtyLabel, Icons.inventory),
             validator: (v) =>
                 (v == null || v.isEmpty || int.tryParse(v) == null)
-                    ? S.of(context)!.stationQtyValidator
+                    ? context.l10n.stationQtyValidator
                     : null,
           ),
           const SizedBox(height: 24),
 
           // ── 配額設定 ──
-          _sectionTitle(S.of(context)!.stationQuotaSection),
+          _sectionTitle(context.l10n.stationQuotaSection),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -495,10 +495,10 @@ class _RegisterTabState extends State<_RegisterTab> {
                   style: const TextStyle(color: Colors.white),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: _inputDecoration(S.of(context)!.stationQuotaCategoryLimit, Icons.category),
+                  decoration: _inputDecoration(context.l10n.stationQuotaCategoryLimit, Icons.category),
                   validator: (v) =>
                       (v == null || v.isEmpty || int.tryParse(v) == null)
-                          ? S.of(context)!.stationFieldRequired
+                          ? context.l10n.stationFieldRequired
                           : null,
                 ),
               ),
@@ -509,10 +509,10 @@ class _RegisterTabState extends State<_RegisterTab> {
                   style: const TextStyle(color: Colors.white),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: _inputDecoration(S.of(context)!.stationQuotaTotalLimit, Icons.equalizer),
+                  decoration: _inputDecoration(context.l10n.stationQuotaTotalLimit, Icons.equalizer),
                   validator: (v) =>
                       (v == null || v.isEmpty || int.tryParse(v) == null)
-                          ? S.of(context)!.stationFieldRequired
+                          ? context.l10n.stationFieldRequired
                           : null,
                 ),
               ),
@@ -521,26 +521,26 @@ class _RegisterTabState extends State<_RegisterTab> {
           const SizedBox(height: 16),
 
           // ── 重設週期 ──
-          Text(S.of(context)!.stationResetCycleLabel,
+          Text(context.l10n.stationResetCycleLabel,
               style: const TextStyle(color: Colors.white70, fontSize: 14)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              _resetChip(S.of(context)!.stationResetChip6h, 6),
-              _resetChip(S.of(context)!.stationResetChip12h, 12),
-              _resetChip(S.of(context)!.stationResetChip24h, 24),
-              _resetChip(S.of(context)!.stationResetChip48h, 48),
-              _resetChip(S.of(context)!.stationResetChip72h, 72),
-              _resetChip(S.of(context)!.stationResetChipNone, 0),
+              _resetChip(context.l10n.stationResetChip6h, 6),
+              _resetChip(context.l10n.stationResetChip12h, 12),
+              _resetChip(context.l10n.stationResetChip24h, 24),
+              _resetChip(context.l10n.stationResetChip48h, 48),
+              _resetChip(context.l10n.stationResetChip72h, 72),
+              _resetChip(context.l10n.stationResetChipNone, 0),
             ],
           ),
           if (_resetIntervalHours > 0)
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                S.of(context)!.stationResetNoteInterval(_resetIntervalHours),
+                context.l10n.stationResetNoteInterval(_resetIntervalHours),
                 style: const TextStyle(color: Colors.white30, fontSize: 11),
               ),
             ),
@@ -548,14 +548,14 @@ class _RegisterTabState extends State<_RegisterTab> {
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                S.of(context)!.stationResetNoteNone,
+                context.l10n.stationResetNoteNone,
                 style: const TextStyle(color: Colors.orangeAccent, fontSize: 11),
               ),
             ),
           const SizedBox(height: 24),
 
           // ── 可見區域 ──
-          _sectionTitle(S.of(context)!.stationVisibilityLabel),
+          _sectionTitle(context.l10n.stationVisibilityLabel),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -583,7 +583,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                                 : Colors.white54,
                             size: 28),
                         const SizedBox(height: 6),
-                        Text(S.of(context)!.stationVisibilityVillage,
+                        Text(context.l10n.stationVisibilityVillage,
                             style: TextStyle(
                               color: _visibilityMode == 'village'
                                   ? Colors.blueAccent
@@ -592,7 +592,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                               fontSize: 13,
                             )),
                         const SizedBox(height: 2),
-                        Text(S.of(context)!.stationVisibilityVillageDesc,
+                        Text(context.l10n.stationVisibilityVillageDesc,
                             style: TextStyle(
                               color: _visibilityMode == 'village'
                                   ? Colors.white54
@@ -629,7 +629,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                                 : Colors.white54,
                             size: 28),
                         const SizedBox(height: 6),
-                        Text(S.of(context)!.stationVisibilityTownship,
+                        Text(context.l10n.stationVisibilityTownship,
                             style: TextStyle(
                               color: _visibilityMode == 'township'
                                   ? Colors.greenAccent
@@ -638,7 +638,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                               fontSize: 13,
                             )),
                         const SizedBox(height: 2),
-                        Text(S.of(context)!.stationVisibilityTownshipDesc,
+                        Text(context.l10n.stationVisibilityTownshipDesc,
                             style: TextStyle(
                               color: _visibilityMode == 'township'
                                   ? Colors.white54
@@ -664,7 +664,7 @@ class _RegisterTabState extends State<_RegisterTab> {
             )
           else if (_visibilityMode == 'village') ...[
             if (_nearbyVillages.isEmpty)
-              Text(S.of(context)!.stationVisibilityNoVillages,
+              Text(context.l10n.stationVisibilityNoVillages,
                   style: const TextStyle(color: Colors.white38, fontSize: 13))
             else
               ..._nearbyVillages.map((v) {
@@ -693,7 +693,7 @@ class _RegisterTabState extends State<_RegisterTab> {
               }),
             const SizedBox(height: 4),
             Text(
-              S.of(context)!.stationVisibilityVillageNote,
+              context.l10n.stationVisibilityVillageNote,
               style: const TextStyle(color: Colors.white30, fontSize: 11),
             ),
           ] else ...[
@@ -711,7 +711,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _townDisplayName ?? S.of(context)!.stationVisibilityTownNotLocated,
+                      _townDisplayName ?? context.l10n.stationVisibilityTownNotLocated,
                       style:
                           const TextStyle(color: Colors.white, fontSize: 14),
                     ),
@@ -727,7 +727,7 @@ class _RegisterTabState extends State<_RegisterTab> {
             ),
             const SizedBox(height: 4),
             Text(
-              S.of(context)!.stationVisibilityTownNote,
+              context.l10n.stationVisibilityTownNote,
               style: const TextStyle(color: Colors.white30, fontSize: 11),
             ),
           ],
@@ -747,7 +747,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                     )
                   : const Icon(Icons.add_business, color: Colors.white),
               label: Text(
-                _publishing ? S.of(context)!.stationPublishing : S.of(context)!.stationPublishButton,
+                _publishing ? context.l10n.stationPublishing : context.l10n.stationPublishButton,
                 style: const TextStyle(color: Colors.white, fontSize: 16),
               ),
               style: ElevatedButton.styleFrom(
@@ -852,10 +852,10 @@ class _ManageTab extends StatelessWidget {
             const Icon(Icons.store_mall_directory,
                 color: Colors.white24, size: 64),
             const SizedBox(height: 16),
-            Text(S.of(context)!.stationManageEmptyTitle,
+            Text(context.l10n.stationManageEmptyTitle,
                 style: const TextStyle(color: Colors.white38, fontSize: 16)),
             const SizedBox(height: 8),
-            Text(S.of(context)!.stationManageEmptySubtitle,
+            Text(context.l10n.stationManageEmptySubtitle,
                 style: const TextStyle(color: Colors.white24, fontSize: 13)),
           ],
         ),
@@ -932,41 +932,41 @@ class _StationItemCard extends StatelessWidget {
             const Divider(color: Colors.white12, height: 20),
 
             // ── 庫存資訊 ──
-            _infoRow(Icons.inventory_2, S.of(context)!.stationInfoTotalQty,
-                S.of(context)!.stationInfoQtyUnit(item.quantity.toInt())),
-            _infoRow(Icons.shopping_cart, S.of(context)!.stationInfoUsed, S.of(context)!.stationInfoQtyUnit(totalUsedByAll)),
-            _infoRow(Icons.check_circle_outline, S.of(context)!.stationInfoRemaining,
-                S.of(context)!.stationInfoQtyUnit(remaining.toInt())),
-            _infoRow(Icons.people, S.of(context)!.stationInfoUsers, S.of(context)!.stationInfoUsersUnit(uniqueUsers)),
+            _infoRow(Icons.inventory_2, context.l10n.stationInfoTotalQty,
+                context.l10n.stationInfoQtyUnit(item.quantity.toInt())),
+            _infoRow(Icons.shopping_cart, context.l10n.stationInfoUsed, context.l10n.stationInfoQtyUnit(totalUsedByAll)),
+            _infoRow(Icons.check_circle_outline, context.l10n.stationInfoRemaining,
+                context.l10n.stationInfoQtyUnit(remaining.toInt())),
+            _infoRow(Icons.people, context.l10n.stationInfoUsers, context.l10n.stationInfoUsersUnit(uniqueUsers)),
             const SizedBox(height: 8),
 
             // ── 配額資訊 ──
-            Text(S.of(context)!.stationQuotaRulesLabel,
+            Text(context.l10n.stationQuotaRulesLabel,
                 style: const TextStyle(
                     color: Colors.orangeAccent,
                     fontSize: 12,
                     fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            _infoRow(Icons.category, S.of(context)!.stationQuotaCategoryLimitInfo,
-                S.of(context)!.stationInfoQtyUnit(meta.perUserCategoryLimit)),
+            _infoRow(Icons.category, context.l10n.stationQuotaCategoryLimitInfo,
+                context.l10n.stationInfoQtyUnit(meta.perUserCategoryLimit)),
             _infoRow(
-                Icons.equalizer, S.of(context)!.stationQuotaTotalLimitInfo, S.of(context)!.stationInfoQtyUnit(meta.perUserTotalLimit)),
+                Icons.equalizer, context.l10n.stationQuotaTotalLimitInfo, context.l10n.stationInfoQtyUnit(meta.perUserTotalLimit)),
             _infoRow(
               Icons.timer,
-              S.of(context)!.stationQuotaResetCycleInfo,
+              context.l10n.stationQuotaResetCycleInfo,
               meta.resetIntervalMs > 0
-                  ? S.of(context)!.stationQuotaResetHours((meta.resetIntervalMs / 3600000).round())
-                  : S.of(context)!.stationQuotaResetNone,
+                  ? context.l10n.stationQuotaResetHours((meta.resetIntervalMs / 3600000).round())
+                  : context.l10n.stationQuotaResetNone,
             ),
 
             // ── 可見範圍 ──
             const SizedBox(height: 4),
             if (meta.visibleZones != null && meta.visibleZones!.isNotEmpty)
-              _infoRow(Icons.location_on, S.of(context)!.stationVisibleZones,
-                  S.of(context)!.stationVisibleZonesCount(meta.visibleZones!.length)),
+              _infoRow(Icons.location_on, context.l10n.stationVisibleZones,
+                  context.l10n.stationVisibleZonesCount(meta.visibleZones!.length)),
             if (meta.visibleTownship != null)
-              _infoRow(Icons.map, S.of(context)!.stationVisibleZones,
-                  S.of(context)!.stationVisibleTownship(meta.visibleTownship!)),
+              _infoRow(Icons.map, context.l10n.stationVisibleZones,
+                  context.l10n.stationVisibleTownship(meta.visibleTownship!)),
             const Divider(color: Colors.white12, height: 20),
 
             // ── 操作按鈕 ──
@@ -978,7 +978,7 @@ class _StationItemCard extends StatelessWidget {
                   onPressed: () => _showQuotaDetails(context),
                   icon: const Icon(Icons.list_alt,
                       color: Colors.blueAccent, size: 16),
-                  label: Text(S.of(context)!.stationQuotaDetailButton,
+                  label: Text(context.l10n.stationQuotaDetailButton,
                       style:
                           const TextStyle(color: Colors.blueAccent, fontSize: 12)),
                 ),
@@ -988,7 +988,7 @@ class _StationItemCard extends StatelessWidget {
                   onPressed: () => _confirmResetQuotas(context),
                   icon: const Icon(Icons.refresh,
                       color: Colors.orangeAccent, size: 16),
-                  label: Text(S.of(context)!.stationQuotaResetButton,
+                  label: Text(context.l10n.stationQuotaResetButton,
                       style: const TextStyle(
                           color: Colors.orangeAccent, fontSize: 12)),
                 ),
@@ -998,7 +998,7 @@ class _StationItemCard extends StatelessWidget {
                   onPressed: () => _confirmRemove(context),
                   icon: const Icon(Icons.delete_outline,
                       color: Colors.redAccent, size: 16),
-                  label: Text(S.of(context)!.stationRemoveButton,
+                  label: Text(context.l10n.stationRemoveButton,
                       style:
                           const TextStyle(color: Colors.redAccent, fontSize: 12)),
                 ),
@@ -1016,16 +1016,16 @@ class _StationItemCard extends StatelessWidget {
     String label;
     if (ratio > 0.5) {
       color = Colors.green;
-      label = S.of(context)!.stationStatusSufficient;
+      label = context.l10n.stationStatusSufficient;
     } else if (ratio > 0.1) {
       color = Colors.orange;
-      label = S.of(context)!.stationStatusLow;
+      label = context.l10n.stationStatusLow;
     } else if (remaining > 0) {
       color = Colors.red;
-      label = S.of(context)!.stationStatusCritical;
+      label = context.l10n.stationStatusCritical;
     } else {
       color = Colors.grey;
-      label = S.of(context)!.stationStatusDepleted;
+      label = context.l10n.stationStatusDepleted;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1067,7 +1067,7 @@ class _StationItemCard extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.all(32),
             child: Center(
-              child: Text(S.of(ctx)!.stationQuotaDetailEmpty,
+              child: Text(ctx.l10n.stationQuotaDetailEmpty,
                   style: const TextStyle(color: Colors.white38, fontSize: 16)),
             ),
           );
@@ -1082,7 +1082,7 @@ class _StationItemCard extends StatelessWidget {
                     color: Colors.orangeAccent, size: 20),
                 const SizedBox(width: 8),
                 Text(
-                  S.of(ctx)!.stationQuotaDetailTitle(getLocalizedReadableName(item.resourceType, ctx)),
+                  ctx.l10n.stationQuotaDetailTitle(getLocalizedReadableName(item.resourceType, ctx)),
                   style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -1120,7 +1120,7 @@ class _StationItemCard extends StatelessWidget {
                         const Icon(Icons.person,
                             color: Colors.white54, size: 14),
                         const SizedBox(width: 4),
-                        Text(S.of(ctx)!.stationQuotaUserLabel(keyHex),
+                        Text(ctx.l10n.stationQuotaUserLabel(keyHex),
                             style: const TextStyle(
                                 color: Colors.white70, fontSize: 13)),
                         const Spacer(),
@@ -1130,12 +1130,12 @@ class _StationItemCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text(S.of(ctx)!.stationQuotaUsedTotal(used, total),
+                    Text(ctx.l10n.stationQuotaUsedTotal(used, total),
                         style: const TextStyle(
                             color: Colors.white54, fontSize: 12)),
                     if (resetTime != null)
                       Text(
-                        S.of(ctx)!.stationQuotaLastReset('${resetTime.month}/${resetTime.day} ${resetTime.hour}:${resetTime.minute.toString().padLeft(2, '0')}'),
+                        ctx.l10n.stationQuotaLastReset('${resetTime.month}/${resetTime.day} ${resetTime.hour}:${resetTime.minute.toString().padLeft(2, '0')}'),
                         style: const TextStyle(
                             color: Colors.white30, fontSize: 11),
                       ),
@@ -1154,21 +1154,21 @@ class _StationItemCard extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a2e),
-        title: Text(S.of(ctx)!.stationResetAllDialogTitle,
+        title: Text(ctx.l10n.stationResetAllDialogTitle,
             style: const TextStyle(color: Colors.white)),
         content: Text(
-          S.of(ctx)!.stationResetAllDialogContent,
+          ctx.l10n.stationResetAllDialogContent,
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(S.of(ctx)!.stationResetAllDialogCancel,
+            child: Text(ctx.l10n.stationResetAllDialogCancel,
                 style: const TextStyle(color: Colors.white54)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(S.of(ctx)!.stationResetAllDialogConfirm,
+            child: Text(ctx.l10n.stationResetAllDialogConfirm,
                 style: const TextStyle(color: Colors.orangeAccent)),
           ),
         ],
@@ -1194,7 +1194,7 @@ class _StationItemCard extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.stationResetSuccessSnack),
+            content: Text(context.l10n.stationResetSuccessSnack),
             backgroundColor: Colors.green[700],
           ),
         );
@@ -1203,7 +1203,7 @@ class _StationItemCard extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.stationResetFailSnack(e.toString())),
+            content: Text(context.l10n.stationResetFailSnack(e.toString())),
             backgroundColor: Colors.red[700],
           ),
         );
@@ -1216,21 +1216,21 @@ class _StationItemCard extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a2e),
-        title: Text(S.of(ctx)!.stationRemoveDialogTitle,
+        title: Text(ctx.l10n.stationRemoveDialogTitle,
             style: const TextStyle(color: Colors.white)),
         content: Text(
-          S.of(ctx)!.stationRemoveDialogContent(getLocalizedReadableName(item.resourceType, ctx)),
+          ctx.l10n.stationRemoveDialogContent(getLocalizedReadableName(item.resourceType, ctx)),
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(S.of(ctx)!.stationRemoveDialogCancel,
+            child: Text(ctx.l10n.stationRemoveDialogCancel,
                 style: const TextStyle(color: Colors.white54)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(S.of(ctx)!.stationRemoveDialogConfirm,
+            child: Text(ctx.l10n.stationRemoveDialogConfirm,
                 style: const TextStyle(color: Colors.redAccent)),
           ),
         ],
@@ -1246,7 +1246,7 @@ class _StationItemCard extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.stationRemoveSuccessSnack),
+            content: Text(context.l10n.stationRemoveSuccessSnack),
             backgroundColor: Colors.green[700],
           ),
         );
@@ -1255,7 +1255,7 @@ class _StationItemCard extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context)!.stationRemoveFailSnack(e.toString())),
+            content: Text(context.l10n.stationRemoveFailSnack(e.toString())),
             backgroundColor: Colors.red[700],
           ),
         );
