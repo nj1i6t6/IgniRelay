@@ -206,15 +206,18 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
       }
     }
 
-    // 本地驗證 (同裝置 fallback 或無 BLE 時)
-    if (entered == _pin) {
-      HapticFeedback.heavyImpact();
-      await _publishHandshakeFromNegotiation();
-      setState(() => _handoffComplete = true);
-      _autoRevertTimer?.cancel();
-    } else {
-      _handleWrongPin();
-    }
+    // Stage 6-fix：原本這裡有 `if (entered == _pin)` 本地驗證，但 `_pin` 在
+    // requester 端是 widget 自己 initState 隨機生成的，跟 provider 顯示給對方的
+    // PIN 沒關係——對 requester 來說此 fallback 永遠失敗、且毫無安全意義。
+    //
+    // requester 端的正確驗證唯一路徑是「把 PIN 透過 BLE 寫到 provider 的
+    // HANDSHAKE_CHAR、由 provider 的 GATT server 比對自己存的 SHA-256 hash」。
+    // 因此 BLE 不可達或 deviceId 缺失時，視為輸入錯誤並走 _handleWrongPin。
+    //
+    // provider 端（自己的 _pin 才是真值）的本地 fallback——但 provider 流程
+    // 走的是「對方寫進來、自己這邊 GATT server callback 完成」，不會走到
+    // 此 _submitPin。為避免誤用，這裡也統一視為錯誤。
+    _handleWrongPin();
   }
 
   void _handleWrongPin() {

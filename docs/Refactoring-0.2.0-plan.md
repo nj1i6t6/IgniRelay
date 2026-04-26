@@ -329,7 +329,7 @@ resqmesh_app/lib/
     ```
 - ⚠️ **未完成**：模擬器全鏈路驗收（onboarding→發需求→發供給→導航→實體交接）尚未執行。本輪 CLI 環境無法驅動 emulator；驗收骨架已留在 `resqmesh_app/docs/leak_inventory.md` Stage 5-fix「回應 3」段，由具備裝置者補做後再蓋章 Stage 5 為完整完成。
 
-### Stage 6 — iOS Handoff P0 與通訊層補完（commit #10）✅ 技術交付達成（iOS 實機 / Android E2E 待測）
+### Stage 6 — iOS Handoff P0 與通訊層補完（commit #10 + stage-6-fix）✅ 技術交付達成（iOS 實機 / Android E2E 待測）
 
 - **目標**：修掉分析文件的 P0，讓 handoff 跨平台閉環，補 schema 前向相容能力，清通訊層集合
 - **交付（執行順序固定，不可調換）**：
@@ -369,6 +369,17 @@ resqmesh_app/lib/
   - Android↔Android 模擬器 handoff E2E（plan acceptance 第 1 條）：本輪 CLI 環境無法驅動 emulator。
   - iOS 編譯 / 實機（plan acceptance 第 4 條）：須 macOS + Xcode；本輪只完成程式碼修改與 Podfile 模板。
   - transport 集合「真實 BLE peer 大量發現」壓力測試（plan acceptance 第 3 條的 in-app 重現）：本輪以 `addBoundedFifo` 單元壓力測試（10000 筆）作代換；BleManager 端到端壓測仍待 emulator/裝置。
+
+- ✅ **stage-6-fix（2026-04-26）**：補完 Stage 6 commit #10 漏掉的 BLE handoff 真實閉環。原 commit 只做了 provider 收到 BLE 寫入後的驗證、漏了 requester 端 Central 層 `writeHandshake` 寫入路徑與 navigation 帶 deviceId 的串接，導致跨裝置 PIN 驗證實際走不到。本次補丁：
+  - **Native `writeHandshake`**：Android `NordicMeshManager.writeHandshake(deviceAddress, data, callback)` + 內部 client `writeCharacteristic(handshakeChar, data, WRITE_TYPE_DEFAULT)`；iOS `BlePlugin.writeHandshake(deviceId, data, completion)` + `peripheral.writeValue(data, for: handshakeChar, type: .withResponse)`。MethodChannel `nordicWriteHandshake` 兩端皆暴露。
+  - **GATT response status 承載驗證結果**：Android `IgniRelayForegroundService` HANDSHAKE branch 抽出 `verifyAndEmitHandshake(...) -> Boolean`，`onCharacteristicWriteRequest` 用 `GATT_SUCCESS` / `GATT_FAILURE` 回；iOS `peripheralManager(_:didReceiveWrite:)` 用 `.success` / `.writeNotPermitted`。Central 端 write callback 收到該 status 翻譯為 bool 回給 Dart。
+  - **`HandoffController.sendPin` 重新路由**：deviceId 非空 → 序列化 `{pin, resourceId}` JSON UTF-8 → `nordicWriteHandshake`；deviceId 空 → fallback 走 `sendHandoffPin` 本地 hash（同裝置開發測試用）。
+  - **`navigation_screen` 帶 `providerDeviceId`**：BLE 掃描中記住 RSSI 最強 peer 的 deviceId；按下「開始交接」時 requester 角色才帶進 `PhysicalHandoffScreen`（provider 不需要）。
+  - **移除 requester 端錯誤的本地 fallback**：`physical_handoff._submitPin` 原本 `if (entered == _pin)` 比對的是 requester 自己 initState 隨機生成的 `_pin`，跟 provider 顯示給對方的 PIN 沒有任何關係——對 requester 永遠失敗、對 provider 也走不到此 path。改為 BLE 路徑 fail 即視為 wrong PIN。
+  - **`native_bridge.handoffEvents` 放行 `handshake_data`**：原本 stream filter 只放 `handoff_result`，會把舊版 iOS 的 `handshake_data` 在進入 `HandoffController._normalizeEvent` 之前就擋掉、導致 controller 端的 fallback 永遠不會觸發。改為兩種型別都放行。
+  - **schema_version 雙向相容測試強化**：原本「新 payload → 舊 client」用同一個 class 自我解析無法證明真正舊 build 的行為。新增 `_OldHandshakeBuilder` 只宣告 field 1-9（故意省略 field 10），用它解析新版 payload，驗證 field 10 自動進 `unknownFields`、其他欄位完整、不崩——這才是 plan 真正要求的「舊 client 不認識新 field」實測。
+  - **新增 6 個測試**：`HandoffController.events` 真實 stream 路徑（handoff_result 透傳 + handshake_data fallback）、`sendPin` BLE-write 路由（含 JSON payload 解碼驗證 + writeHandshake fail 透傳 + deviceId 空字串 fallback）、`BleScanController.writeHandshake` 透傳。
+  - **重新驗收**：`flutter analyze` 50 issues / `flutter test × 2` 341/341 兩輪全綠 / `dart run tool/check_layers.dart` ok。
 
 ### Stage 7 — 收尾（commit #11）
 

@@ -228,6 +228,23 @@ class NordicMeshManager(private val context: Context) {
     }
 
     /**
+     * Stage 6-fix：寫入交接 PIN/resourceId JSON 到對端 Handshake Characteristic。
+     * 對應 IgniRelayForegroundService 的 onCharacteristicWriteRequest 對 HANDSHAKE_CHAR
+     * 的處理：Provider 端做 SHA-256 比對後以 GATT response status 回報結果。
+     * Central 端的 callback 把該 status 翻譯回 success/false。
+     */
+    fun writeHandshake(deviceAddress: String, data: ByteArray, callback: (Boolean) -> Unit) {
+        val client = connections[deviceAddress]
+        if (client == null) {
+            callback(false)
+            return
+        }
+        client.writeHandshake(data) { success ->
+            mainHandler.post { callback(success) }
+        }
+    }
+
+    /**
      * 斷開指定裝置
      */
     fun disconnect(deviceAddress: String) {
@@ -436,6 +453,51 @@ class IgniRelayBleClient(context: Context) : BleManager(context) {
                             "size" to data.size
                         ))
                     }
+                    callback(false)
+                }
+            }
+            .enqueue()
+    }
+
+    /**
+     * Stage 6-fix：對端 HANDSHAKE_CHAR 寫入。Provider 端 GATT server 收到後做
+     * SHA-256 + resourceId 比對；驗證結果以 BluetoothGattServer.sendResponse 的
+     * status 回報——GATT_SUCCESS = 通過、其他 = 失敗。Central 端在這個 callback
+     * 收到 .done / .fail 來判定 PIN 驗證結果。
+     */
+    fun writeHandshake(data: ByteArray, callback: (Boolean) -> Unit) {
+        val char = handshakeChar
+        if (char == null) {
+            Log.e(TAG, "writeHandshake: handshakeChar is NULL")
+            callback(false)
+            return
+        }
+        val handler = Handler(Looper.getMainLooper())
+        var fired = false
+        val timeoutRunnable = Runnable {
+            if (!fired) {
+                fired = true
+                Log.w(TAG, "writeHandshake TIMEOUT (5s) data=${data.size}B")
+                callback(false)
+            }
+        }
+        handler.postDelayed(timeoutRunnable, 5000)
+
+        Log.d(TAG, "writeHandshake: ${data.size}B → ${char.uuid}")
+        writeCharacteristic(char, data, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+            .done {
+                if (!fired) {
+                    fired = true
+                    handler.removeCallbacks(timeoutRunnable)
+                    Log.d(TAG, "writeHandshake OK (PIN verified by provider)")
+                    callback(true)
+                }
+            }
+            .fail { _: BluetoothDevice, status: Int ->
+                if (!fired) {
+                    fired = true
+                    handler.removeCallbacks(timeoutRunnable)
+                    Log.w(TAG, "writeHandshake REJECTED status=$status (PIN mismatch likely)")
                     callback(false)
                 }
             }

@@ -28,6 +28,7 @@ class FakeNativeBridge implements NativeBridgeFacade {
   bool connectResult = true;
   bool writeBloomResult = true;
   bool writeEventResult = true;
+  bool writeHandshakeResult = true;
   Uint8List? readBloomResult;
 
   bool startHandoffAdvertisingResult = true;
@@ -132,6 +133,14 @@ class FakeNativeBridge implements NativeBridgeFacade {
     calls.add(('nordicWriteEvent',
         {'deviceId': deviceId, 'eventBytes': eventBytes}));
     return writeEventResult;
+  }
+
+  @override
+  Future<bool> nordicWriteHandshake(
+      String deviceId, Uint8List handshakeBytes) async {
+    calls.add(('nordicWriteHandshake',
+        {'deviceId': deviceId, 'handshakeBytes': handshakeBytes}));
+    return writeHandshakeResult;
   }
 
   @override

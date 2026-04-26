@@ -36,6 +36,11 @@ class BleScanController {
   Future<bool> writeEvent(String deviceId, Uint8List eventBytes) =>
       NativeBridgeFacade.instance.nordicWriteEvent(deviceId, eventBytes);
 
+  /// Stage 6-fix：寫 PIN+resourceId JSON 到對端 Handshake Characteristic。
+  /// 回傳值即 provider 端 GATT server 的驗證結果（true = PIN 正確）。
+  Future<bool> writeHandshake(String deviceId, Uint8List handshakeBytes) =>
+      NativeBridgeFacade.instance.nordicWriteHandshake(deviceId, handshakeBytes);
+
   /// 掃描/GATT 事件串流（跨用途的原始事件）。
   Stream<dynamic> get rawEventStream =>
       NativeBridgeFacade.instance.nativeEventStream;

@@ -61,6 +61,10 @@ abstract class NativeBridgeFacade {
 
   Future<bool> nordicWriteEvent(String deviceId, Uint8List eventBytes);
 
+  /// Stage 6-fix：寫 PIN+resourceId JSON 到對端 HANDSHAKE_CHAR。
+  /// 回傳值 = provider 端 GATT server 的 SHA-256 驗證結果（依 GATT response status 翻譯）。
+  Future<bool> nordicWriteHandshake(String deviceId, Uint8List handshakeBytes);
+
   Stream<dynamic> get nativeEventStream;
 
   // ── Singleton / 測試替換 ──────────────────────────────────────────
@@ -139,6 +143,10 @@ class _RealNativeBridgeFacade implements NativeBridgeFacade {
   @override
   Future<bool> nordicWriteEvent(String deviceId, Uint8List eventBytes) =>
       NativeBridge.nordicWriteEvent(deviceId, eventBytes);
+
+  @override
+  Future<bool> nordicWriteHandshake(String deviceId, Uint8List handshakeBytes) =>
+      NativeBridge.nordicWriteHandshake(deviceId, handshakeBytes);
 
   @override
   Stream<dynamic> get nativeEventStream => NativeBridge.nativeEventStream;

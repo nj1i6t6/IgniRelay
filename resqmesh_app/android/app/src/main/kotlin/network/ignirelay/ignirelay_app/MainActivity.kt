@@ -150,6 +150,20 @@ class MainActivity : FlutterActivity() {
                             result.success(success)
                         }
                     }
+                    // Stage 6-fix：requester 透過此 method 把 PIN+resourceId
+                    // 寫到 provider 的 HANDSHAKE_CHAR；provider 的 GATT server 在
+                    // IgniRelayForegroundService 做驗證後以 response status 回報結果。
+                    "nordicWriteHandshake" -> {
+                        val deviceId = call.argument<String>("deviceId") ?: ""
+                        val data = call.argument<ByteArray>("data")
+                        if (deviceId.isEmpty() || data == null) {
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+                        nordicManager?.writeHandshake(deviceId, data) { success ->
+                            result.success(success)
+                        }
+                    }
 
                     // ── Peripheral 角色（統一由 ForegroundService 管理）──
                     "startBleAdvertising" -> {

@@ -39,6 +39,8 @@ class BlePlugin: NSObject, FlutterPlugin {
     private var readBloomCallbacks: [String: (Data?) -> Void] = [:]
     private var writeBloomCallbacks: [String: (Bool) -> Void] = [:]
     private var writeEventCallbacks: [String: (Bool) -> Void] = [:]
+    // Stage 6-fix：requester 端 BLE PIN write callback。
+    var writeHandshakeCallbacks: [String: (Bool) -> Void] = [:]
 
     // ── CoreBluetooth Peripheral (GATT Server) ─────────────────────────
     private var peripheralManager: CBPeripheralManager?
@@ -163,6 +165,20 @@ class BlePlugin: NSObject, FlutterPlugin {
                 return
             }
             writeEvent(deviceId, data: data.data) { success in
+                result(success)
+            }
+
+        // Stage 6-fix：requester 透過此 method 把 PIN+resourceId 寫到 provider
+        // 的 HANDSHAKE_CHAR；provider 的 peripheralManager(_:didReceiveWrite:)
+        // 做驗證後以 respond(to:withResult:) 回報結果。
+        case "nordicWriteHandshake":
+            guard let args = call.arguments as? [String: Any],
+                  let deviceId = args["deviceId"] as? String,
+                  let data = args["data"] as? FlutterStandardTypedData else {
+                result(false)
+                return
+            }
+            writeHandshake(deviceId, data: data.data) { success in
                 result(success)
             }
 
@@ -374,6 +390,21 @@ class BlePlugin: NSObject, FlutterPlugin {
         }
         writeEventCallbacks[deviceId] = completion
         peripheral.writeValue(data, for: eventChar, type: .withResponse)
+    }
+
+    // Stage 6-fix：Central 端寫 PIN+resourceId 到 Provider 的 HANDSHAKE_CHAR。
+    // Provider GATT server 在 peripheralManager(_:didReceiveWrite:) 做驗證並
+    // 以 respond(to:withResult:) 回 .success 或失敗碼；Central 的
+    // didWriteValueFor callback 收到的 error 非 nil 即代表驗證失敗。
+    private func writeHandshake(_ deviceId: String, data: Data, completion: @escaping (Bool) -> Void) {
+        guard let delegate = peripheralDelegates[deviceId],
+              let handshakeChar = delegate.handshakeCharacteristic,
+              let peripheral = connectedPeripherals[deviceId] else {
+            completion(false)
+            return
+        }
+        writeHandshakeCallbacks[deviceId] = completion
+        peripheral.writeValue(data, for: handshakeChar, type: .withResponse)
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -595,10 +626,13 @@ extension BlePlugin: CBPeripheralManagerDelegate {
     // ── GATT Server: 處理 Central 的寫請求 ─────────────────────────────
     func peripheralManager(_ peripheral: CBPeripheralManager,
                            didReceiveWrite requests: [CBATTRequest]) {
+        // Stage 6-fix：HANDSHAKE 寫入要把驗證結果以 respond(withResult:) 傳回。
+        // 其他 char 維持先 success-respond 再處理（不影響 outbox 路徑）。
+        var handshakeVerifiedFirst: Bool? = nil
+
         for request in requests {
             if request.characteristic.uuid == BlePlugin.EVENT_CHAR_UUID,
                let data = request.value {
-                // Central 寫入事件資料 → 通知 Dart 層
                 let deviceId = request.central.identifier.uuidString
                 sendEvent([
                     "type": "nordic_data",
@@ -607,42 +641,51 @@ extension BlePlugin: CBPeripheralManagerDelegate {
                 ])
             } else if request.characteristic.uuid == BlePlugin.BLOOM_CHAR_UUID,
                       let data = request.value {
-                // Central 寫入其 Bloom → 做差量比對後 Notify 推送
                 let deviceId = request.central.identifier.uuidString
                 NSLog("[BLE-iOS] Bloom received from \(deviceId): \(data.count) bytes")
-                // 差量推送 outbox 事件
                 pushOutboxToSubscriber(request.central)
             } else if request.characteristic.uuid == BlePlugin.HANDSHAKE_CHAR_UUID,
                       let data = request.value {
-                // Stage 6：Central（requester）透過 BLE 寫入 PIN+resourceId →
-                // Provider 在此驗證並發出統一型別 "handoff_result" 事件
-                // （Dart 端 physical_handoff 監聽此事件）。
-                // 寫入格式：JSON UTF-8 `{"pin":"...","resourceId":"..."}`，
-                // 與 Android 端 `processCharacteristicWrite` HANDSHAKE branch 對齊。
-                let deviceId = request.central.identifier.uuidString
-                var success = false
-                var resId = ""
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let pin = json["pin"] as? String,
-                   let writeResId = json["resourceId"] as? String,
-                   let storedHash = handoffPinHash,
-                   let storedRes = handoffResourceId {
-                    resId = writeResId
-                    success = (BlePlugin.sha256Hex(pin) == storedHash &&
-                               writeResId == storedRes)
+                let verified = verifyAndEmitHandshake(centralId: request.central.identifier.uuidString,
+                                                      data: data)
+                if handshakeVerifiedFirst == nil {
+                    handshakeVerifiedFirst = verified
                 }
-                sendEvent([
-                    "type": "handoff_result",
-                    "device": deviceId,
-                    "resourceId": resId,
-                    "success": success,
-                ])
             }
         }
-        // 回應第一個請求
+        // 回應第一個請求：HANDSHAKE 用驗證結果決定 .success / .writeNotPermitted
         if let first = requests.first {
-            peripheral.respond(to: first, withResult: .success)
+            if first.characteristic.uuid == BlePlugin.HANDSHAKE_CHAR_UUID,
+               let verified = handshakeVerifiedFirst {
+                peripheral.respond(to: first,
+                                   withResult: verified ? .success : .writeNotPermitted)
+            } else {
+                peripheral.respond(to: first, withResult: .success)
+            }
         }
+    }
+
+    /// Stage 6-fix：解析 PIN+resourceId、SHA-256 + resourceId 比對、emit
+    /// `handoff_result` 事件，回傳驗證結果。
+    private func verifyAndEmitHandshake(centralId: String, data: Data) -> Bool {
+        var success = false
+        var resId = ""
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let pin = json["pin"] as? String,
+           let writeResId = json["resourceId"] as? String,
+           let storedHash = handoffPinHash,
+           let storedRes = handoffResourceId {
+            resId = writeResId
+            success = (BlePlugin.sha256Hex(pin) == storedHash &&
+                       writeResId == storedRes)
+        }
+        sendEvent([
+            "type": "handoff_result",
+            "device": centralId,
+            "resourceId": resId,
+            "success": success,
+        ])
+        return success
     }
 
     // ── GATT Server: Central 訂閱 Notify ──────────────────────────────
@@ -748,6 +791,11 @@ class PeripheralDelegate: NSObject, CBPeripheralDelegate {
             plugin?.writeBloomCallbacks.removeValue(forKey: deviceId)?(success)
         } else if characteristic.uuid == BlePlugin.EVENT_CHAR_UUID {
             plugin?.writeEventCallbacks.removeValue(forKey: deviceId)?(success)
+        } else if characteristic.uuid == BlePlugin.HANDSHAKE_CHAR_UUID {
+            // Stage 6-fix：Provider 端用 respond(withResult:) 把驗證結果回傳；
+            // 失敗時 error 非 nil（CBATTError.writeNotPermitted 等），代表 PIN
+            // 不對。Central 端把 success 直接當作 PIN 驗證結果回給 Dart。
+            plugin?.writeHandshakeCallbacks.removeValue(forKey: deviceId)?(success)
         }
     }
 }

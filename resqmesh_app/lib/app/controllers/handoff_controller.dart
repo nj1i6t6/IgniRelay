@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:ignirelay_app/platform/native_bridge_facade.dart';
 
 /// 實體交接相關的應用層 facade。
@@ -6,8 +9,19 @@ import 'package:ignirelay_app/platform/native_bridge_facade.dart';
 ///
 /// **Stage 6 (commit #10)**：跨平台事件型別歸一化。Android `IgniRelayForegroundService`
 /// 與 iOS `BlePlugin` 在收到 HANDSHAKE_CHAR 寫入後，皆已 emit 統一型別
-/// `handoff_result` 並帶 `{resourceId, success}` 欄位。本 controller 仍保留
-/// 對舊版 iOS `handshake_data` 事件的轉接，以承接尚未升級的 client。
+/// `handoff_result` 並帶 `{resourceId, success}` 欄位。
+///
+/// **Stage 6-fix (2026-04-26)**：requester 端真正的跨裝置 PIN 傳遞。
+/// `sendPin(deviceId, ...)` 現在會：
+///   1. 把 `{pin, resourceId}` 序列化成 JSON UTF-8 bytes
+///   2. 透過 `nordicWriteHandshake` 寫到 provider 的 HANDSHAKE_CHAR
+///   3. provider GATT server 做 SHA-256 + resourceId 比對，以 GATT response
+///      status 回報結果（Android: GATT_SUCCESS/GATT_FAILURE；iOS:
+///      .success/.writeNotPermitted）
+///   4. central 端的 write callback 收到該 status，翻譯為 bool 回傳
+///
+/// 若 deviceId 為空（同裝置開發測試 / fallback），改走 `sendHandoffPin` 本地
+/// hash 比對；正式跨裝置流程必須帶 deviceId。
 ///
 /// Stage 5：改走 `NativeBridgeFacade`，讓單元測試可注入 `FakeNativeBridge`。
 class HandoffController {
@@ -28,7 +42,16 @@ class HandoffController {
     required String deviceId,
     required String resourceId,
     required String pin,
-  }) {
+  }) async {
+    // Stage 6-fix：deviceId 提供時走 BLE write 真正跨裝置；否則 fallback。
+    if (deviceId.isNotEmpty) {
+      final payload = utf8.encode(jsonEncode({
+        'pin': pin,
+        'resourceId': resourceId,
+      }));
+      return NativeBridgeFacade.instance
+          .nordicWriteHandshake(deviceId, Uint8List.fromList(payload));
+    }
     return NativeBridgeFacade.instance.sendHandoffPin(
       deviceId: deviceId,
       resourceId: resourceId,

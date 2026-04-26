@@ -51,6 +51,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
   int _peerRssi = -100;
   Timer? _scanTimer;
   bool _scanning = false;
+  // Stage 6-fix：捕捉 BLE 掃描中發現的對端 deviceId，用於跨裝置 PIN 寫入。
+  String? _peerDeviceId;
 
   // 位置更新
   Timer? _locationRefresh;
@@ -257,9 +259,17 @@ class _NavigationScreenState extends State<NavigationScreen> {
       _bleScanSub = BleScanController.instance.rawEventStream.listen((event) {
         if (event is Map && event['type'] == 'nordic_found' && mounted) {
           final rssi = event['rssi'] as int? ?? -100;
+          // Stage 6-fix：把 peer 的 deviceId 留下，等到使用者按「開始交接」時
+          // 帶到 PhysicalHandoffScreen。多 peer 時取近場最強訊號的那個。
+          final deviceId = event['device'] as String?;
           setState(() {
             _peerDetected = true;
-            if (rssi > _peerRssi) _peerRssi = rssi;
+            if (rssi > _peerRssi) {
+              _peerRssi = rssi;
+              if (deviceId != null && deviceId.isNotEmpty) {
+                _peerDeviceId = deviceId;
+              }
+            }
           });
         }
       });
@@ -292,6 +302,11 @@ class _NavigationScreenState extends State<NavigationScreen> {
     final role = widget.match.deliveryMode == 'DELIVER'
         ? HandoffRole.provider
         : HandoffRole.requester;
+    // Stage 6-fix：requester 端帶 peer deviceId 給 PhysicalHandoffScreen，
+    // 讓 _submitPin 走 BLE writeHandshake 跨裝置驗證 PIN。
+    // provider 端不需要 deviceId（它是被寫入的一方）。
+    final providerDeviceId =
+        role == HandoffRole.requester ? _peerDeviceId : null;
     Navigator.of(context).pushReplacement(MaterialPageRoute(
       builder: (_) => PhysicalHandoffScreen(
         role: role,
@@ -300,6 +315,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
         urgency: widget.match.urgency,
         requestId: widget.match.requestEventId,
         negotiationId: widget.negotiationId,
+        providerDeviceId: providerDeviceId,
       ),
     ));
   }

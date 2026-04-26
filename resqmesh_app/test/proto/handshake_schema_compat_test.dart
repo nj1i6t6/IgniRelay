@@ -15,6 +15,53 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
+import 'package:protobuf/protobuf.dart' as $pb;
+
+/// Stage 6-fix：模擬「不認識 field 10 schema_version」的舊 builder。
+///
+/// 只宣告 field 1-9，故意省略 field 10。protobuf 庫在解析時遇到未知 tag 會
+/// 自動把它收進 `unknownFields`，整個 parse 不會崩。本 class 用來實測
+/// 「舊 client 解析新 payload」的真實行為，取代之前用同一個 class 自我解析
+/// 無法證明的弱測法。
+class _OldHandshakeBuilder extends $pb.GeneratedMessage {
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('OldHandshakeBuilder',
+      package: const $pb.PackageName('resqmesh'),
+      createEmptyInstance: () => _OldHandshakeBuilder())
+    ..aOS(1, 'negotiationId', protoName: 'negotiation_id')
+    ..aOS(2, 'resourceId', protoName: 'resource_id')
+    ..aOS(3, 'requestId', protoName: 'request_id')
+    ..a<List<int>>(4, 'providerPubKey', $pb.PbFieldType.OY,
+        protoName: 'provider_pub_key')
+    ..a<List<int>>(5, 'requesterPubKey', $pb.PbFieldType.OY,
+        protoName: 'requester_pub_key')
+    ..a<double>(6, 'actualDeliveredQty', $pb.PbFieldType.OF,
+        protoName: 'actual_delivered_qty')
+    ..aOS(7, 'method')
+    ..a<List<int>>(8, 'providerSignature', $pb.PbFieldType.OY,
+        protoName: 'provider_signature')
+    ..a<List<int>>(9, 'requesterSignature', $pb.PbFieldType.OY,
+        protoName: 'requester_signature')
+    // 故意不宣告 tag 10 — 模擬舊 client。
+    ..hasRequiredFields = false;
+
+  _OldHandshakeBuilder() : super();
+
+  factory _OldHandshakeBuilder.fromBuffer(List<int> i) =>
+      _OldHandshakeBuilder()..mergeFromBuffer(i);
+
+  @override
+  _OldHandshakeBuilder createEmptyInstance() => _OldHandshakeBuilder();
+  @override
+  _OldHandshakeBuilder clone() => _OldHandshakeBuilder()..mergeFromMessage(this);
+  @override
+  $pb.BuilderInfo get info_ => _i;
+
+  String get negotiationId => $_getSZ(0);
+  String get resourceId => $_getSZ(1);
+  String get requestId => $_getSZ(2);
+  double get actualDeliveredQty => $_getN(5);
+  String get method => $_getSZ(6);
+}
 
 void main() {
   group('HandshakeCompleteData schema_version compat', () {
@@ -74,30 +121,30 @@ void main() {
       expect(parsed.method, 'BLE');
     });
 
-    test('新 payload (含 schema_version) → 舊 client 解析（不認識 field 10）：'
-        '主要欄位完整 + 不崩', () {
-      // 新 client 寫
+    test('新 payload → 真正不認識 field 10 的舊 builder 解析：主要欄位完整、'
+        'field 10 自動進 unknownFields（舊客戶端真實行為）', () {
+      // Stage 6-fix：原本這個測試用同一個 HandshakeCompleteData class 解析自己寫
+      // 的 payload，無法證明「真正舊 build」的相容性。改用一個只認識 field
+      // 1-9 的 _OldHandshakeBuilder 來解析新 payload，這才是 plan §Stage 6
+      // L343 要求的「舊 client 解析新 payload」實測。
       final n = pb.HandshakeCompleteData(
         negotiationId: 'neg-new',
         resourceId: 'res-new',
         actualDeliveredQty: 7.25,
         method: 'DROP_OFF',
-        schemaVersion: 99, // 故意送一個未來版本號
+        schemaVersion: 99,
       );
       final newBytes = n.writeToBuffer();
 
-      // 模擬「舊 client」：用同一個 class 解析時，verify behavior — 我們無法在
-      // 同 process 真的還原一個沒有 field 10 的 class，但 protobuf 的契約是
-      // unknown field 會被收進 unknownFields 容器，不影響已知欄位的讀取。
-      final asOld = pb.HandshakeCompleteData.fromBuffer(newBytes);
-      // 已知欄位仍可正確讀取
+      // 用「不認識 field 10」的舊 builder 解析
+      final asOld = _OldHandshakeBuilder.fromBuffer(newBytes);
       expect(asOld.negotiationId, 'neg-new');
       expect(asOld.resourceId, 'res-new');
       expect(asOld.actualDeliveredQty, closeTo(7.25, 1e-6));
       expect(asOld.method, 'DROP_OFF');
-      // 因為 class 在這個 build 下「認識」field 10，所以 hasSchemaVersion 為真；
-      // 真正未知的欄位會落在 unknownFields。本測試對「不崩 + 主要欄位正確」即足夠。
-      expect(asOld.schemaVersion, 99);
+      // field 10 對這個 builder 來說是未知的，自動落入 unknownFields；
+      // 整體 parse 不崩、上面已知欄位皆正確。
+      expect(asOld.unknownFields.hasField(10), isTrue);
     });
 
     test('新 client 寫一個未來版本的 fake field（tag 99）→ 解析端不崩、'

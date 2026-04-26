@@ -131,6 +131,25 @@ class NativeBridge {
     }
   }
 
+  /// Stage 6-fix：把 PIN+resourceId JSON 寫到對端 Handshake Characteristic。
+  /// Provider 的 GATT server 在收到後做 SHA-256 + resourceId 比對，並透過
+  /// GATT response status 回報結果（Android：GATT_SUCCESS / GATT_FAILURE；
+  /// iOS：CBATTError.success / .writeNotPermitted）。本 future 的回傳值即
+  /// 「PIN 在 provider 端驗證通過」。
+  static Future<bool> nordicWriteHandshake(
+      String deviceId, Uint8List data) async {
+    try {
+      final bool result = await _channel.invokeMethod('nordicWriteHandshake', {
+        'deviceId': deviceId,
+        'data': data,
+      });
+      return result;
+    } on PlatformException catch (e) {
+      debugPrint("Nordic writeHandshake failed: '${e.message}'.");
+      return false;
+    }
+  }
+
   // ── 原有 Peripheral / Service 操作 ─────────────────────────────────────
 
   /// 啟動 Android Tier 1 Data Mule 模式（掛載 Foreground Service）
@@ -383,10 +402,16 @@ class NativeBridge {
     }
   }
 
-  /// 監聽 GATT Server 的交接驗證結果
+  /// 監聽 GATT Server 的交接驗證結果。
+  ///
+  /// Stage 6-fix：除了 `handoff_result`（新版兩端統一型別），也放行 `handshake_data`
+  /// （未升級之 iOS legacy）。`HandoffController._normalizeEvent` 會把後者
+  /// fallback 為 `success=false + legacy=true`，避免 stream 上層收不到事件。
   static Stream<Map<String, dynamic>> get handoffEvents {
     return nativeEventStream.where((event) {
-      return event is Map && event['type'] == 'handoff_result';
+      if (event is! Map) return false;
+      final t = event['type'];
+      return t == 'handoff_result' || t == 'handshake_data';
     }).map((event) => Map<String, dynamic>.from(event));
   }
 

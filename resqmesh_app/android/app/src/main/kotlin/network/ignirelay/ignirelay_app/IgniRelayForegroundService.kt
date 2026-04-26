@@ -239,19 +239,34 @@ class IgniRelayForegroundService : Service() {
             ) {
                 Log.d(TAG, "onWriteReq: dev=${device.address} char=${characteristic.uuid} prep=$preparedWrite resp=$responseNeeded off=$offset len=${value.size}")
 
-                if (responseNeeded) {
-                    gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
-                }
-
                 if (preparedWrite) {
                     // Buffer chunks for Execute Write (Long Write support)
                     val key = "${device.address}:${characteristic.uuid}"
                     val buffer = preparedWriteBuffers.getOrPut(key) { ByteArrayOutputStream() }
                     if (offset == 0) buffer.reset()
                     buffer.write(value)
+                    if (responseNeeded) {
+                        gattServer?.sendResponse(device, requestId,
+                            BluetoothGatt.GATT_SUCCESS, offset, value)
+                    }
                 } else {
-                    // Direct write (fits in single ATT PDU)
-                    processCharacteristicWrite(device, characteristic.uuid, value)
+                    // Stage 6-fix：HANDSHAKE_CHAR 必須先驗證再回 response，response status
+                    // 即承載驗證結果（GATT_SUCCESS = PIN 正確；GATT_FAILURE = 不對）。
+                    // 其他 char 維持「先回 success 再處理」的原有行為以避免影響 outbox 路徑。
+                    if (characteristic.uuid == IgniRelayConstants.HANDSHAKE_CHAR_UUID) {
+                        val verified = processCharacteristicWriteWithResult(device, value)
+                        if (responseNeeded) {
+                            val status = if (verified) BluetoothGatt.GATT_SUCCESS
+                                         else BluetoothGatt.GATT_FAILURE
+                            gattServer?.sendResponse(device, requestId, status, offset, value)
+                        }
+                    } else {
+                        if (responseNeeded) {
+                            gattServer?.sendResponse(device, requestId,
+                                BluetoothGatt.GATT_SUCCESS, offset, value)
+                        }
+                        processCharacteristicWrite(device, characteristic.uuid, value)
+                    }
                 }
             }
 
@@ -592,6 +607,47 @@ class IgniRelayForegroundService : Service() {
         }, (events.size * 150L) + 300)
     }
 
+    /**
+     * Stage 6-fix：解析 `{pin, resourceId}` JSON、SHA-256 + resourceId 比對、
+     * emit `handoff_result` 事件、回傳驗證結果（供 onCharacteristicWriteRequest
+     * 用 GATT response status 把結果傳回 requester central）。
+     */
+    private fun verifyAndEmitHandshake(device: BluetoothDevice, value: ByteArray): Boolean {
+        Log.d(TAG, "HANDSHAKE_WRITE from ${device.address}: ${value.size} bytes")
+        var success = false
+        var resourceId = ""
+        try {
+            val json = org.json.JSONObject(String(value, Charsets.UTF_8))
+            val pin = json.optString("pin")
+            val writeResId = json.optString("resourceId")
+            val storedHash = MainActivity.sharedHandoffPinHash
+            val storedRes = MainActivity.sharedHandoffResourceId
+            if (pin.isNotEmpty() && storedHash != null && storedRes != null) {
+                val hash = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(pin.toByteArray(Charsets.UTF_8))
+                    .joinToString("") { "%02x".format(it) }
+                resourceId = writeResId
+                success = (hash == storedHash && writeResId == storedRes)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "HANDSHAKE payload not JSON: ${e.message}")
+        }
+        mainHandler.post {
+            MainActivity.sharedEventSink?.success(mapOf(
+                "type" to "handoff_result",
+                "device" to device.address,
+                "resourceId" to resourceId,
+                "success" to success
+            ))
+        }
+        return success
+    }
+
+    /** 直接寫入路徑：HANDSHAKE_CHAR 把驗證結果回給 caller，其餘 char fire-and-forget。 */
+    private fun processCharacteristicWriteWithResult(device: BluetoothDevice, value: ByteArray): Boolean {
+        return verifyAndEmitHandshake(device, value)
+    }
+
     // ── 統一的 Characteristic Write 處理 ─────────────────────────────────
     /** 處理完整的 characteristic write（包含直接寫入和 Prepared Write 組裝後的資料） */
     private fun processCharacteristicWrite(device: BluetoothDevice, charUuid: java.util.UUID, value: ByteArray) {
@@ -625,34 +681,11 @@ class IgniRelayForegroundService : Service() {
             // 抽出成顯式 branch；驗證 `{pin, resourceId}` 後 emit 統一型別
             // `handoff_result`，與 iOS BlePlugin.swift `peripheralManager` 對齊。
             // Dart 端 physical_handoff 監聽此事件以判斷交接成功。
+            //
+            // Stage 6-fix：把驗證結果額外回給 caller（onCharacteristicWriteRequest
+            // 用 GATT response status 把結果傳回 requester）。
             IgniRelayConstants.HANDSHAKE_CHAR_UUID -> {
-                Log.d(TAG, "HANDSHAKE_WRITE from ${device.address}: ${value.size} bytes")
-                var success = false
-                var resourceId = ""
-                try {
-                    val json = org.json.JSONObject(String(value, Charsets.UTF_8))
-                    val pin = json.optString("pin")
-                    val writeResId = json.optString("resourceId")
-                    val storedHash = MainActivity.sharedHandoffPinHash
-                    val storedRes = MainActivity.sharedHandoffResourceId
-                    if (pin.isNotEmpty() && storedHash != null && storedRes != null) {
-                        val hash = java.security.MessageDigest.getInstance("SHA-256")
-                            .digest(pin.toByteArray(Charsets.UTF_8))
-                            .joinToString("") { "%02x".format(it) }
-                        resourceId = writeResId
-                        success = (hash == storedHash && writeResId == storedRes)
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "HANDSHAKE payload not JSON: ${e.message}")
-                }
-                mainHandler.post {
-                    MainActivity.sharedEventSink?.success(mapOf(
-                        "type" to "handoff_result",
-                        "device" to device.address,
-                        "resourceId" to resourceId,
-                        "success" to success
-                    ))
-                }
+                verifyAndEmitHandshake(device, value)
             }
             else -> {
                 Log.d(TAG, "EVENT_WRITE from ${device.address}: ${value.size} bytes")

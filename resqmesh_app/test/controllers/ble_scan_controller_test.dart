@@ -86,6 +86,19 @@ void main() {
       expect(fake.calls.every((c) => c.$1 == 'nordicReadBloom'), isTrue);
     });
 
+    test('writeHandshake 帶 bytes 並透傳結果（Stage 6-fix）', () async {
+      final hs = Uint8List.fromList([0x11, 0x22, 0x33]);
+      fake.writeHandshakeResult = false;
+      expect(
+          await BleScanController.instance.writeHandshake('peer-1', hs), isFalse);
+      fake.writeHandshakeResult = true;
+      expect(
+          await BleScanController.instance.writeHandshake('peer-1', hs), isTrue);
+      expect(fake.calls.map((c) => c.$1).toList(),
+          ['nordicWriteHandshake', 'nordicWriteHandshake']);
+      expect(fake.calls.first.$2['handshakeBytes'], equals(hs));
+    });
+
     test('writeBloom / writeEvent 帶 bytes', () async {
       final bloom = Uint8List.fromList([0xAA, 0xBB]);
       final event = Uint8List.fromList([0xCC, 0xDD, 0xEE]);
@@ -138,18 +151,18 @@ void main() {
           {'resourceId': 'res-1', 'pinHash': 'sha-abc'});
     });
 
-    test('sendPin 帶 named args 並回傳結果', () async {
-      fake.sendHandoffPinResult = false;
+    test('sendPin 帶 deviceId：Stage 6-fix 改走 nordicWriteHandshake', () async {
+      // Stage 6-fix：deviceId 非空時，sendPin 改走 BLE writeHandshake，
+      // 而不是 native sendHandoffPin（後者僅在 deviceId 為空時 fallback）。
+      // 詳細的 BLE 路由與 JSON payload 驗證移到 handoff_controller_test.dart。
+      fake.writeHandshakeResult = false;
       final ok = await HandoffController.instance.sendPin(
         deviceId: 'dev-x',
         resourceId: 'res-2',
         pin: '1234',
       );
       expect(ok, isFalse);
-
-      expect(fake.calls.single.$1, 'sendHandoffPin');
-      expect(fake.calls.single.$2,
-          {'deviceId': 'dev-x', 'resourceId': 'res-2', 'pin': '1234'});
+      expect(fake.calls.single.$1, 'nordicWriteHandshake');
     });
 
     test('stopAdvertising', () async {
