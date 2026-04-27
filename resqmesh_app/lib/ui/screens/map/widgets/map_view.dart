@@ -1,0 +1,275 @@
+// map_view.dart
+//
+// Stage 7-r2：地圖核心呈現容器。
+//
+// 責任：
+//   - 持有 *flutter_map 的* MapController（與 app-level MapScreenController 嚴格區分）；
+//   - 訂閱 controller.centerRequest，當 controller 要求 centerOn 時執行 camera move；
+//   - 在 onMapReady / onPositionChanged 把 viewport（zoom + bounds + ready）回報給
+//     controller，由 controller 決定何時刷 POI；
+//   - 組裝 children：底圖 / POI / 精度圈 / hazard / event / self / marking preview；
+//   - tap callback 由父層注入（POI / hazard / event sheet 都在 widget 樹層處理）。
+//
+// 注意：本 widget 不直接讀 DB / service / l10n，所有資料來源是 MapScreenController。
+// 但 children 的部分（如 EventMarker tooltip 文字）仍需 BuildContext，由父層
+// 預先把字串組好並透過 callback 注入。
+
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:vector_map_tiles/vector_map_tiles.dart';
+
+import 'package:ignirelay_app/ui/screens/map/map_screen_controller.dart';
+import 'package:ignirelay_app/ui/screens/map/models/map_view_models.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/cluster_bubble.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/event_marker_icon.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/hazard_layer.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/pin_palette.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/poi_layer.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/self_marker_layer.dart';
+
+/// 事件 marker 視覺尺寸/icon/tooltip 的對照（由父層提供 i18n 字串）。
+class EventMarkerStyle {
+  const EventMarkerStyle({
+    required this.icon,
+    required this.size,
+    required this.tooltip,
+  });
+  final IconData icon;
+  final double size;
+  final String tooltip;
+}
+
+class MapView extends StatefulWidget {
+  const MapView({
+    super.key,
+    required this.controller,
+    required this.eventStyleFor,
+    required this.hazardIconFor,
+    required this.onHazardTap,
+    required this.onEventTap,
+    required this.onPoiTap,
+    required this.onMapTap,
+    required this.onMapLongPress,
+  });
+
+  final MapScreenController controller;
+
+  /// 父層依 EventVm 提供 i18n tooltip + Icon + size。
+  final EventMarkerStyle Function(EventVm vm) eventStyleFor;
+
+  /// 父層提供 hazard 種類 → Icon 的對應（`PinPalette.hazardIcon` 即可，封裝在父層
+  /// 是為了讓 hazard_layer 完全與 i18n 解耦）。
+  final IconData Function(String type) hazardIconFor;
+
+  final void Function(HazardVm) onHazardTap;
+  final void Function(EventVm) onEventTap;
+  final void Function(PoiVm) onPoiTap;
+
+  /// 點擊地圖空白處（非 marker）。父層用來：marking 模式下移動 center；
+  /// 否則查 nearest POI 並開 sheet。
+  final void Function(TapPosition tapPosition, LatLng latlng) onMapTap;
+
+  /// 長按進入 marking 模式。
+  final void Function(TapPosition tapPosition, LatLng latlng) onMapLongPress;
+
+  @override
+  State<MapView> createState() => _MapViewState();
+}
+
+class _MapViewState extends State<MapView> {
+  /// flutter_map 的 MapController（與 MapScreenController 不同）。
+  final MapController _flutterMapController = MapController();
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.centerRequest.addListener(_onCenterRequest);
+  }
+
+  @override
+  void didUpdateWidget(covariant MapView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.centerRequest.removeListener(_onCenterRequest);
+      widget.controller.centerRequest.addListener(_onCenterRequest);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.centerRequest.removeListener(_onCenterRequest);
+    super.dispose();
+  }
+
+  void _onCenterRequest() {
+    final loc = widget.controller.centerRequest.value;
+    if (loc == null) return;
+    if (!_ready) {
+      // 還沒 ready，延後到 ready 後再取 value 跑 move。避免在 map 未掛載前
+      // 操作 camera（已知 timing 風險）。
+      return;
+    }
+    _flutterMapController.moveAndRotate(loc, 15.0, 0.0);
+    // 消費掉，避免重複觸發
+    widget.controller.centerRequest.value = null;
+  }
+
+  void _reportViewport() {
+    final cam = _flutterMapController.camera;
+    widget.controller.setViewport(
+      zoom: cam.zoom,
+      bounds: cam.visibleBounds,
+      ready: _ready,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.controller;
+    return ListenableBuilder(
+      listenable: c,
+      builder: (ctx, _) {
+        final mb = c.mbTilesState;
+        final selfTuple = SelfMarkerLayer.build(c.selfLocation);
+        final selfMarkers = selfTuple.$1;
+        final accuracyCircles = selfTuple.$2;
+        final (hazardPolygons, hazardCenterMarkers) = HazardOverlay.build(
+          hazards: c.hazards,
+          iconFor: widget.hazardIconFor,
+          onTap: widget.onHazardTap,
+        );
+        final poiMarkers = PoiOverlay.build(
+          pois: c.pois,
+          onTap: widget.onPoiTap,
+        );
+        final eventMarkers = <Marker>[];
+        final eventCategories = <PinCategory>[];
+        for (final e in c.events) {
+          final style = widget.eventStyleFor(e);
+          eventMarkers.add(Marker(
+            point: e.latLng,
+            width: style.size + 4,
+            height: style.size + 4,
+            child: GestureDetector(
+              onTap: () => widget.onEventTap(e),
+              child: EventMarkerIcon(
+                icon: style.icon,
+                color: PinPalette.color(e.category),
+                size: style.size,
+                tooltip: style.tooltip,
+                isSOS: e.urgency >= 2,
+              ),
+            ),
+          ));
+          eventCategories.add(e.category);
+        }
+
+        final marking = c.marking;
+        final previewPolygons = <Polygon>[];
+        final previewMarkers = <Marker>[];
+        if (marking.isActive && marking.center != null) {
+          final previewColor = PinPalette.color(PinCategory.hazard);
+          previewPolygons.add(Polygon(
+            points: HazardOverlay.circlePoints(
+              marking.center!.latitude,
+              marking.center!.longitude,
+              marking.radiusMeters,
+            ),
+            color: previewColor.withValues(alpha: 0.18),
+            borderColor: previewColor,
+            borderStrokeWidth: 2.5,
+            pattern: const StrokePattern.dotted(),
+          ));
+          previewMarkers.add(Marker(
+            point: marking.center!,
+            width: 40,
+            height: 40,
+            child:
+                const Icon(Icons.location_on, color: Colors.white, size: 36),
+          ));
+        }
+
+        return FlutterMap(
+          mapController: _flutterMapController,
+          options: MapOptions(
+            initialCenter: c.selfLocation?.location ??
+                const LatLng(23.97, 120.97),
+            initialZoom: 15.0,
+            minZoom: 6.0,
+            maxZoom: 18.0,
+            onMapReady: () {
+              _ready = true;
+              _reportViewport();
+              _onCenterRequest();
+            },
+            onTap: widget.onMapTap,
+            onLongPress: widget.onMapLongPress,
+            onPositionChanged: (pos, hasGesture) {
+              _reportViewport();
+            },
+          ),
+          children: [
+            if (mb.available && c.tileProviders != null && c.mapTheme != null)
+              VectorTileLayer(
+                key: ValueKey('vt_${mb.themeGeneration}'),
+                tileProviders: c.tileProviders!,
+                theme: c.mapTheme!,
+                sprites: null,
+                layerMode: VectorTileLayerMode.vector,
+              ),
+            if (poiMarkers.isNotEmpty) MarkerLayer(markers: poiMarkers),
+            if (accuracyCircles.isNotEmpty)
+              CircleLayer(circles: accuracyCircles),
+            if (hazardPolygons.isNotEmpty)
+              PolygonLayer(polygons: hazardPolygons),
+            if (previewPolygons.isNotEmpty)
+              PolygonLayer(polygons: previewPolygons),
+            if (hazardCenterMarkers.isNotEmpty)
+              MarkerLayer(markers: hazardCenterMarkers),
+            if (previewMarkers.isNotEmpty)
+              MarkerLayer(markers: previewMarkers),
+            if (eventMarkers.isNotEmpty)
+              MarkerClusterLayerWidget(
+                options: MarkerClusterLayerOptions(
+                  maxClusterRadius: 60,
+                  size: const Size(44, 44),
+                  alignment: Alignment.center,
+                  spiderfyCluster: false,
+                  zoomToBoundsOnClick: true,
+                  padding: const EdgeInsets.all(32),
+                  markers: eventMarkers,
+                  polygonOptions: const PolygonOptions(
+                    color: Color(0x22E8803B),
+                    borderColor: Color(0x55E8803B),
+                    borderStrokeWidth: 1,
+                  ),
+                  builder: (ctx, markers) {
+                    PinCategory top = PinCategory.life;
+                    int topPri = PinPalette.clusterPriority(top);
+                    for (final m in markers) {
+                      final idx = eventMarkers.indexOf(m);
+                      if (idx < 0 || idx >= eventCategories.length) continue;
+                      final cat = eventCategories[idx];
+                      final pri = PinPalette.clusterPriority(cat);
+                      if (pri < topPri) {
+                        topPri = pri;
+                        top = cat;
+                      }
+                    }
+                    return ClusterBubble(
+                      count: markers.length,
+                      highestPriority: top,
+                    );
+                  },
+                ),
+              ),
+            if (selfMarkers.isNotEmpty) MarkerLayer(markers: selfMarkers),
+          ],
+        );
+      },
+    );
+  }
+}

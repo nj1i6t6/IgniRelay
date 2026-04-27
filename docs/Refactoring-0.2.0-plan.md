@@ -422,13 +422,49 @@ resqmesh_app/lib/
 | Bump version → `0.2.0` | ✅ |
 | `DistrictRoadLookup` 真實實作（vector tile place + transportation_name 反查）| ✅ 已實接 + map_screen debounce 1.5s 觸發 |
 | Map sheet/panel 硬碼色（`Color(0xFF1a1a2e)` 等）→ IgniPalette token | ✅ map 範圍內全部替換為 `bg2` |
-| **MapController（ChangeNotifier + ListenableBuilder）抽出** | ⏳ **延至 Stage 7-r2**：map_screen 1380 行的 SOS / GPS / hazard / event / POI / marking / FAB / SOS button 互相耦合，state 拆出至 controller 需大面積調整 widget tree（含 inline 渲染 vs context 依賴拆分），單次操作風險過高。Stage 7 round 1 落地其餘八項（測試 + 視覺 + i18n 鎖死）後分次處理 |
-| 拆 `MapView` / `HazardLayer` / `PoiLayer` / `SelfMarker` / `HazardReportFlow` | ⏳ **同上延至 Stage 7-r2**，需先有 MapController 才有 single source of truth |
+| **MapController（ChangeNotifier + ListenableBuilder）抽出** | ✅ **Stage 7-r2 完成**：見下表 |
+| 拆 `MapView` / `HazardLayer` / `PoiLayer` / `SelfMarker` / `HazardReportFlow` | ✅ **Stage 7-r2 完成**：見下表 |
 | E2E 測試 match → navigation → handoff → complete | ✅ `test/controllers/match_to_handoff_e2e_test.dart` 三案：happy path / 錯 PIN / legacy fallback（mock-driven，real device test 由使用者實機跑）|
 
-> Stage 7-r2 範圍：MapController 抽出 + 5 widget 拆分。觸發條件：使用者實機驗證
-> Stage 7 round 1 包後 SOS 全路徑無 regression、確認其他工作可暫停，再切入 r2。
-> 未做也不影響打包上機（純結構債，行為不變）。
+#### Stage 7-r2 落地狀態（2026-04-27，使用者已模擬器驗收 r1 → 開始 r2）
+
+外部 AI 提供八點建議（命名衝突 / context-effect 邊界 / async race / view model 中立化 / 測試保護 / lifecycle 風險 / TextEditingController 留 widget / dispose guard），全部納入此輪實作。
+
+| 模組 | 落點 | 行數 | 角色 |
+|---|---|---|---|
+| `lib/ui/screens/map/models/map_view_models.dart` | 新增 | 231 | `HazardVm` / `EventVm` / `PoiVm` / `SelfLocationVm` / `MarkingDraftVm` / `SosStateVm` / `MbTilesStateVm` 純 immutable VM，所有 layer widget 與 controller 之間的契約 |
+| `lib/ui/screens/map/models/map_action_results.dart` | 新增 | 129 | `PublishHazardOutcome` / `TriageOutcome` / `CancelSosOutcome` / `ConfirmHazardOutcome` / `DeleteHazardOutcome` 五組 sealed class；effect（snackbar/dialog）邊界由 widget 持，controller 只回 outcome |
+| `lib/ui/screens/map/map_screen_controller.dart` | 新增 | 865 | ChangeNotifier。owner of: MBTiles / PoiQuery / GPS / district-road lookup / hazards / events / pois / SOS / marking draft / MapLayerSettings / 全部 timer 與 stream subscription。不持 BuildContext / flutter_map MapController / TEC。每族 async（overlay / poi / lookup）有 generation token 防 race；所有 async 寫回前 `_disposed` guard |
+| `lib/ui/screens/map/widgets/map_view.dart` | 新增 | 275 | 持 *flutter_map* MapController，onMapReady / onPositionChanged 把 viewport 主動回報給 controller；`controller.centerRequest` ValueNotifier 訂閱橋接 camera move（避免 controller 直接呼 camera API） |
+| `lib/ui/screens/map/widgets/hazard_layer.dart` | 新增 | 138 | 純 render：吃 `List<HazardVm>` → (Polygons, MarkerCenter)；i18n 字串由父層注入 |
+| `lib/ui/screens/map/widgets/poi_layer.dart` | 新增 | 52 | 純 render：吃 `List<PoiVm>` → MarkerLayer |
+| `lib/ui/screens/map/widgets/self_marker_layer.dart` | 新增 | 51 | 純 render：吃 `SelfLocationVm?` → (Marker, AccuracyCircle) |
+| `lib/ui/screens/map/widgets/hazard_report_flow.dart` | 新增 | 193 | 持 `TextEditingController _descCtrl`（依建議 TEC 不放 controller）；publish flow 完整處理：success snackbar / nearby dialog 二段式 / failure snackbar / cancel；`GlobalKey<HazardReportFlowState>` 暴露 `seedDescription` 給父層 edit 模式注入 |
+| `lib/ui/screens/map/map_screen.dart` | **1402 → 476**（−66%） | 476 | thin shell：組裝 controller + 5 widget；只負責 dialog / snackbar / showModalBottomSheet 等 UI side effect 與 `AnimationController _refreshSpinCtrl` |
+| `test/ui/screens/map/map_view_models_test.dart` | 新增 | 6 cases | VM idle 預設 / copyWith sentinel / SOS / MbTilesState |
+| `test/ui/screens/map/map_action_results_test.dart` | 新增 | 4 cases | 5 組 sealed outcome 的窮舉判別 |
+| `test/ui/screens/map/map_screen_controller_marking_test.dart` | 新增 | 7 cases | controller 標記模式 transitions（純同步 commands、notifier 觸發、edit 帶入 hazard 欄位）|
+
+實際接住的設計重點：
+
+1. **命名嚴格區分**：`MapScreenController`（app-level ChangeNotifier）vs *flutter_map* `MapController`（MapView 內持有）。後者不出現在 controller 任何地方。
+2. **Effect 邊界**：所有 snackbar / dialog / Navigator / showModalBottomSheet 留在 widget 樹層；controller 透過 sealed outcome 物件溝通結果。
+3. **async race 防護**：`_overlayGen` / `_poiGen` / `_lookupGen` 三族 generation token；舊請求回來時若 token 已被推進就丟棄。MBTiles 初始化已釋放但 `_disposed` 才回到時的 mbTiles 也手動 `dispose()`。
+4. **viewport 契約**：MapView 在 `onMapReady` / `onPositionChanged` 呼叫 `controller.setViewport(zoom, bounds, ready)`；controller 只在 `ready` 時 schedule POI refresh。解掉舊版「`_initGPS()` 可能在 map 還沒 render 完就 `_mapController.move(...)`」的時序風險。
+5. **VM 中立化**：controller 持有 raw 資料 VM（HazardVm / EventVm / PoiVm），layer widgets 才產 Flutter `Marker`/`Polygon`。controller 不依賴 UI 框架物件，便於測試。
+6. **TextEditingController 留 widget**：`HazardReportFlow` 持有 `_descCtrl`；edit 模式由 `enterMarkingEdit(HazardVm)` 回傳 description string，map_screen 透過 GlobalKey 呼 `seedDescription(text)` 把值塞回 widget。
+7. **lifecycle**：controller `dispose()` 釋放所有 timer / stream / MbTiles / PoiQuery / centerRequest ValueNotifier，並 set `_disposed=true`，所有 async 回寫 fast-path 退出。
+8. **MapLayerSettings owner**：由 controller 直接 `_layerSettings.addListener(_onLayerSettingsChanged)`；sheet 仍透過 prop 拿到同一實例。沒有兩個 ChangeNotifier 互相 listen 的巢狀。
+
+驗收：
+- `flutter analyze`: **0 issue**
+- `flutter test`: **370 passed / 3 skipped**（341 baseline + 9 golden + 3 E2E + 17 r2 新增）
+- `tool/check_layers.dart`: **ok**（無分層違規）
+
+> r2 沒做的：
+> - 真實裝置 BLE/GATT pump test（plan §Stage 6-r2 範圍，要 hardware）
+> - viewport debounce 進一步收斂（目前每 onPositionChanged 都觸發一次 schedulePoi，已有 300ms debounce 守住，但若需要可再加距離閾值）
+> - controller 的 `publishOrUpdateMark` / `loadHazards` / `loadEventMarkers` 整合測試（涉及 EventManager + DatabaseHelper 的 fakes，留 r3 或實機驗證）
 
 ---
 
