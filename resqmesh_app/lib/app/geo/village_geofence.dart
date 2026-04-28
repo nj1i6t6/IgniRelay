@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
@@ -53,6 +54,13 @@ class VillageGeofence {
 
   /// 取得內部 SQLite 資料庫實例（供搜尋用）
   static sql.Database? getDb() => _db;
+
+  /// 測試專用：直接注入 sqlite3 DB 實例，跳過 asset 載入。
+  /// 呼叫端必須自行 dispose 注入的 DB；本類別只負責讀取。
+  @visibleForTesting
+  static void debugSetDb(sql.Database? db) {
+    _db = db;
+  }
 
   // ── 初始化 ───────────────────────────────────────────────────────────
   static Future<void> init() async {

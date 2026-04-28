@@ -337,6 +337,63 @@ void main() {
     });
   });
 
+  // P0-1 回歸：_publishAndStore 必須把座標寫入 Event_Logs 4 個 geo 欄位
+  // （received_lat/lng + origin_lat/lng）。沒填這 4 個欄位，地理圍欄
+  // 路由（match_repository.dart 用 origin_*）會失效，成「全域廣播」。
+  group('EventManager — _publishAndStore geo coords (P0-1 regression)', () {
+    test('publishLocationUpdate writes explicit lat/lng to all 4 geo columns',
+        () async {
+      const targetLat = 25.034;
+      const targetLng = 121.564;
+      await em.publishLocationUpdate(
+        negotiationId: _uid('neg'),
+        lat: targetLat,
+        lng: targetLng,
+      );
+      final db = await DatabaseHelper().database;
+      final rows = await db.query(
+        'Event_Logs',
+        where: 'event_type = ?',
+        whereArgs: [EventType.locationUpdate],
+        orderBy: 'hlc_timestamp DESC',
+        limit: 1,
+      );
+      expect(rows.length, equals(1),
+          reason: 'publishLocationUpdate must write to Event_Logs');
+      expect(rows[0]['received_lat'], closeTo(targetLat, 1e-9));
+      expect(rows[0]['received_lng'], closeTo(targetLng, 1e-9));
+      expect(rows[0]['origin_lat'], closeTo(targetLat, 1e-9));
+      expect(rows[0]['origin_lng'], closeTo(targetLng, 1e-9));
+    });
+
+    test('publishMatchDecline (no explicit coords, no GPS) falls back to 0.0',
+        () async {
+      // 此 caller 不傳 lat/lng；測試環境沒初始化 LocationService，
+      // currentLocation 為 null → 應 fallback 0.0（而非 NULL）。
+      final id = await em.publishMatchDecline(
+        negotiationId: _uid('neg'),
+        resourceId: _uid('res'),
+        requestId: _uid('req'),
+        reason: 'test-fallback',
+      );
+      expect(id, isNotNull);
+      final db = await DatabaseHelper().database;
+      final rows = await db.query(
+        'Event_Logs',
+        where: 'event_id = ?',
+        whereArgs: [id],
+      );
+      expect(rows.length, equals(1));
+      // 4 個欄位都不能是 NULL（NULL 會讓 origin_* 路由直接 skip）
+      expect(rows[0]['received_lat'], isNotNull);
+      expect(rows[0]['received_lng'], isNotNull);
+      expect(rows[0]['origin_lat'], isNotNull);
+      expect(rows[0]['origin_lng'], isNotNull);
+      expect(rows[0]['received_lat'], equals(0.0));
+      expect(rows[0]['origin_lat'], equals(0.0));
+    });
+  });
+
   // Rate limit test 放最後：前面的測試會消耗部分配額，
   // 這裡只驗證「在同一窗口內不超過 20 次」的不變式。
   group('EventManager — Rate Limit', () {

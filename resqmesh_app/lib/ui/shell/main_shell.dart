@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/emergency/emergency_mode_controller.dart';
+import 'package:ignirelay_app/app/mesh/event_types.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 import 'package:ignirelay_app/ui/screens/chat/chat_list_screen.dart';
@@ -83,10 +84,13 @@ class _MainShellState extends State<MainShell> {
   Future<void> _checkAndAlertSos(List<int> data, String deviceId) async {
     final db = await DatabaseHelper().database;
     final cutoff = DateTime.now().millisecondsSinceEpoch - 60000;
+    // SOS 警示只看 requestBroadcast：urgency=2/3 也會被 matchCancel 用到
+    // （見 EventManager.publishMatchCancel: urgency=2），那種 payload 是
+    // MatchCancelData 不該觸發 user-facing SOS 警告。改以 event_type 收緊。
     final recentSos = await db.query(
       'Event_Logs',
-      where: 'urgency >= 2 AND hlc_timestamp > ?',
-      whereArgs: [cutoff],
+      where: 'event_type = ? AND urgency >= 2 AND hlc_timestamp > ?',
+      whereArgs: [EventType.requestBroadcast, cutoff],
       orderBy: 'hlc_timestamp DESC',
       limit: 5,
     );
@@ -99,17 +103,16 @@ class _MainShellState extends State<MainShell> {
       final urgency = (evt['urgency'] as int?) ?? 0;
       final payload = evt['payload'] as Uint8List?;
       String desc = '';
-      // SOS 是用 RequestData protobuf 序列化（見 EventManager.publishEvent），
-      // 過去把 binary 當 ASCII 解碼會顯示亂碼。改用 RequestData.fromBuffer 取
-      // 真正的 description 欄位；解析失敗則 fallback 空字串。
+      // requestBroadcast 的 payload 一定是 RequestData（見 publishEvent
+      // L171），這裡可以直接 .fromBuffer。解析失敗代表 payload 損毀或
+      // schema 不一致 — 用 debugPrint 留紀錄，但不擋 SOS UI。
       if (payload != null && payload.isNotEmpty) {
         try {
           final rd = pb.RequestData.fromBuffer(payload);
           desc = rd.description;
           if (desc.length > 80) desc = '${desc.substring(0, 80)}...';
-        } catch (_) {
-          // 非 RequestData payload（例如舊版資料）→ 不顯示描述
-          desc = '';
+        } catch (e) {
+          debugPrint('[SOS] RequestData.fromBuffer failed for $eventId: $e');
         }
       }
 

@@ -38,10 +38,12 @@ const String kAppBuildNumber = '30';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // BUILD_TIMESTAMP fallback：跟隨 release 節奏更新，HLC 偏差保護用。
-  // 正式 build 應透過 `--dart-define=BUILD_TIMESTAMP=$(date +%s%3N)` 注入。
+  // 正式 build 應透過 `--dart-define=BUILD_TIMESTAMP=$(date +%s%3N)` 注入；
+  // 詳見 README「Release build」一節。fallback 設為「靠近今天」即可，
+  // 因為 HLC 只用它做「不可低於此基準」的鬆綁判斷，過大反而傷及格 1。
   const buildTimestamp = int.fromEnvironment(
     'BUILD_TIMESTAMP',
-    defaultValue: 1761609600000, // 2025-10-28 fallback (v0.2.0+30)
+    defaultValue: 1777334400000, // 2026-04-28 fallback (v0.2.0)
   );
   HLC.setAppBuildTimestamp(buildTimestamp);
   final transport = TransportFactory.create();
