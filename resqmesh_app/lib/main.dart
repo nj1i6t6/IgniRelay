@@ -37,15 +37,31 @@ const String kAppBuildNumber = '30';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // BUILD_TIMESTAMP fallback：跟隨 release 節奏更新，HLC 偏差保護用。
+  // 正式 build 應透過 `--dart-define=BUILD_TIMESTAMP=$(date +%s%3N)` 注入。
   const buildTimestamp = int.fromEnvironment(
     'BUILD_TIMESTAMP',
-    defaultValue: 1712102400000, // 2024-04-03 fallback
+    defaultValue: 1761609600000, // 2025-10-28 fallback (v0.2.0+30)
   );
   HLC.setAppBuildTimestamp(buildTimestamp);
   final transport = TransportFactory.create();
   // UI 層透過 MeshRuntimeController 操作 transport，不直接持有實例。
   MeshRuntimeController.instance.attachTransport(transport);
+
+  // 啟動時自動清 24h 前的 Debug_Logs，避免正式版無限增長。
+  // 在 background 跑，不阻塞 UI 啟動。
+  unawaited(_purgeOldDebugLogs());
+
   runApp(IgniRelayApp(transport: transport));
+}
+
+Future<void> _purgeOldDebugLogs() async {
+  try {
+    final n = await DatabaseHelper().purgeDebugLogs();
+    if (n > 0) debugPrint('[main] purged $n old debug logs');
+  } catch (e) {
+    debugPrint('[main] purgeDebugLogs failed: $e');
+  }
 }
 
 class IgniRelayApp extends StatefulWidget {

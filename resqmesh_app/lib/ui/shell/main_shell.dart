@@ -37,8 +37,19 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
   StreamSubscription? _bleSub;
-  final Set<String> _alertedEventIds = {};
+  // 已 alert 過的事件 ID（去重用）。Dart 的 default Set 是 LinkedHashSet，
+  // 保留插入順序，所以超過上限時直接 remove first（最早插入）即可 FIFO。
+  final Set<String> _alertedEventIds = <String>{};
+  static const int _kAlertedIdsCap = 256;
   Timer? _nearbyRedClear;
+
+  /// 記錄一個 event id 已 alert 過；若超過上限則丟掉最早的，避免無界成長。
+  void _markAlerted(String id) {
+    _alertedEventIds.add(id);
+    while (_alertedEventIds.length > _kAlertedIdsCap) {
+      _alertedEventIds.remove(_alertedEventIds.first);
+    }
+  }
 
   late final List<Widget> _pages;
 
@@ -83,16 +94,23 @@ class _MainShellState extends State<MainShell> {
     for (final evt in recentSos) {
       final eventId = evt['event_id'] as String? ?? '';
       if (_alertedEventIds.contains(eventId)) continue;
-      _alertedEventIds.add(eventId);
+      _markAlerted(eventId);
 
       final urgency = (evt['urgency'] as int?) ?? 0;
       final payload = evt['payload'] as Uint8List?;
       String desc = '';
-      if (payload != null) {
+      // SOS 是用 RequestData protobuf 序列化（見 EventManager.publishEvent），
+      // 過去把 binary 當 ASCII 解碼會顯示亂碼。改用 RequestData.fromBuffer 取
+      // 真正的 description 欄位；解析失敗則 fallback 空字串。
+      if (payload != null && payload.isNotEmpty) {
         try {
-          desc = String.fromCharCodes(payload);
+          final rd = pb.RequestData.fromBuffer(payload);
+          desc = rd.description;
           if (desc.length > 80) desc = '${desc.substring(0, 80)}...';
-        } catch (_) {}
+        } catch (_) {
+          // 非 RequestData payload（例如舊版資料）→ 不顯示描述
+          desc = '';
+        }
       }
 
       if (!mounted) return;
@@ -148,7 +166,7 @@ class _MainShellState extends State<MainShell> {
         }
         if (!isMe) continue;
 
-        _alertedEventIds.add(eventId);
+        _markAlerted(eventId);
         if (!mounted) return;
 
         _showMatchSnack(eventType);

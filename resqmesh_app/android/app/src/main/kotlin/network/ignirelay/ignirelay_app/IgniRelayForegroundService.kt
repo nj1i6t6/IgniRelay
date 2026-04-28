@@ -73,6 +73,32 @@ class IgniRelayForegroundService : Service() {
     private val bloomReceivedDevices = ConcurrentHashMap.newKeySet<String>()
     // Prepared Write buffers (Long Write support for data > MTU)
     private val preparedWriteBuffers = ConcurrentHashMap<String, ByteArrayOutputStream>()
+    // 每個 buffer 上次寫入時間（millis），用於 TTL 清理
+    private val preparedWriteTimestamps = ConcurrentHashMap<String, Long>()
+    // 超過此時間仍未 ExecuteWrite/Cancel 視為棄置，避免惡意/異常裝置撐爆記憶體
+    private val PREPARED_WRITE_TTL_MS = 60_000L
+    // 定期掃描清理間隔
+    private val PREPARED_WRITE_SWEEP_INTERVAL_MS = 30_000L
+    private val preparedWriteSweepRunnable = object : Runnable {
+        override fun run() {
+            sweepStalePreparedWrites()
+            mainHandler.postDelayed(this, PREPARED_WRITE_SWEEP_INTERVAL_MS)
+        }
+    }
+
+    private fun sweepStalePreparedWrites() {
+        val cutoff = System.currentTimeMillis() - PREPARED_WRITE_TTL_MS
+        val stale = preparedWriteTimestamps.entries
+            .filter { it.value < cutoff }
+            .map { it.key }
+        for (key in stale) {
+            preparedWriteBuffers.remove(key)
+            preparedWriteTimestamps.remove(key)
+        }
+        if (stale.isNotEmpty()) {
+            Log.w(TAG, "Swept ${stale.size} stale preparedWrite buffers")
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -94,6 +120,9 @@ class IgniRelayForegroundService : Service() {
         // Dart 層有 5 個入口會觸發 startDataMuleService()，每次都會走到這裡。
         if (gattServer == null) {
             startBlePeripheral()
+            // 啟動 preparedWrite TTL 掃描（idempotent：onCreate 後只會生效一次）
+            mainHandler.removeCallbacks(preparedWriteSweepRunnable)
+            mainHandler.postDelayed(preparedWriteSweepRunnable, PREPARED_WRITE_SWEEP_INTERVAL_MS)
         } else {
             Log.d(TAG, "GATT Server already running, skip re-init")
         }
@@ -104,6 +133,9 @@ class IgniRelayForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(preparedWriteSweepRunnable)
+        preparedWriteBuffers.clear()
+        preparedWriteTimestamps.clear()
         stopBlePeripheral()
         Log.i(TAG, "IgniRelay Data Mule service stopped")
         super.onDestroy()
@@ -220,6 +252,7 @@ class IgniRelayForegroundService : Service() {
                     bloomReceivedDevices.remove(device.address)
                     preparedWriteBuffers.keys.filter { it.startsWith(device.address) }.forEach {
                         preparedWriteBuffers.remove(it)
+                        preparedWriteTimestamps.remove(it)
                     }
                 }
                 mainHandler.post {
@@ -245,6 +278,7 @@ class IgniRelayForegroundService : Service() {
                     val buffer = preparedWriteBuffers.getOrPut(key) { ByteArrayOutputStream() }
                     if (offset == 0) buffer.reset()
                     buffer.write(value)
+                    preparedWriteTimestamps[key] = System.currentTimeMillis()
                     if (responseNeeded) {
                         gattServer?.sendResponse(device, requestId,
                             BluetoothGatt.GATT_SUCCESS, offset, value)
@@ -336,6 +370,7 @@ class IgniRelayForegroundService : Service() {
                 if (execute) {
                     for (key in keysForDevice) {
                         val buffer = preparedWriteBuffers.remove(key) ?: continue
+                        preparedWriteTimestamps.remove(key)
                         val data = buffer.toByteArray()
                         val charUuidStr = key.substringAfter(":")
                         try {
@@ -350,6 +385,7 @@ class IgniRelayForegroundService : Service() {
                     // Cancel: discard buffers
                     for (key in keysForDevice) {
                         preparedWriteBuffers.remove(key)
+                        preparedWriteTimestamps.remove(key)
                     }
                 }
             }

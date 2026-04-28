@@ -213,6 +213,8 @@ class ChatService {
     await db.delete('Chat_Rooms', where: 'room_id = ?', whereArgs: [roomId]);
     await db
         .delete('Chat_Messages', where: 'room_id = ?', whereArgs: [roomId]);
+    // 清掉 rate-limit 紀錄，避免 Map 在頻繁進出聊天室時無限累積
+    _lastSendTime.remove(roomId);
   }
 
   /// Auto-join all level rooms (nation/county/township/village) based on GPS

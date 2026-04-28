@@ -13,6 +13,7 @@ import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 import 'package:ignirelay_app/app/mesh/hazard_manager.dart';
 import 'package:ignirelay_app/app/mesh/triage_queue.dart';
 import 'package:ignirelay_app/app/mesh/event_types.dart';
+import 'package:ignirelay_app/app/services/location_service.dart';
 
 // 物資狀態常數
 class MaterialStatus {
@@ -675,6 +676,8 @@ class EventManager {
       eventType: EventType.locationUpdate,
       urgency: 0,
       ttl: 3, // 短 TTL，位置資訊不需要長距離傳播
+      lat: lat,
+      lng: lng,
     );
   }
 
@@ -762,6 +765,9 @@ class EventManager {
     final signature = await Signer.signEvent(
       eventId: cancelId, eventType: EventType.matchCancel, ttl: 8, payload: cancelPayload,
     );
+    final pos = LocationService().currentLocation;
+    final cLat = pos?.latitude ?? 0.0;
+    final cLng = pos?.longitude ?? 0.0;
     await db.insert('Event_Logs', {
       'event_id': cancelId,
       'sender_pub_key': Uint8List.fromList(pubKeyBytes),
@@ -774,6 +780,10 @@ class EventManager {
       'node_tier': 1,
       'chunk_index': 0,
       'total_chunks': 1,
+      'received_lat': cLat,
+      'received_lng': cLng,
+      'origin_lat': cLat,
+      'origin_lng': cLng,
       'payload': Uint8List.fromList(cancelPayload),
       'signature': Uint8List.fromList(signature),
       'is_synced': 0,
@@ -804,6 +814,9 @@ class EventManager {
     final signature = await Signer.signEvent(
       eventId: cancelId, eventType: EventType.matchCancel, ttl: 8, payload: cancelPayload,
     );
+    final pos = LocationService().currentLocation;
+    final cLat = pos?.latitude ?? 0.0;
+    final cLng = pos?.longitude ?? 0.0;
     await db.insert('Event_Logs', {
       'event_id': cancelId,
       'sender_pub_key': Uint8List.fromList(pubKeyBytes),
@@ -816,6 +829,10 @@ class EventManager {
       'node_tier': 1,
       'chunk_index': 0,
       'total_chunks': 1,
+      'received_lat': cLat,
+      'received_lng': cLng,
+      'origin_lat': cLat,
+      'origin_lng': cLng,
       'payload': Uint8List.fromList(cancelPayload),
       'signature': Uint8List.fromList(signature),
       'is_synced': 0,
@@ -824,11 +841,18 @@ class EventManager {
   }
 
   // ── 簽名、儲存、廣播 helper ──────────────────────────────────────
+  ///
+  /// [lat]/[lng]：當前裝置（=發送者）的座標。若 caller 沒提供，會從
+  /// `LocationService().currentLocation` 取；仍取不到則寫 0.0。
+  /// 這兩個值同時當作 `received_lat/lng`（接收節點 = 自己）和
+  /// `origin_lat/lng`（事件發源地）寫入，讓地理圍欄路由可用。
   Future<String> _publishAndStore({
     required List<int> payload,
     required int eventType,
     required int urgency,
     required int ttl,
+    double? lat,
+    double? lng,
   }) async {
     final hlc = HLC.now();
     final eventId = _uuid.v4();
@@ -837,6 +861,17 @@ class EventManager {
     final sig = await Signer.signEvent(
       eventId: eventId, eventType: eventType, ttl: ttl, payload: payload,
     );
+
+    // 取得座標：caller 顯式提供 > LocationService > 0.0
+    double effLat = lat ?? 0.0;
+    double effLng = lng ?? 0.0;
+    if (lat == null || lng == null) {
+      final pos = LocationService().currentLocation;
+      if (pos != null) {
+        effLat = lat ?? pos.latitude;
+        effLng = lng ?? pos.longitude;
+      }
+    }
 
     final db = await _db.database;
     await db.insert('Event_Logs', {
@@ -851,6 +886,10 @@ class EventManager {
       'node_tier': 0,
       'chunk_index': 0,
       'total_chunks': 1,
+      'received_lat': effLat,
+      'received_lng': effLng,
+      'origin_lat': effLat,
+      'origin_lng': effLng,
       'payload': Uint8List.fromList(payload),
       'signature': Uint8List.fromList(sig),
       'is_synced': 0,

@@ -1,0 +1,13 @@
+# Release keystore configuration template.
+# 1. Copy this file to `android/key.properties`
+# 2. Fill in real values
+# 3. NEVER commit `key.properties` (already gitignored)
+#
+# Generate keystore (first time only):
+#   keytool -genkey -v -keystore ~/ignirelay-release.jks \
+#           -keyalg RSA -keysize 2048 -validity 10000 -alias ignirelay
+#
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME
+keyAlias=ignirelay
+storeFile=/absolute/path/to/ignirelay-release.jks

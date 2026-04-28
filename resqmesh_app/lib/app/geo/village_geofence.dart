@@ -91,8 +91,9 @@ class VillageGeofence {
         AND  bbox_minx <= ? AND bbox_maxx >= ?
     ''', [lat + pad, lat - pad, lng + pad, lng - pad]);
 
-    final results = <VillageInfo>[];
-    double minDistM = double.infinity;
+    // 用 (VillageInfo, 中心點距離平方) tuple 排序；中心點距離以該 ring
+    // bbox 中心代表，避免重新解析 polygon。距離越小代表越靠近查詢點。
+    final scored = <({VillageInfo v, double centerDistSq})>[];
 
     for (final row in rows) {
       final rings = (jsonDecode(row['rings_json'] as String) as List)
@@ -114,29 +115,36 @@ class VillageGeofence {
       final distM = _minDistToRingEdgeMeters(lat, lng, exterior);
       final onBoundary = distM < boundaryBufferMeters;
 
-      if (distM < minDistM) minDistM = distM;
+      // 以 bbox 中心代表該 polygon「中心點」，計算與查詢點距離（平方
+      // 即可，僅用於排序）。
+      final cx = ((row['bbox_minx'] as num) + (row['bbox_maxx'] as num)) / 2;
+      final cy = ((row['bbox_miny'] as num) + (row['bbox_maxy'] as num)) / 2;
+      final dx = (cx - lng);
+      final dy = (cy - lat);
+      final centerDistSq = dx * dx + dy * dy;
 
-      results.add(VillageInfo(
-        villcode:    row['villcode'] as String,
-        towncode:    row['towncode'] as String,
-        countyName:  row['countyname'] as String,
-        townName:    row['townname'] as String,
-        villName:    row['villname'] as String,
-        villEng:     row['villeng'] as String,
-        isOnBoundary: onBoundary,
+      scored.add((
+        v: VillageInfo(
+          villcode:    row['villcode'] as String,
+          towncode:    row['towncode'] as String,
+          countyName:  row['countyname'] as String,
+          townName:    row['townname'] as String,
+          villName:    row['villname'] as String,
+          villEng:     row['villeng'] as String,
+          isOnBoundary: onBoundary,
+        ),
+        centerDistSq: centerDistSq,
       ));
     }
 
-    // 一般情況只有一個里包含此點；若複數（資料邊界重疊）取 bbox 最近者
-    if (results.length > 2) {
-      results.sort((a, b) {
-        // 取中心點距離排序，保留最近兩個
-        return 0;
-      });
-      return results.take(2).toList();
+    // 一般情況只有一個里包含此點；若複數（資料邊界重疊或精度誤差）
+    // 以中心點距離排序取最近兩個。
+    if (scored.length > 2) {
+      scored.sort((a, b) => a.centerDistSq.compareTo(b.centerDistSq));
+      return scored.take(2).map((e) => e.v).toList();
     }
 
-    return results;
+    return scored.map((e) => e.v).toList();
   }
 
   // ── 幾何算法 ─────────────────────────────────────────────────────────
