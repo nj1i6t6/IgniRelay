@@ -16,3 +16,13 @@
 # Large binary assets in resqmesh_app
 /resqmesh_app/assets/maps/taiwan_resqmesh.mbtiles
 /resqmesh_app/assets/maps/taiwan_ignirelay.mbtiles
+
+# Local working scratch (XML dumps / refactor scripts / screenshots)
+# 正式文件已搬到 /docs/；如要新增 scratch 之外的檔案請放別處
+/tmp/
+
+# Local debug DB snapshot — 不該進版控
+/text/resqmesh_local_debug_snapshot.db
+
+# Claude Code per-machine 設定 — 每台機器不同，不該共享
+/.claude/settings.local.json
