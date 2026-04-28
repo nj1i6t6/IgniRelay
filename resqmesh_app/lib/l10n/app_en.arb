@@ -13,7 +13,7 @@
   },
   "mainPermissionSnack": "Bluetooth and location permissions are required for Mesh networking",
 
-  "tabMap": "Tactical Map",
+  "tabMap": "Offline Map",
   "tabMeshGuard": "Mesh Guard",
   "tabChat": "Chat",
   "tabMatch": "Supply Match",
@@ -75,7 +75,7 @@
   "profileUpgradeSnack": "Upgraded to Phone Verified (L1) (pending backend SMS OTP integration)",
   "profileLanguageLabel": "Language",
 
-  "mapTitle": "Offline Tactical Map",
+  "mapTitle": "Offline Map",
   "mapLayerControlTooltip": "Layer Control",
   "mapLegendTooltip": "Legend",
   "mapRefreshTooltip": "Refresh",
@@ -155,6 +155,14 @@
     "placeholders": { "days": {"type": "int"} }
   },
   "mapMarkingNearbyExists": "Nearby report exists",
+  "mapMarkingNearbyContent": "A \"{typeLabel}\" hazard was reported {distanceMeters}m away ({confirmCount} confirmation(s)).\n\nTap 'Confirm' to increase credibility, or create a new marker.",
+  "@mapMarkingNearbyContent": {
+    "placeholders": {
+      "distanceMeters": {"type": "int"},
+      "typeLabel": {"type": "String"},
+      "confirmCount": {"type": "int"}
+    }
+  },
   "mapMarkingCreateNew": "Create new marker",
   "mapMarkingConfirmReport": "Confirm report",
   "mapMarkingEditTitle": "Edit Hazard Marker",
@@ -1034,6 +1042,40 @@
   "supplySubCategory_SKILL_CARE": "Care Services",
   "supplySubCategory_SKILL_TECH": "Technical",
   "supplySubCategory_SKILL_LOGISTICS": "Logistics/Driving",
+
+  "profileSubtitle": "Identity · Settings · Medical",
+  "profileQuickActionMedicalCardCreate": "Create medical card",
+  "profileQuickActionMedicalCard": "Medical card",
+  "profileSectionMesh": "Mesh status",
+  "profileSectionTrust": "Trust level",
+  "profileSectionSettings": "Settings",
+  "profilePubKeyCopied": "Public key copied",
+  "profileSettingsAppearance": "Appearance",
+  "profileSettingsTextScale": "Text size",
+  "profileSettingsLanguage": "Language",
+  "profileSettingsBattery": "Background / Battery",
+  "profileSettingsPrivacy": "Privacy & data",
+  "profileThemeDark": "Dark",
+  "profileThemeLight": "Light",
+  "profileTextScaleStandard": "Standard",
+  "profileTextScaleLarge": "Large",
+  "profileTextScaleXLarge": "X-Large",
+  "profileTextScaleHuge": "Huge",
+  "profileMeshBatteryLabel": "Battery",
+  "profileMeshAdvancedLabel": "Advanced",
+  "profileFooterVersion": "IgniRelay v{version} · BUILD {build}",
+  "@profileFooterVersion": {
+    "placeholders": {
+      "version": {"type": "String"},
+      "build": {"type": "String"}
+    }
+  },
+  "profileFooterTagline": "OFFLINE · MESH · PRIVATE",
+  "matchHeaderItemsSubtitle": "{count} community items",
+  "@matchHeaderItemsSubtitle": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+  "mapAttributionLabel": "© OpenStreetMap contributors",
 
   "supplyItem_WATER_BOTTLE_500": "Bottled Water 500ml",
   "supplyItem_WATER_BOTTLE_1500": "Bottled Water 1.5L",

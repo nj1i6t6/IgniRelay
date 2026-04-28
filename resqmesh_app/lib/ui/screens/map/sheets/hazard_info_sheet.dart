@@ -70,6 +70,7 @@ class _HazardInfoSheetBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     final severity = (hazard['severity'] as int?) ?? 3;
     final radius = (hazard['radius'] as num?)?.toDouble() ?? 200.0;
     final confirmCount = (hazard['confirm_count'] as int?) ?? 1;
@@ -92,21 +93,21 @@ class _HazardInfoSheetBody extends StatelessWidget {
       }
     }
 
-    // 可信度標籤
+    // 可信度標籤（用 palette 的 ok / warn / text3 對應，淺/深色都可讀）
     String credLabel;
     Color credColor;
     if (confirmCount >= 5) {
       credLabel = l.mapCredibilityConfirmed;
-      credColor = Colors.greenAccent;
+      credColor = p.ok;
     } else if (confirmCount >= 3) {
       credLabel = l.mapCredibilityCredible;
-      credColor = Colors.lightGreen;
+      credColor = p.ok;
     } else if (confirmCount >= 2) {
       credLabel = l.mapCredibilityEndorsed;
-      credColor = Colors.orange;
+      credColor = p.warn;
     } else {
       credLabel = l.mapCredibilityUnverified;
-      credColor = Colors.white38;
+      credColor = p.text3;
     }
 
     return Padding(
@@ -121,7 +122,7 @@ class _HazardInfoSheetBody extends StatelessWidget {
               height: 4,
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: p.border2,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -132,8 +133,8 @@ class _HazardInfoSheetBody extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(typeLabel,
-                  style: const TextStyle(
-                      color: Colors.white,
+                  style: TextStyle(
+                      color: p.text0,
                       fontSize: 18,
                       fontWeight: FontWeight.bold)),
             ),
@@ -153,32 +154,32 @@ class _HazardInfoSheetBody extends StatelessWidget {
           // 嚴重度條
           Row(children: [
             Text('${l.mapHazardInfoSeverity}  ',
-                style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                style: TextStyle(color: p.text2, fontSize: 13)),
             ...List.generate(
               5,
               (i) => Icon(
                 Icons.circle,
                 size: 12,
                 color: i < severity
-                    ? (severity >= 4 ? Colors.red : Colors.orange)
-                    : Colors.white12,
+                    ? (severity >= 4 ? p.sos : p.warn)
+                    : p.border2,
               ),
             ),
             Text('  ($severity/5)',
-                style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                style: TextStyle(color: p.text3, fontSize: 12)),
           ]),
           const SizedBox(height: 6),
           Text(l.mapHazardInfoRadius(radius.round()),
-              style: const TextStyle(color: Colors.white54, fontSize: 13)),
+              style: TextStyle(color: p.text2, fontSize: 13)),
           if (desc.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(l.mapHazardInfoDesc(desc),
-                style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                style: TextStyle(color: p.text1, fontSize: 13)),
           ],
           if (timeAgo.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(l.mapHazardInfoTime(timeAgo),
-                style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                style: TextStyle(color: p.text3, fontSize: 12)),
           ],
           if (isMine)
             Padding(
@@ -186,12 +187,10 @@ class _HazardInfoSheetBody extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.person_outline,
-                      color: Colors.greenAccent[400], size: 14),
+                  Icon(Icons.person_outline, color: p.ok, size: 14),
                   const SizedBox(width: 4),
                   Text(l.mapHazardInfoMine,
-                      style: TextStyle(
-                          color: Colors.greenAccent[400], fontSize: 12)),
+                      style: TextStyle(color: p.ok, fontSize: 12)),
                 ],
               ),
             ),
@@ -208,8 +207,8 @@ class _HazardInfoSheetBody extends StatelessWidget {
                   icon: const Icon(Icons.edit, size: 16),
                   label: Text(l.mapHazardInfoEditButton),
                   style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.orange,
-                      side: const BorderSide(color: Colors.orange)),
+                      foregroundColor: p.brand,
+                      side: BorderSide(color: p.brand)),
                 ),
               ),
               const SizedBox(width: 12),
@@ -222,8 +221,8 @@ class _HazardInfoSheetBody extends StatelessWidget {
                   icon: const Icon(Icons.delete, size: 16),
                   label: Text(l.mapHazardDeleteConfirm),
                   style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red,
-                      side: const BorderSide(color: Colors.red)),
+                      foregroundColor: p.sos,
+                      side: BorderSide(color: p.sos)),
                 ),
               ),
             ] else ...[
@@ -238,7 +237,8 @@ class _HazardInfoSheetBody extends StatelessWidget {
                   label: Text(l.mapHazardInfoConfirmButton,
                       style: const TextStyle(color: Colors.white)),
                   style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange),
+                      backgroundColor: p.brand,
+                      foregroundColor: Colors.white),
                 ),
               ),
             ],

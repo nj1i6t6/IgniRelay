@@ -33,6 +33,7 @@ class _PoiInfoSheetBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     final name = poi['name'] ?? '';
     final cls = poi['class'] ?? '';
     final sub = poi['subclass'] ?? '';
@@ -74,7 +75,7 @@ class _PoiInfoSheetBody extends StatelessWidget {
               height: 4,
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: p.border2,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -85,8 +86,8 @@ class _PoiInfoSheetBody extends StatelessWidget {
               Expanded(
                 child: Text(
                   name,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: p.text0,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -122,8 +123,7 @@ class _PoiInfoSheetBody extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(l.mapPoiInfoNoDetail,
-                  style:
-                      const TextStyle(color: Colors.white38, fontSize: 13)),
+                  style: TextStyle(color: p.text3, fontSize: 13)),
             ),
         ],
       ),
@@ -141,19 +141,20 @@ class _PoiInfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: Colors.white54, size: 18),
+          Icon(icon, color: p.text2, size: 18),
           const SizedBox(width: 10),
           Text('$label  ',
-              style: const TextStyle(color: Colors.white54, fontSize: 13)),
+              style: TextStyle(color: p.text2, fontSize: 13)),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: TextStyle(color: p.text0, fontSize: 13),
             ),
           ),
         ],
@@ -169,6 +170,7 @@ class _PoiHoursRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     final lines = _formatOpeningHours(context, raw);
     final l = context.l10n;
     return Padding(
@@ -176,10 +178,10 @@ class _PoiHoursRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.access_time, color: Colors.white54, size: 18),
+          Icon(Icons.access_time, color: p.text2, size: 18),
           const SizedBox(width: 10),
           Text('${l.mapPoiInfoOpen}  ',
-              style: const TextStyle(color: Colors.white54, fontSize: 13)),
+              style: TextStyle(color: p.text2, fontSize: 13)),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -187,8 +189,8 @@ class _PoiHoursRow extends StatelessWidget {
                   .map((ln) => Padding(
                         padding: const EdgeInsets.only(bottom: 3),
                         child: Text(ln,
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 13)),
+                            style: TextStyle(
+                                color: p.text0, fontSize: 13)),
                       ))
                   .toList(),
             ),

@@ -44,6 +44,7 @@ class _EventInfoSheetBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     final eventType = (evt['event_type'] as int?) ?? 0;
     final urgency = (evt['urgency'] as int?) ?? 0;
     final hlcTs = (evt['hlc_timestamp'] as int?) ?? 0;
@@ -53,7 +54,7 @@ class _EventInfoSheetBody extends StatelessWidget {
 
     final l = context.l10n;
 
-    // 事件類型
+    // 事件類型（顏色用 palette 對應，淺/深主題下都仍可讀）
     String typeName;
     IconData typeIcon;
     Color typeColor;
@@ -61,17 +62,17 @@ class _EventInfoSheetBody extends StatelessWidget {
       case 0:
         typeName = l.mapEventTypeSupply;
         typeIcon = Icons.inventory_2;
-        typeColor = Colors.greenAccent;
+        typeColor = p.ok;
         break;
       case 1:
         typeName = l.mapEventTypeRequest;
         typeIcon = Icons.volunteer_activism;
-        typeColor = Colors.amber;
+        typeColor = p.warn;
         break;
       default:
         typeName = l.mapEventTypeUnknown(eventType);
         typeIcon = Icons.info_outline;
-        typeColor = Colors.cyanAccent;
+        typeColor = p.info;
     }
 
     // 緊急度
@@ -80,19 +81,19 @@ class _EventInfoSheetBody extends StatelessWidget {
     switch (urgency) {
       case 3:
         urgencyLabel = l.mapEventSosRed;
-        urgencyColor = Colors.red;
+        urgencyColor = p.sos;
         break;
       case 2:
         urgencyLabel = l.mapEventSosYellow;
-        urgencyColor = Colors.amber;
+        urgencyColor = p.warn;
         break;
       case 1:
         urgencyLabel = l.mapEventSupply;
-        urgencyColor = Colors.green;
+        urgencyColor = p.ok;
         break;
       default:
         urgencyLabel = l.mapEventInfo;
-        urgencyColor = Colors.cyan;
+        urgencyColor = p.info;
     }
 
     // 時間
@@ -156,7 +157,7 @@ class _EventInfoSheetBody extends StatelessWidget {
               height: 4,
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: p.border2,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -166,8 +167,8 @@ class _EventInfoSheetBody extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
                 child: Text(typeName,
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: p.text0,
                         fontSize: 18,
                         fontWeight: FontWeight.bold))),
             Container(
@@ -183,25 +184,24 @@ class _EventInfoSheetBody extends StatelessWidget {
           const SizedBox(height: 12),
           if (payloadDesc.isNotEmpty)
             Text(payloadDesc,
-                style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                style: TextStyle(color: p.text1, fontSize: 14)),
           const SizedBox(height: 8),
           if (distStr.isNotEmpty)
             Row(children: [
-              const Icon(Icons.place, size: 14, color: Colors.white38),
+              Icon(Icons.place, size: 14, color: p.text3),
               const SizedBox(width: 4),
               Text(l.mapEventInfoDistance(distStr),
-                  style:
-                      const TextStyle(color: Colors.white54, fontSize: 13)),
+                  style: TextStyle(color: p.text2, fontSize: 13)),
             ]),
           if (timeAgo.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(l.mapEventInfoTime(timeAgo),
-                style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                style: TextStyle(color: p.text3, fontSize: 12)),
           ],
           const SizedBox(height: 4),
           Text(
               'ID: ${eventId.length > 8 ? eventId.substring(0, 8) : eventId}...',
-              style: const TextStyle(color: Colors.white24, fontSize: 10)),
+              style: TextStyle(color: p.text3, fontSize: 10)),
         ],
       ),
     );

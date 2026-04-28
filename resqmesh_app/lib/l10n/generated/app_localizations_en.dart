@@ -37,7 +37,7 @@ class SEn extends S {
       'Bluetooth and location permissions are required for Mesh networking';
 
   @override
-  String get tabMap => 'Tactical Map';
+  String get tabMap => 'Offline Map';
 
   @override
   String get tabMeshGuard => 'Mesh Guard';
@@ -204,7 +204,7 @@ class SEn extends S {
   String get profileLanguageLabel => 'Language';
 
   @override
-  String get mapTitle => 'Offline Tactical Map';
+  String get mapTitle => 'Offline Map';
 
   @override
   String get mapLayerControlTooltip => 'Layer Control';
@@ -410,6 +410,12 @@ class SEn extends S {
 
   @override
   String get mapMarkingNearbyExists => 'Nearby report exists';
+
+  @override
+  String mapMarkingNearbyContent(
+      int distanceMeters, String typeLabel, int confirmCount) {
+    return 'A \"$typeLabel\" hazard was reported ${distanceMeters}m away ($confirmCount confirmation(s)).\n\nTap \'Confirm\' to increase credibility, or create a new marker.';
+  }
 
   @override
   String get mapMarkingCreateNew => 'Create new marker';
@@ -2435,6 +2441,82 @@ class SEn extends S {
 
   @override
   String get supplySubCategory_SKILL_LOGISTICS => 'Logistics/Driving';
+
+  @override
+  String get profileSubtitle => 'Identity · Settings · Medical';
+
+  @override
+  String get profileQuickActionMedicalCardCreate => 'Create medical card';
+
+  @override
+  String get profileQuickActionMedicalCard => 'Medical card';
+
+  @override
+  String get profileSectionMesh => 'Mesh status';
+
+  @override
+  String get profileSectionTrust => 'Trust level';
+
+  @override
+  String get profileSectionSettings => 'Settings';
+
+  @override
+  String get profilePubKeyCopied => 'Public key copied';
+
+  @override
+  String get profileSettingsAppearance => 'Appearance';
+
+  @override
+  String get profileSettingsTextScale => 'Text size';
+
+  @override
+  String get profileSettingsLanguage => 'Language';
+
+  @override
+  String get profileSettingsBattery => 'Background / Battery';
+
+  @override
+  String get profileSettingsPrivacy => 'Privacy & data';
+
+  @override
+  String get profileThemeDark => 'Dark';
+
+  @override
+  String get profileThemeLight => 'Light';
+
+  @override
+  String get profileTextScaleStandard => 'Standard';
+
+  @override
+  String get profileTextScaleLarge => 'Large';
+
+  @override
+  String get profileTextScaleXLarge => 'X-Large';
+
+  @override
+  String get profileTextScaleHuge => 'Huge';
+
+  @override
+  String get profileMeshBatteryLabel => 'Battery';
+
+  @override
+  String get profileMeshAdvancedLabel => 'Advanced';
+
+  @override
+  String profileFooterVersion(String version, String build) {
+    return 'IgniRelay v$version · BUILD $build';
+  }
+
+  @override
+  String get profileFooterTagline => 'OFFLINE · MESH · PRIVATE';
+
+  @override
+  String matchHeaderItemsSubtitle(int count) {
+    return '$count community items';
+  }
+
+  @override
+  String get mapAttributionLabel => '© OpenStreetMap contributors';
 
   @override
   String get supplyItem_WATER_BOTTLE_500 => 'Bottled Water 500ml';

@@ -10,8 +10,7 @@ import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/app/emergency/emergency_mode_controller.dart';
 import 'package:ignirelay_app/ui/secondary/battery_optimization_guide.dart';
 import 'package:ignirelay_app/ui/theme/app_theme.dart';
-import 'package:ignirelay_app/ui/theme/igni_accent.dart';
-import 'package:ignirelay_app/ui/theme/igni_density.dart';
+import 'package:ignirelay_app/ui/theme/igni_text_scale.dart';
 import 'package:ignirelay_app/ui/secondary/onboarding_screen.dart';
 import 'package:ignirelay_app/ui/screens/design_showcase_screen.dart';
 import 'package:ignirelay_app/ui/shell/main_shell.dart';
@@ -27,6 +26,14 @@ import 'package:ignirelay_app/app/services/chat_service.dart';
 import 'package:ignirelay_app/app/controllers/mesh_runtime_controller.dart';
 import 'package:ignirelay_app/app/crdt/hlc.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
+
+/// 版本字面值（與 pubspec.yaml 的 `version:` 對齊）。
+///
+/// 沒有引入 `package_info_plus` 是因為 Stage 2 整理依賴清單時已決定避開，
+/// 而我們又不希望走「在每個顯示版本的位置都各自寫一次」的舊路。
+/// 規範：每次 release bump 同步更新 [kAppVersionName] / [kAppBuildNumber]。
+const String kAppVersionName = '0.2.0';
+const String kAppBuildNumber = '30';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,24 +60,17 @@ class IgniRelayApp extends StatefulWidget {
     context.findAncestorStateOfType<_IgniRelayAppState>()?.setThemeMode(mode);
   }
 
-  static void setAccent(BuildContext context, IgniAccent accent) {
-    context.findAncestorStateOfType<_IgniRelayAppState>()?.setAccent(accent);
+  /// Stage 7-r3：accent 固定 amber，不再讓使用者切換。Profile 設定頁的
+  /// `_AccentPicker` 已移除，但若日後產品再需要 multi-brand，這裡可以再開回。
+  static void setTextScale(BuildContext context, IgniTextScale scale) {
+    context.findAncestorStateOfType<_IgniRelayAppState>()?.setTextScale(scale);
   }
 
-  static IgniAccent accentOf(BuildContext context) {
-    return context.findAncestorStateOfType<_IgniRelayAppState>()?._accent ??
-        IgniAccent.amber;
-  }
-
-  static void setDensity(BuildContext context, IgniDensity density) {
-    context
-        .findAncestorStateOfType<_IgniRelayAppState>()
-        ?.setDensity(density);
-  }
-
-  static IgniDensity densityOf(BuildContext context) {
-    return context.findAncestorStateOfType<_IgniRelayAppState>()?._density ??
-        IgniDensity.standard;
+  static IgniTextScale textScaleOf(BuildContext context) {
+    return context
+            .findAncestorStateOfType<_IgniRelayAppState>()
+            ?._textScale ??
+        IgniTextScale.standard;
   }
 
   @override
@@ -79,9 +79,10 @@ class IgniRelayApp extends StatefulWidget {
 
 class _IgniRelayAppState extends State<IgniRelayApp> {
   Locale? _locale;
-  ThemeMode _themeMode = ThemeMode.dark;
-  IgniAccent _accent = IgniAccent.amber;
-  IgniDensity _density = IgniDensity.standard;
+  // Stage 7-r3：預設改為 light（產品決策：第一次使用較舒適；急難模式仍會
+  // 在 build() 動態切回深色高對比）。
+  ThemeMode _themeMode = ThemeMode.light;
+  IgniTextScale _textScale = IgniTextScale.standard;
 
   @override
   void initState() {
@@ -93,14 +94,12 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
     final prefs = await SharedPreferences.getInstance();
     final code = prefs.getString('app_language');
     final themeStr = prefs.getString('app_theme_mode');
-    final accentStr = prefs.getString('app_accent');
-    final densityStr = prefs.getString('app_density');
+    final textScaleStr = prefs.getString('app_text_scale');
     if (!mounted) return;
     setState(() {
       if (code != null) _locale = Locale(code);
       _themeMode = _parseThemeMode(themeStr);
-      _accent = IgniAccent.parse(accentStr);
-      _density = IgniDensity.parse(densityStr);
+      _textScale = IgniTextScale.parse(textScaleStr);
     });
   }
 
@@ -112,7 +111,8 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
         return ThemeMode.dark;
       case 'system':
       default:
-        return ThemeMode.dark;
+        // Stage 7-r3：未設定過時預設淺色。
+        return ThemeMode.light;
     }
   }
 
@@ -128,16 +128,10 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
     if (mounted) setState(() => _locale = locale);
   }
 
-  void setAccent(IgniAccent accent) async {
+  void setTextScale(IgniTextScale scale) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('app_accent', accent.storageKey);
-    if (mounted) setState(() => _accent = accent);
-  }
-
-  void setDensity(IgniDensity density) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('app_density', density.storageKey);
-    if (mounted) setState(() => _density = density);
+    await prefs.setString('app_text_scale', scale.storageKey);
+    if (mounted) setState(() => _textScale = scale);
   }
 
   @override
@@ -168,11 +162,23 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
               }
               return const Locale('en');
             },
-            theme: AppTheme.light(accent: _accent, density: _density),
+            theme: AppTheme.light(),
             darkTheme: inEmergency
-                ? AppTheme.emergency(density: _density)
-                : AppTheme.dark(accent: _accent, density: _density),
+                ? AppTheme.emergency()
+                : AppTheme.dark(),
             themeMode: themeMode,
+            // Stage 7-r3：以 [MediaQuery] 包一層，把使用者設定的字體大小（取代
+            // 舊的「密度」）套到整個 widget 樹。系統字體偏好仍會被尊重——
+            // 我們是在系統 textScaler 之上再乘一個係數。
+            builder: (ctx, child) {
+              final base = MediaQuery.textScalerOf(ctx);
+              final scaled =
+                  TextScaler.linear(base.scale(1.0) * _textScale.factor);
+              return MediaQuery(
+                data: MediaQuery.of(ctx).copyWith(textScaler: scaled),
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
             routes: {
               // 設計系統預覽頁：計畫 §Stage 2「Debug-only」要求，release build
               // 不註冊此路由以免誤入。kDebugMode 與 kProfileMode 皆視為「非正式」環境。

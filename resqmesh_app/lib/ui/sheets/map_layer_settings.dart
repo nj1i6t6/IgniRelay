@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POI 類別定義
@@ -102,6 +103,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
   @override
   Widget build(BuildContext context) {
     final s = widget.settings;
+    final p = context.igni;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       child: Column(
@@ -115,18 +117,18 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
               height: 4,
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: p.border2,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
           Row(
             children: [
-              const Icon(Icons.layers, color: Colors.white, size: 22),
+              Icon(Icons.layers, color: p.text0, size: 22),
               const SizedBox(width: 8),
               Text(context.l10n.mapLayerTitle,
-                  style: const TextStyle(
-                      color: Colors.white,
+                  style: TextStyle(
+                      color: p.text0,
                       fontSize: 18,
                       fontWeight: FontWeight.bold)),
             ],
@@ -135,6 +137,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
 
           // ═══════════ POI 區段 ═══════════
           _sectionHeader(
+            context,
             context.l10n.mapLayerPoiSection,
             Icons.place,
             s.showPoi,
@@ -142,12 +145,13 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
           ),
           if (s.showPoi) ...[
             const SizedBox(height: 4),
-            ...MapLayerSettings.getPoiCategories(context).map((cat) => _poiToggle(cat, s)),
+            ...MapLayerSettings.getPoiCategories(context).map((cat) => _poiToggle(context, cat, s)),
           ],
-          const Divider(color: Colors.white12, height: 24),
+          Divider(color: p.border0, height: 24),
 
           // ═══════════ 危險區域區段 ═══════════
           _sectionHeader(
+            context,
             context.l10n.mapLayerHazardSection,
             Icons.warning_amber,
             s.showHazards,
@@ -156,6 +160,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
           if (s.showHazards) ...[
             const SizedBox(height: 4),
             _subToggle(
+              context,
               context.l10n.mapLayerHazardShowOthers,
               s.showOtherHazards,
               (v) => setState(() => s.showOtherHazards = v),
@@ -165,7 +170,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
               Padding(
                 padding: const EdgeInsets.only(left: 20),
                 child: Text(context.l10n.mapLayerHazardMinCredibility,
-                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                    style: TextStyle(color: p.text2, fontSize: 12)),
               ),
               const SizedBox(height: 6),
               Padding(
@@ -178,14 +183,14 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
                     return ChoiceChip(
                       label: Text(level.label),
                       selected: selected,
-                      selectedColor: Colors.orange.withValues(alpha: 0.3),
-                      backgroundColor: Colors.white10,
+                      selectedColor: p.brand.withValues(alpha: 0.25),
+                      backgroundColor: p.bg3,
                       labelStyle: TextStyle(
-                        color: selected ? Colors.orange : Colors.white70,
+                        color: selected ? p.brand : p.text1,
                         fontSize: 12,
                       ),
                       side: BorderSide(
-                        color: selected ? Colors.orange : Colors.white24,
+                        color: selected ? p.brand : p.border1,
                       ),
                       onSelected: (_) {
                         setState(() => s.minConfirmCount = level.min);
@@ -201,39 +206,42 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
     );
   }
 
-  Widget _sectionHeader(
-      String title, IconData icon, bool value, ValueChanged<bool> onChanged) {
+  Widget _sectionHeader(BuildContext ctx, String title, IconData icon,
+      bool value, ValueChanged<bool> onChanged) {
+    final p = ctx.igni;
     return Row(
       children: [
-        Icon(icon, color: Colors.white70, size: 20),
+        Icon(icon, color: p.text1, size: 20),
         const SizedBox(width: 8),
         Text(title,
-            style: const TextStyle(
-                color: Colors.white,
+            style: TextStyle(
+                color: p.text0,
                 fontSize: 15,
                 fontWeight: FontWeight.w600)),
         const Spacer(),
         Switch(
           value: value,
           onChanged: onChanged,
-          activeThumbColor: Colors.greenAccent,
+          activeThumbColor: p.ok,
         ),
       ],
     );
   }
 
-  Widget _subToggle(String label, bool value, ValueChanged<bool> onChanged) {
+  Widget _subToggle(BuildContext ctx, String label, bool value,
+      ValueChanged<bool> onChanged) {
+    final p = ctx.igni;
     return Padding(
       padding: const EdgeInsets.only(left: 20),
       child: Row(
         children: [
           Text(label,
-              style: const TextStyle(color: Colors.white70, fontSize: 13)),
+              style: TextStyle(color: p.text1, fontSize: 13)),
           const Spacer(),
           Switch(
             value: value,
             onChanged: onChanged,
-            activeThumbColor: Colors.greenAccent,
+            activeThumbColor: p.ok,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ],
@@ -241,7 +249,8 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
     );
   }
 
-  Widget _poiToggle(PoiCategory cat, MapLayerSettings s) {
+  Widget _poiToggle(BuildContext ctx, PoiCategory cat, MapLayerSettings s) {
+    final p = ctx.igni;
     return Padding(
       padding: const EdgeInsets.only(left: 20),
       child: Row(
@@ -249,7 +258,7 @@ class _MapLayerControlSheetState extends State<MapLayerControlSheet> {
           Icon(cat.icon, color: cat.color, size: 18),
           const SizedBox(width: 8),
           Text(cat.label,
-              style: const TextStyle(color: Colors.white70, fontSize: 13)),
+              style: TextStyle(color: p.text1, fontSize: 13)),
           const Spacer(),
           Switch(
             value: s.poiIsEnabled(cat.id),

@@ -6,13 +6,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
-import 'package:ignirelay_app/app/emergency/emergency_mode_controller.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/main.dart';
 import 'package:ignirelay_app/ui/secondary/battery_optimization_guide.dart';
-import 'package:ignirelay_app/ui/theme/igni_accent.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
-import 'package:ignirelay_app/ui/theme/igni_density.dart';
+import 'package:ignirelay_app/ui/theme/igni_text_scale.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 import 'package:ignirelay_app/ui/secondary/medical_card_screen.dart';
@@ -111,9 +109,9 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
     if (_pubKeyHex.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: _pubKeyHex));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('公鑰已複製'),
-      duration: Duration(seconds: 2),
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(context.l10n.profilePubKeyCopied),
+      duration: const Duration(seconds: 2),
     ));
   }
 
@@ -125,14 +123,10 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
     });
   }
 
-  void _showHandoffHint() {
-    // 實體交接流程由媒合分頁的協商觸發（需要 resource / role / negotiationId）；
-    // 這裡僅作為入口提示，避免 Profile 下直接建立孤兒交接。
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('請由「媒合」分頁的協商項目進入實體交接'),
-      duration: Duration(seconds: 3),
-    ));
-  }
+  // Stage 7-r3：移除「實體交接」假入口。實體交接流程必須在媒合協商上下文內
+  // 才有意義（需要 role / resourceId / negotiationId / method 等參數），而
+  // Profile 沒有這個上下文 — 之前只是點了跳 snackbar 告訴使用者「請去媒合分頁」，
+  // 實際上沒有任何功能。產品決策：直接拿掉這個 quick action。
 
   void _pushSurvivalMode() {
     Navigator.of(context).push(
@@ -169,7 +163,7 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
                   Text(s.tabProfile, style: IgniTypography.display(p.text0)),
                   const SizedBox(height: 4),
                   Text(
-                    '身分 · 設定 · 醫療資訊',
+                    s.profileSubtitle,
                     style: IgniTypography.monoSmall(p.text2),
                   ),
                 ],
@@ -191,29 +185,19 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
 
             const SizedBox(height: IgniSpacing.md),
 
-            // ── Quick actions ──
+            // ── Quick action（醫療卡）──
+            //
+            // Stage 7-r3：拿掉「實體交接」入口（沒有 negotiation 上下文，原本只
+            // 會跳 snackbar）；醫療卡單獨一張，不做 Row，避免單一卡硬撐成兩欄。
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: IgniSpacing.lg),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _QuickAction(
-                      icon: Icons.medical_services_outlined,
-                      accent: p.sos,
-                      label: _hasMedicalCard ? '醫療卡' : '建立醫療卡',
-                      onTap: _pushMedicalCard,
-                    ),
-                  ),
-                  const SizedBox(width: IgniSpacing.sm),
-                  Expanded(
-                    child: _QuickAction(
-                      icon: Icons.handshake_outlined,
-                      accent: p.info,
-                      label: '實體交接',
-                      onTap: _showHandoffHint,
-                    ),
-                  ),
-                ],
+              child: _QuickAction(
+                icon: Icons.medical_services_outlined,
+                accent: p.sos,
+                label: _hasMedicalCard
+                    ? s.profileQuickActionMedicalCard
+                    : s.profileQuickActionMedicalCardCreate,
+                onTap: _pushMedicalCard,
               ),
             ),
 
@@ -225,7 +209,7 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const IgniSectionLabel('Mesh 狀態'),
+                  IgniSectionLabel(s.profileSectionMesh),
                   ProfileMeshStatusCard(onOpenDetail: _pushSurvivalMode),
                 ],
               ),
@@ -239,7 +223,7 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const IgniSectionLabel('信任等級'),
+                  IgniSectionLabel(s.profileSectionTrust),
                   _TierList(
                     currentLevel: _level,
                     onVerifyPhone: () async {
@@ -263,7 +247,7 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const IgniSectionLabel('設定'),
+                  IgniSectionLabel(s.profileSectionSettings),
                   _SettingsCard(
                     onOpenBatteryGuide: Platform.isAndroid
                         ? () => BatteryOptimizationGuide.showGuideManually(
@@ -279,10 +263,12 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
               padding: const EdgeInsets.symmetric(vertical: IgniSpacing.xl2),
               child: Column(
                 children: [
-                  Text('烽傳 v0.1.27 · BUILD 28',
-                      style: IgniTypography.monoSmall(p.text3)),
+                  Text(
+                    s.profileFooterVersion(kAppVersionName, kAppBuildNumber),
+                    style: IgniTypography.monoSmall(p.text3),
+                  ),
                   const SizedBox(height: 4),
-                  Text('OFFLINE · MESH · PRIVATE',
+                  Text(s.profileFooterTagline,
                       style: IgniTypography.monoSmall(p.text3)),
                 ],
               ),
@@ -668,27 +654,21 @@ class _TierDot extends StatelessWidget {
 }
 
 /// ───────────────────────── Settings ─────────────────────────
-class _SettingsCard extends StatefulWidget {
+///
+/// Stage 7-r3 設定面板瘦身：
+///   - 移除「主題色」選擇（產品決策：固定 amber，減少 QA 面積）。
+///   - 「密度」改為「字體大小」(IgniTextScale)，對 a11y / 老人家更實際。
+///   - 移除「急難模式（手動）」UI 入口（自動 trigger 尚未全接，先不暴露
+///     一個半成品開關；底層 EmergencyModeController.manual 仍可保留供未來
+///     再開回，這裡只是不在設定頁顯示）。
+class _SettingsCard extends StatelessWidget {
   const _SettingsCard({this.onOpenBatteryGuide});
   final VoidCallback? onOpenBatteryGuide;
 
   @override
-  State<_SettingsCard> createState() => _SettingsCardState();
-}
-
-class _SettingsCardState extends State<_SettingsCard> {
-  bool _emergencyManual = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _emergencyManual = EmergencyModeController.instance.activeTriggers
-        .contains(EmergencyTrigger.manual);
-  }
-
-  @override
   Widget build(BuildContext context) {
     final p = context.igni;
+    final s = context.l10n;
     final currentLocale = Localizations.localeOf(context).languageCode;
     return IgniCard(
       padding: EdgeInsets.zero,
@@ -696,22 +676,17 @@ class _SettingsCardState extends State<_SettingsCard> {
         children: [
           _SettingsRow(
             icon: Icons.wb_sunny_outlined,
-            label: '外觀',
+            label: s.profileSettingsAppearance,
             trailing: _ThemeToggle(),
           ),
           _SettingsRow(
-            icon: Icons.palette_outlined,
-            label: '主題色',
-            trailing: _AccentPicker(),
-          ),
-          _SettingsRow(
-            icon: Icons.density_medium,
-            label: '密度',
-            trailing: _DensityPicker(),
+            icon: Icons.format_size,
+            label: s.profileSettingsTextScale,
+            trailing: _TextScalePicker(),
           ),
           _SettingsRow(
             icon: Icons.translate,
-            label: '語言',
+            label: s.profileSettingsLanguage,
             trailing: DropdownButton<String>(
               value: currentLocale,
               underline: const SizedBox.shrink(),
@@ -728,27 +703,15 @@ class _SettingsCardState extends State<_SettingsCard> {
               },
             ),
           ),
-          if (widget.onOpenBatteryGuide != null)
+          if (onOpenBatteryGuide != null)
             _SettingsRow(
               icon: Icons.battery_saver,
-              label: '背景執行 / 電池優化',
-              onTap: widget.onOpenBatteryGuide,
+              label: s.profileSettingsBattery,
+              onTap: onOpenBatteryGuide,
             ),
           _SettingsRow(
-            icon: Icons.warning_amber_outlined,
-            label: '急難模式（手動）',
-            trailing: Switch(
-              value: _emergencyManual,
-              onChanged: (v) {
-                setState(() => _emergencyManual = v);
-                EmergencyModeController.instance
-                    .set(EmergencyTrigger.manual, v);
-              },
-            ),
-          ),
-          const _SettingsRow(
             icon: Icons.shield_outlined,
-            label: '隱私與資料',
+            label: s.profileSettingsPrivacy,
             onTap: null,
             last: true,
           ),
@@ -807,6 +770,7 @@ class _ThemeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.igni;
+    final s = context.l10n;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     Widget seg(String key, String label, bool active) {
       return GestureDetector(
@@ -836,76 +800,51 @@ class _ThemeToggle extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: [seg('dark', '深色', isDark), seg('light', '淺色', !isDark)],
+        children: [
+          seg('dark', s.profileThemeDark, isDark),
+          seg('light', s.profileThemeLight, !isDark),
+        ],
       ),
     );
   }
 }
 
-/// 主題色切換：amber / teal / blue（accent 四件組由 AppTheme.applyAccent 注入）。
+/// 字體大小切換：標準 / 大字 / 特大字 / 超大字。
 ///
-/// 存於 `SharedPreferences('app_accent')`，進入時由 main.dart 回讀。
-class _AccentPicker extends StatelessWidget {
+/// 存於 `SharedPreferences('app_text_scale')`，進入時由 main.dart 回讀，
+/// 經 `MaterialApp.builder` 包一層 `MediaQuery` textScaler 套用。
+class _TextScalePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.igni;
-    final current = IgniRelayApp.accentOf(context);
+    final s = context.l10n;
+    final current = IgniRelayApp.textScaleOf(context);
 
-    // 直接用 palette 樣板取出 brand 色當色點；避免暴露 _AccentSet。
-    Color brandOf(IgniAccent a) =>
-        applyAccent(IgniPalette.dark, a).brand;
-
-    Widget dot(IgniAccent a) {
-      final selected = a == current;
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: GestureDetector(
-          onTap: () => IgniRelayApp.setAccent(context, a),
-          child: Container(
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              color: brandOf(a),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: selected ? p.text0 : p.border1,
-                width: selected ? 2 : 1,
-              ),
-            ),
-          ),
-        ),
-      );
+    String labelOf(IgniTextScale t) {
+      switch (t) {
+        case IgniTextScale.standard:
+          return s.profileTextScaleStandard;
+        case IgniTextScale.large:
+          return s.profileTextScaleLarge;
+        case IgniTextScale.xLarge:
+          return s.profileTextScaleXLarge;
+        case IgniTextScale.huge:
+          return s.profileTextScaleHuge;
+      }
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: IgniAccent.values.map(dot).toList(),
-    );
-  }
-}
-
-/// 密度切換：舒適 / 標準 / 緊湊（計畫 Stage 4a 交付項）。
-///
-/// 存於 `SharedPreferences('app_density')`，進入時由 main.dart 回讀，
-/// 經 `AppTheme.*(density:)` 套入 `ThemeData.visualDensity`。
-class _DensityPicker extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final p = context.igni;
-    final current = IgniRelayApp.densityOf(context);
-
-    Widget seg(IgniDensity d) {
-      final active = d == current;
+    Widget seg(IgniTextScale t) {
+      final active = t == current;
       return GestureDetector(
-        onTap: () => IgniRelayApp.setDensity(context, d),
+        onTap: () => IgniRelayApp.setTextScale(context, t),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
             color: active ? p.bg1 : Colors.transparent,
             borderRadius: const BorderRadius.all(IgniRadii.xs),
           ),
           child: Text(
-            d.label,
+            labelOf(t),
             style: IgniTypography.monoSmall(active ? p.text0 : p.text2),
           ),
         ),
@@ -920,7 +859,7 @@ class _DensityPicker extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: IgniDensity.values.map(seg).toList(),
+        children: IgniTextScale.values.map(seg).toList(),
       ),
     );
   }

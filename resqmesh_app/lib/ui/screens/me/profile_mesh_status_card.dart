@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
@@ -75,7 +76,7 @@ class _ProfileMeshStatusCardState extends State<ProfileMeshStatusCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('裝置電量',
+                Text(context.l10n.profileMeshBatteryLabel,
                     style: IgniTypography.bodyMedium(p.text0)
                         .copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
@@ -89,7 +90,8 @@ class _ProfileMeshStatusCardState extends State<ProfileMeshStatusCard> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text('進階控制', style: IgniTypography.labelSmall(p.text2)),
+              Text(context.l10n.profileMeshAdvancedLabel,
+                  style: IgniTypography.labelSmall(p.text2)),
               const SizedBox(height: 2),
               Icon(Icons.chevron_right, size: 16, color: p.text3),
             ],

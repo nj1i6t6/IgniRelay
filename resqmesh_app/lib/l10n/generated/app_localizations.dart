@@ -148,7 +148,7 @@ abstract class S {
   /// No description provided for @tabMap.
   ///
   /// In zh, this message translates to:
-  /// **'戰術地圖'**
+  /// **'離線地圖'**
   String get tabMap;
 
   /// No description provided for @tabMeshGuard.
@@ -448,7 +448,7 @@ abstract class S {
   /// No description provided for @mapTitle.
   ///
   /// In zh, this message translates to:
-  /// **'離線戰術地圖'**
+  /// **'離線地圖'**
   String get mapTitle;
 
   /// No description provided for @mapLayerControlTooltip.
@@ -834,6 +834,13 @@ abstract class S {
   /// In zh, this message translates to:
   /// **'附近已有回報'**
   String get mapMarkingNearbyExists;
+
+  /// No description provided for @mapMarkingNearbyContent.
+  ///
+  /// In zh, this message translates to:
+  /// **'距離 {distanceMeters}m 處已有「{typeLabel}」回報，目前已有 {confirmCount} 人確認。\n\n你可以「確認」來增加可信度，或建立全新標記。'**
+  String mapMarkingNearbyContent(
+      int distanceMeters, String typeLabel, int confirmCount);
 
   /// No description provided for @mapMarkingCreateNew.
   ///
@@ -4434,6 +4441,150 @@ abstract class S {
   /// In zh, this message translates to:
   /// **'後勤/駕駛'**
   String get supplySubCategory_SKILL_LOGISTICS;
+
+  /// No description provided for @profileSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'身分 · 設定 · 醫療資訊'**
+  String get profileSubtitle;
+
+  /// No description provided for @profileQuickActionMedicalCardCreate.
+  ///
+  /// In zh, this message translates to:
+  /// **'建立醫療卡'**
+  String get profileQuickActionMedicalCardCreate;
+
+  /// No description provided for @profileQuickActionMedicalCard.
+  ///
+  /// In zh, this message translates to:
+  /// **'醫療卡'**
+  String get profileQuickActionMedicalCard;
+
+  /// No description provided for @profileSectionMesh.
+  ///
+  /// In zh, this message translates to:
+  /// **'Mesh 狀態'**
+  String get profileSectionMesh;
+
+  /// No description provided for @profileSectionTrust.
+  ///
+  /// In zh, this message translates to:
+  /// **'信任等級'**
+  String get profileSectionTrust;
+
+  /// No description provided for @profileSectionSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'設定'**
+  String get profileSectionSettings;
+
+  /// No description provided for @profilePubKeyCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'公鑰已複製'**
+  String get profilePubKeyCopied;
+
+  /// No description provided for @profileSettingsAppearance.
+  ///
+  /// In zh, this message translates to:
+  /// **'外觀'**
+  String get profileSettingsAppearance;
+
+  /// No description provided for @profileSettingsTextScale.
+  ///
+  /// In zh, this message translates to:
+  /// **'字體大小'**
+  String get profileSettingsTextScale;
+
+  /// No description provided for @profileSettingsLanguage.
+  ///
+  /// In zh, this message translates to:
+  /// **'語言'**
+  String get profileSettingsLanguage;
+
+  /// No description provided for @profileSettingsBattery.
+  ///
+  /// In zh, this message translates to:
+  /// **'背景執行 / 電池優化'**
+  String get profileSettingsBattery;
+
+  /// No description provided for @profileSettingsPrivacy.
+  ///
+  /// In zh, this message translates to:
+  /// **'隱私與資料'**
+  String get profileSettingsPrivacy;
+
+  /// No description provided for @profileThemeDark.
+  ///
+  /// In zh, this message translates to:
+  /// **'深色'**
+  String get profileThemeDark;
+
+  /// No description provided for @profileThemeLight.
+  ///
+  /// In zh, this message translates to:
+  /// **'淺色'**
+  String get profileThemeLight;
+
+  /// No description provided for @profileTextScaleStandard.
+  ///
+  /// In zh, this message translates to:
+  /// **'標準'**
+  String get profileTextScaleStandard;
+
+  /// No description provided for @profileTextScaleLarge.
+  ///
+  /// In zh, this message translates to:
+  /// **'大字'**
+  String get profileTextScaleLarge;
+
+  /// No description provided for @profileTextScaleXLarge.
+  ///
+  /// In zh, this message translates to:
+  /// **'特大字'**
+  String get profileTextScaleXLarge;
+
+  /// No description provided for @profileTextScaleHuge.
+  ///
+  /// In zh, this message translates to:
+  /// **'超大字'**
+  String get profileTextScaleHuge;
+
+  /// No description provided for @profileMeshBatteryLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'裝置電量'**
+  String get profileMeshBatteryLabel;
+
+  /// No description provided for @profileMeshAdvancedLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'進階控制'**
+  String get profileMeshAdvancedLabel;
+
+  /// No description provided for @profileFooterVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'烽傳 v{version} · BUILD {build}'**
+  String profileFooterVersion(String version, String build);
+
+  /// No description provided for @profileFooterTagline.
+  ///
+  /// In zh, this message translates to:
+  /// **'OFFLINE · MESH · PRIVATE'**
+  String get profileFooterTagline;
+
+  /// No description provided for @matchHeaderItemsSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 項社區資源'**
+  String matchHeaderItemsSubtitle(int count);
+
+  /// No description provided for @mapAttributionLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'© OpenStreetMap contributors'**
+  String get mapAttributionLabel;
 
   /// No description provided for @supplyItem_WATER_BOTTLE_500.
   ///

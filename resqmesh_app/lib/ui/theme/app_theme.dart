@@ -2,32 +2,26 @@ import 'package:flutter/material.dart';
 
 import 'package:ignirelay_app/ui/theme/igni_accent.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
-import 'package:ignirelay_app/ui/theme/igni_density.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 
-/// 產出三組 [ThemeData]：dark / light / emergency，並支援 accent 切換。
+/// 產出三組 [ThemeData]：dark / light / emergency。
 ///
-/// Stage 2 補強：`AppTheme.dark(accent: ...)` 可替換 brand 四件組。急難模式固定
-/// 忽略 accent（保持 warn 飽和色辨識）。
+/// Stage 2 / Stage 4a 歷史：曾經支援 [IgniAccent] 多色與 [IgniDensity] 三段。
+/// Stage 7-r3 起：accent 固定 amber（產品決策：簡化選項、降低 QA 面積），
+/// 而舊的「密度」改由 [IgniTextScale] 在 root 套 MediaQuery textScaler 取代，
+/// `ThemeData.visualDensity` 維持 [VisualDensity.standard]。
 class AppTheme {
   const AppTheme._();
 
-  static ThemeData dark({
-    IgniAccent accent = IgniAccent.amber,
-    IgniDensity density = IgniDensity.standard,
-  }) =>
-      _build(applyAccent(IgniPalette.dark, accent), Brightness.dark, density);
-  static ThemeData light({
-    IgniAccent accent = IgniAccent.amber,
-    IgniDensity density = IgniDensity.standard,
-  }) =>
-      _build(applyAccent(IgniPalette.light, accent), Brightness.light, density);
-  static ThemeData emergency({IgniDensity density = IgniDensity.standard}) =>
-      _build(IgniPalette.emergency, Brightness.dark, density);
+  static ThemeData dark({IgniAccent accent = IgniAccent.amber}) =>
+      _build(applyAccent(IgniPalette.dark, accent), Brightness.dark);
+  static ThemeData light({IgniAccent accent = IgniAccent.amber}) =>
+      _build(applyAccent(IgniPalette.light, accent), Brightness.light);
+  static ThemeData emergency() =>
+      _build(IgniPalette.emergency, Brightness.dark);
 
-  static ThemeData _build(
-      IgniPalette p, Brightness brightness, IgniDensity density) {
+  static ThemeData _build(IgniPalette p, Brightness brightness) {
     final colorScheme = ColorScheme(
       brightness: brightness,
       primary: p.brand,
@@ -48,7 +42,7 @@ class AppTheme {
     return ThemeData(
       brightness: brightness,
       useMaterial3: true,
-      visualDensity: density.visualDensity,
+      visualDensity: VisualDensity.standard,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: p.bg0,
       canvasColor: p.bg0,

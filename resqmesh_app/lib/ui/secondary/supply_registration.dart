@@ -4,7 +4,11 @@ import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/geo_context_resolver.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
+/// Stage 7-r3：theme 收斂。原本整頁硬編 [Color(0xFF0d0d1a)] / [Colors.white*]，
+/// 切到淺色主題就直接讀不到。改成全程依 [IgniPalette]（context.igni），
+/// dark / light 兩種主題下都能保持文字對比、邊框可見。
 class SupplyRegistrationScreen extends StatefulWidget {
   const SupplyRegistrationScreen({super.key});
 
@@ -103,12 +107,14 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     return Scaffold(
-      backgroundColor: const Color(0xFF0d0d1a),
+      backgroundColor: p.bg0,
       appBar: AppBar(
-        title: Text(context.l10n.supplyRegTitle, style: const TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF1a1a2e),
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(context.l10n.supplyRegTitle,
+            style: TextStyle(color: p.text0)),
+        backgroundColor: p.bg1,
+        iconTheme: IconThemeData(color: p.text0),
       ),
       body: Form(
         key: _formKey,
@@ -117,7 +123,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
           children: [
             // ── 第一層：物資大類 ──
             Text(context.l10n.supplyRegCategoryLabel,
-                style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                style: TextStyle(color: p.text1, fontSize: 14)),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -139,21 +145,21 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                     decoration: BoxDecoration(
                       color: selected
                           ? cat.color.withValues(alpha: 0.3)
-                          : const Color(0xFF1a1a2e),
+                          : p.bg2,
                       border: Border.all(
-                          color: selected ? cat.color : Colors.white24),
+                          color: selected ? cat.color : p.border1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(cat.icon,
-                            color: selected ? cat.color : Colors.white54,
+                            color: selected ? cat.color : p.text2,
                             size: 18),
                         const SizedBox(width: 6),
                         Text(SupplyCategoryLocalizer.categoryLabel(context, cat.code),
                             style: TextStyle(
-                              color: selected ? cat.color : Colors.white54,
+                              color: selected ? cat.color : p.text1,
                               fontWeight: selected
                                   ? FontWeight.bold
                                   : FontWeight.normal,
@@ -169,7 +175,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
             // ── 第二層：物資子類 ──
             if (_selectedCategory != null) ...[
               Text(context.l10n.supplyRegSubCategoryLabel(SupplyCategoryLocalizer.categoryLabel(context, _selectedCategory!.code)),
-                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                  style: TextStyle(color: p.text1, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -181,14 +187,14 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                     selected: selected,
                     selectedColor:
                         _selectedCategory!.color.withValues(alpha: 0.3),
-                    backgroundColor: const Color(0xFF1a1a2e),
+                    backgroundColor: p.bg2,
                     labelStyle: TextStyle(
                       color:
-                          selected ? _selectedCategory!.color : Colors.white54,
+                          selected ? _selectedCategory!.color : p.text1,
                     ),
                     side: BorderSide(
                       color:
-                          selected ? _selectedCategory!.color : Colors.white24,
+                          selected ? _selectedCategory!.color : p.border1,
                     ),
                     onSelected: (_) => setState(() {
                       _selectedSubCategory = sub;
@@ -206,7 +212,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
             if (_selectedSubCategory != null &&
                 _selectedSubCategory!.items.isNotEmpty) ...[
               Text(context.l10n.supplyRegItemLabel,
-                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                  style: TextStyle(color: p.text1, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 6,
@@ -216,17 +222,17 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                   return FilterChip(
                     label: Text(SupplyCategoryLocalizer.itemLabel(context, item.code),
                         style: TextStyle(
-                          color: selected ? Colors.white : Colors.white54,
+                          color: selected ? p.text0 : p.text2,
                           fontSize: 12,
                         )),
                     selected: selected,
                     selectedColor:
                         _selectedCategory!.color.withValues(alpha: 0.4),
-                    backgroundColor: const Color(0xFF222244),
-                    checkmarkColor: Colors.white,
+                    backgroundColor: p.bg3,
+                    checkmarkColor: p.text0,
                     side: BorderSide(
                       color:
-                          selected ? _selectedCategory!.color : Colors.white12,
+                          selected ? _selectedCategory!.color : p.border0,
                     ),
                     onSelected: (v) =>
                         setState(() => _selectedItem = v ? item.code : null),
@@ -240,18 +246,19 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: p.bg2,
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: p.border0),
               ),
               child: Row(
                 children: [
                   Icon(Icons.label,
-                      color: _selectedCategory?.color ?? Colors.grey, size: 16),
+                      color: _selectedCategory?.color ?? p.text3, size: 16),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       getLocalizedReadableName(_fullResourceType, context),
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      style: TextStyle(color: p.text0, fontSize: 13),
                     ),
                   ),
                 ],
@@ -262,7 +269,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
             // ── 有效期限（hasExpiry 子分類才顯示）──
             if (_selectedSubCategory?.hasExpiry == true) ...[
               Text(context.l10n.supplyRegExpiryLabel,
-                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                  style: TextStyle(color: p.text1, fontSize: 14)),
               const SizedBox(height: 8),
               GestureDetector(
                 onTap: () async {
@@ -272,15 +279,6 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                         DateTime.now().add(const Duration(days: 180)),
                     firstDate: DateTime.now(),
                     lastDate: DateTime.now().add(const Duration(days: 3650)),
-                    builder: (context, child) => Theme(
-                      data: ThemeData.dark().copyWith(
-                        colorScheme: const ColorScheme.dark(
-                          primary: Colors.redAccent,
-                          surface: Color(0xFF1a1a2e),
-                        ),
-                      ),
-                      child: child!,
-                    ),
                   );
                   if (picked != null) setState(() => _expiryDate = picked);
                 },
@@ -288,13 +286,14 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white24),
+                    color: p.bg2,
+                    border: Border.all(color: p.border1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.calendar_today,
-                          color: Colors.white54, size: 18),
+                      Icon(Icons.calendar_today,
+                          color: p.text2, size: 18),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -303,8 +302,8 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                               : context.l10n.supplyRegExpiryHint,
                           style: TextStyle(
                             color: _expiryDate != null
-                                ? Colors.white
-                                : Colors.white38,
+                                ? p.text0
+                                : p.text3,
                           ),
                         ),
                       ),
@@ -312,8 +311,8 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                       if (_expiryDate != null)
                         GestureDetector(
                           onTap: () => setState(() => _expiryDate = null),
-                          child: const Icon(Icons.clear,
-                              color: Colors.white38, size: 18),
+                          child: Icon(Icons.clear,
+                              color: p.text3, size: 18),
                         ),
                     ],
                   ),
@@ -325,7 +324,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
             // ── 物品狀態（trackCondition 子分類才顯示）──
             if (_selectedSubCategory?.trackCondition == true) ...[
               Text(context.l10n.supplyRegConditionLabel,
-                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                  style: TextStyle(color: p.text1, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -335,18 +334,18 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                   return ChoiceChip(
                     label: Text(cond.localLabel(context)),
                     selected: selected,
-                    selectedColor: (_selectedCategory?.color ?? Colors.grey)
+                    selectedColor: (_selectedCategory?.color ?? p.text3)
                         .withValues(alpha: 0.3),
-                    backgroundColor: const Color(0xFF1a1a2e),
+                    backgroundColor: p.bg2,
                     labelStyle: TextStyle(
                       color: selected
-                          ? (_selectedCategory?.color ?? Colors.white)
-                          : Colors.white54,
+                          ? (_selectedCategory?.color ?? p.text0)
+                          : p.text1,
                     ),
                     side: BorderSide(
                       color: selected
-                          ? (_selectedCategory?.color ?? Colors.white)
-                          : Colors.white24,
+                          ? (_selectedCategory?.color ?? p.text0)
+                          : p.border1,
                     ),
                     onSelected: (_) =>
                         setState(() => _itemCondition = selected ? null : cond),
@@ -359,17 +358,18 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
             // ── 數量 ──
             TextFormField(
               controller: _quantityCtrl,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: p.text0),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: _inputDecoration(context.l10n.supplyRegQtyLabel, Icons.numbers),
+              decoration: _inputDecoration(
+                  context, context.l10n.supplyRegQtyLabel, Icons.numbers),
               validator: (v) => (v == null || v.isEmpty) ? context.l10n.supplyRegQtyValidator : null,
             ),
             const SizedBox(height: 20),
 
             // ── 交接方式（可複選）──
             Text(context.l10n.supplyRegDeliverySection,
-                style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                style: TextStyle(color: p.text1, fontSize: 14)),
             const SizedBox(height: 8),
             ...[
               _buildDeliveryModeCheckbox(
@@ -377,7 +377,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                 icon: Icons.delivery_dining,
                 label: context.l10n.supplyRegDeliveryDeliver,
                 subtitle: context.l10n.supplyRegDeliveryDeliverDesc,
-                activeColor: Colors.greenAccent,
+                activeColor: p.ok,
               ),
               const SizedBox(height: 8),
               _buildDeliveryModeCheckbox(
@@ -385,7 +385,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                 icon: Icons.storefront,
                 label: context.l10n.supplyRegDeliveryPickup,
                 subtitle: context.l10n.supplyRegDeliveryPickupDesc,
-                activeColor: Colors.blueAccent,
+                activeColor: p.info,
               ),
               const SizedBox(height: 8),
               _buildDeliveryModeCheckbox(
@@ -393,7 +393,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                 icon: Icons.inventory_2,
                 label: context.l10n.supplyRegDeliveryDropoff,
                 subtitle: context.l10n.supplyRegDeliveryDropoffDesc,
-                activeColor: Colors.amber,
+                activeColor: p.brand,
               ),
             ],
             const SizedBox(height: 16),
@@ -401,20 +401,21 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
             // ── 備註 ──
             TextFormField(
               controller: _descCtrl,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: p.text0),
               maxLines: 2,
-              decoration: _inputDecoration(context.l10n.supplyRegNoteHint, Icons.notes),
+              decoration: _inputDecoration(
+                  context, context.l10n.supplyRegNoteHint, Icons.notes),
             ),
             const SizedBox(height: 20),
 
             // ── 覆蓋半徑 ──
             Row(
               children: [
-                const Icon(Icons.radar, color: Colors.white54, size: 18),
+                Icon(Icons.radar, color: p.text2, size: 18),
                 const SizedBox(width: 8),
                 Text(
                   context.l10n.supplyRegRange((_maxRange / 1000).toStringAsFixed(1)),
-                  style: const TextStyle(color: Colors.white70),
+                  style: TextStyle(color: p.text1),
                 ),
               ],
             ),
@@ -423,14 +424,14 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
               min: 100,
               max: 20000,
               divisions: 39,
-              activeColor: Colors.redAccent,
-              inactiveColor: Colors.white12,
+              activeColor: p.brand,
+              inactiveColor: p.border1,
               label: '${(_maxRange / 1000).toStringAsFixed(1)} km',
               onChanged: (v) => setState(() => _maxRange = v),
             ),
             Text(
               context.l10n.supplyRegRangeNote,
-              style: const TextStyle(color: Colors.white30, fontSize: 11),
+              style: TextStyle(color: p.text3, fontSize: 11),
             ),
             const SizedBox(height: 24),
 
@@ -453,7 +454,8 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green[700],
+                  backgroundColor: p.ok,
+                  foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
@@ -473,6 +475,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
     required String subtitle,
     required Color activeColor,
   }) {
+    final p = context.igni;
     final selected = _deliveryModes.contains(mode);
     return GestureDetector(
       onTap: () => setState(() {
@@ -489,21 +492,21 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
         decoration: BoxDecoration(
           color: selected
               ? activeColor.withValues(alpha: 0.15)
-              : const Color(0xFF1a1a2e),
+              : p.bg2,
           border: Border.all(
-              color: selected ? activeColor : Colors.white24),
+              color: selected ? activeColor : p.border1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
             Icon(
               selected ? Icons.check_box : Icons.check_box_outline_blank,
-              color: selected ? activeColor : Colors.white38,
+              color: selected ? activeColor : p.text3,
               size: 22,
             ),
             const SizedBox(width: 12),
             Icon(icon,
-                color: selected ? activeColor : Colors.white54, size: 24),
+                color: selected ? activeColor : p.text2, size: 24),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -511,14 +514,14 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
                 children: [
                   Text(label,
                       style: TextStyle(
-                        color: selected ? activeColor : Colors.white54,
+                        color: selected ? activeColor : p.text1,
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
                       )),
                   const SizedBox(height: 2),
                   Text(subtitle,
                       style: TextStyle(
-                        color: selected ? Colors.white54 : Colors.white30,
+                        color: selected ? p.text2 : p.text3,
                         fontSize: 11,
                       )),
                 ],
@@ -530,25 +533,29 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, IconData icon) {
+  InputDecoration _inputDecoration(
+      BuildContext ctx, String label, IconData icon) {
+    final p = ctx.igni;
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: Colors.white54),
-      prefixIcon: Icon(icon, color: Colors.white54),
+      labelStyle: TextStyle(color: p.text2),
+      prefixIcon: Icon(icon, color: p.text2),
+      filled: true,
+      fillColor: p.bg2,
       enabledBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Colors.white24),
+        borderSide: BorderSide(color: p.border1),
         borderRadius: BorderRadius.circular(8),
       ),
       focusedBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Colors.redAccent),
+        borderSide: BorderSide(color: p.brand),
         borderRadius: BorderRadius.circular(8),
       ),
       errorBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Colors.red),
+        borderSide: BorderSide(color: p.sos),
         borderRadius: BorderRadius.circular(8),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Colors.red),
+        borderSide: BorderSide(color: p.sos),
         borderRadius: BorderRadius.circular(8),
       ),
     );

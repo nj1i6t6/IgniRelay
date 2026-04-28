@@ -13,7 +13,7 @@
   },
   "mainPermissionSnack": "需要藍牙與位置權限才能啟用 Mesh 網路",
 
-  "tabMap": "戰術地圖",
+  "tabMap": "離線地圖",
   "tabMeshGuard": "Mesh 守護",
   "tabChat": "聊天",
   "tabMatch": "物資媒合",
@@ -75,7 +75,7 @@
   "profileUpgradeSnack": "已升級至 手機驗證 (L1)（待後端 SMS OTP 串接）",
   "profileLanguageLabel": "語言",
 
-  "mapTitle": "離線戰術地圖",
+  "mapTitle": "離線地圖",
   "mapLayerControlTooltip": "圖層控制",
   "mapLegendTooltip": "圖例",
   "mapRefreshTooltip": "重新整理",
@@ -155,6 +155,14 @@
     "placeholders": { "days": {"type": "int"} }
   },
   "mapMarkingNearbyExists": "附近已有回報",
+  "mapMarkingNearbyContent": "距離 {distanceMeters}m 處已有「{typeLabel}」回報，目前已有 {confirmCount} 人確認。\n\n你可以「確認」來增加可信度，或建立全新標記。",
+  "@mapMarkingNearbyContent": {
+    "placeholders": {
+      "distanceMeters": {"type": "int"},
+      "typeLabel": {"type": "String"},
+      "confirmCount": {"type": "int"}
+    }
+  },
   "mapMarkingCreateNew": "建立新標記",
   "mapMarkingConfirmReport": "確認回報",
   "mapMarkingEditTitle": "編輯危險標記",
@@ -1034,6 +1042,40 @@
   "supplySubCategory_SKILL_CARE": "照護服務",
   "supplySubCategory_SKILL_TECH": "技術",
   "supplySubCategory_SKILL_LOGISTICS": "後勤/駕駛",
+
+  "profileSubtitle": "身分 · 設定 · 醫療資訊",
+  "profileQuickActionMedicalCardCreate": "建立醫療卡",
+  "profileQuickActionMedicalCard": "醫療卡",
+  "profileSectionMesh": "Mesh 狀態",
+  "profileSectionTrust": "信任等級",
+  "profileSectionSettings": "設定",
+  "profilePubKeyCopied": "公鑰已複製",
+  "profileSettingsAppearance": "外觀",
+  "profileSettingsTextScale": "字體大小",
+  "profileSettingsLanguage": "語言",
+  "profileSettingsBattery": "背景執行 / 電池優化",
+  "profileSettingsPrivacy": "隱私與資料",
+  "profileThemeDark": "深色",
+  "profileThemeLight": "淺色",
+  "profileTextScaleStandard": "標準",
+  "profileTextScaleLarge": "大字",
+  "profileTextScaleXLarge": "特大字",
+  "profileTextScaleHuge": "超大字",
+  "profileMeshBatteryLabel": "裝置電量",
+  "profileMeshAdvancedLabel": "進階控制",
+  "profileFooterVersion": "烽傳 v{version} · BUILD {build}",
+  "@profileFooterVersion": {
+    "placeholders": {
+      "version": {"type": "String"},
+      "build": {"type": "String"}
+    }
+  },
+  "profileFooterTagline": "OFFLINE · MESH · PRIVATE",
+  "matchHeaderItemsSubtitle": "{count} 項社區資源",
+  "@matchHeaderItemsSubtitle": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+  "mapAttributionLabel": "© OpenStreetMap contributors",
 
   "supplyItem_WATER_BOTTLE_500": "瓶裝水 500ml",
   "supplyItem_WATER_BOTTLE_1500": "瓶裝水 1.5L",

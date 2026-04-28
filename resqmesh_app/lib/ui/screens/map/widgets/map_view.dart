@@ -107,23 +107,46 @@ class _MapViewState extends State<MapView> {
   void _onCenterRequest() {
     final loc = widget.controller.centerRequest.value;
     if (loc == null) return;
-    if (!_ready) {
+    if (!_ready || !mounted) {
       // 還沒 ready，延後到 ready 後再取 value 跑 move。避免在 map 未掛載前
       // 操作 camera（已知 timing 風險）。
       return;
     }
-    _flutterMapController.moveAndRotate(loc, 15.0, 0.0);
-    // 消費掉，避免重複觸發
-    widget.controller.centerRequest.value = null;
+    // 即使 onMapReady 已 fire，flutter_map 7.0.2 內部 controller state 仍可能在
+    // 「same-frame」未連上：camera / move 會丟
+    //   "You need to have the FlutterMap widget rendered at least once before
+    //    using the MapController."
+    // 所以延後到下一個 post-frame 再操作；同時 try/catch 容忍極端 race。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_ready) return;
+      try {
+        _flutterMapController.moveAndRotate(loc, 15.0, 0.0);
+      } catch (e) {
+        // 安全網：偶發在熱重啟 / 快速 dispose / 還沒首次 layout 完成。
+        debugPrint('[MapView] moveAndRotate skipped: $e');
+        return;
+      }
+      // 消費掉，避免重複觸發
+      if (widget.controller.centerRequest.value == loc) {
+        widget.controller.centerRequest.value = null;
+      }
+    });
   }
 
   void _reportViewport() {
-    final cam = _flutterMapController.camera;
-    widget.controller.setViewport(
-      zoom: cam.zoom,
-      bounds: cam.visibleBounds,
-      ready: _ready,
-    );
+    if (!mounted) return;
+    try {
+      final cam = _flutterMapController.camera;
+      widget.controller.setViewport(
+        zoom: cam.zoom,
+        bounds: cam.visibleBounds,
+        ready: _ready,
+      );
+    } catch (e) {
+      // controller 還沒 attach（onMapReady 之前極小 race）— 這次 viewport 略過，
+      // 等下一次 onPositionChanged / postFrame 自然補上。
+      debugPrint('[MapView] viewport read skipped: $e');
+    }
   }
 
   @override
@@ -202,8 +225,14 @@ class _MapViewState extends State<MapView> {
             maxZoom: 18.0,
             onMapReady: () {
               _ready = true;
-              _reportViewport();
-              _onCenterRequest();
+              // 推遲一格，確保 FlutterMap 已經完成首次 layout / build。
+              // flutter_map 7.0.2 在 onMapReady 同步呼叫 camera / move 的時序仍然
+              // 偏緊，曾觀察到 MapController 內部 _state 還沒接上而 throw。
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                _reportViewport();
+                _onCenterRequest();
+              });
             },
             onTap: widget.onMapTap,
             onLongPress: widget.onMapLongPress,

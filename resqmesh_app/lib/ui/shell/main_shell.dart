@@ -304,7 +304,8 @@ class _MainShellState extends State<MainShell> {
 
     return Scaffold(
       backgroundColor: p.bg0,
-      extendBody: true,
+      // extendBody=false（預設）：tab bar 不會覆蓋內容，避免各分頁
+      // 各自硬補 72/140 padding 仍被擋住的問題（見 Stage 7-r2 hotfix）。
       body: IndexedStack(index: _index, children: _pages),
       bottomNavigationBar: IgniBottomTabBar(
         items: tabs,

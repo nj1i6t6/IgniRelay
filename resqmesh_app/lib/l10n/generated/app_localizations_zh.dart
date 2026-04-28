@@ -36,7 +36,7 @@ class SZh extends S {
   String get mainPermissionSnack => '需要藍牙與位置權限才能啟用 Mesh 網路';
 
   @override
-  String get tabMap => '戰術地圖';
+  String get tabMap => '離線地圖';
 
   @override
   String get tabMeshGuard => 'Mesh 守護';
@@ -194,7 +194,7 @@ class SZh extends S {
   String get profileLanguageLabel => '語言';
 
   @override
-  String get mapTitle => '離線戰術地圖';
+  String get mapTitle => '離線地圖';
 
   @override
   String get mapLayerControlTooltip => '圖層控制';
@@ -398,6 +398,12 @@ class SZh extends S {
 
   @override
   String get mapMarkingNearbyExists => '附近已有回報';
+
+  @override
+  String mapMarkingNearbyContent(
+      int distanceMeters, String typeLabel, int confirmCount) {
+    return '距離 ${distanceMeters}m 處已有「$typeLabel」回報，目前已有 $confirmCount 人確認。\n\n你可以「確認」來增加可信度，或建立全新標記。';
+  }
 
   @override
   String get mapMarkingCreateNew => '建立新標記';
@@ -2358,6 +2364,82 @@ class SZh extends S {
 
   @override
   String get supplySubCategory_SKILL_LOGISTICS => '後勤/駕駛';
+
+  @override
+  String get profileSubtitle => '身分 · 設定 · 醫療資訊';
+
+  @override
+  String get profileQuickActionMedicalCardCreate => '建立醫療卡';
+
+  @override
+  String get profileQuickActionMedicalCard => '醫療卡';
+
+  @override
+  String get profileSectionMesh => 'Mesh 狀態';
+
+  @override
+  String get profileSectionTrust => '信任等級';
+
+  @override
+  String get profileSectionSettings => '設定';
+
+  @override
+  String get profilePubKeyCopied => '公鑰已複製';
+
+  @override
+  String get profileSettingsAppearance => '外觀';
+
+  @override
+  String get profileSettingsTextScale => '字體大小';
+
+  @override
+  String get profileSettingsLanguage => '語言';
+
+  @override
+  String get profileSettingsBattery => '背景執行 / 電池優化';
+
+  @override
+  String get profileSettingsPrivacy => '隱私與資料';
+
+  @override
+  String get profileThemeDark => '深色';
+
+  @override
+  String get profileThemeLight => '淺色';
+
+  @override
+  String get profileTextScaleStandard => '標準';
+
+  @override
+  String get profileTextScaleLarge => '大字';
+
+  @override
+  String get profileTextScaleXLarge => '特大字';
+
+  @override
+  String get profileTextScaleHuge => '超大字';
+
+  @override
+  String get profileMeshBatteryLabel => '裝置電量';
+
+  @override
+  String get profileMeshAdvancedLabel => '進階控制';
+
+  @override
+  String profileFooterVersion(String version, String build) {
+    return '烽傳 v$version · BUILD $build';
+  }
+
+  @override
+  String get profileFooterTagline => 'OFFLINE · MESH · PRIVATE';
+
+  @override
+  String matchHeaderItemsSubtitle(int count) {
+    return '$count 項社區資源';
+  }
+
+  @override
+  String get mapAttributionLabel => '© OpenStreetMap contributors';
 
   @override
   String get supplyItem_WATER_BOTTLE_500 => '瓶裝水 500ml';

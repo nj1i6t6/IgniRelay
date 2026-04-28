@@ -314,18 +314,31 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
   }
 
   // ── 快速預設列 ──
+  //
+  // 結構從「label + 三 chip 強塞同一 Row」改成「label 一行 + chips 用 Wrap」。
+  // 原寫法在英文（Minimal / Recommended / Full）下單行就會超出螢幕寬度，
+  // chip 被推到視窗外點不到。改 Wrap 之後：
+  //   - 中文短標籤照樣一排
+  //   - 英文 / 大字模式自動折行
+  //   - 不依賴隱藏式水平捲動
   Widget _buildPresetRow() {
     final s = context.l10n;
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(s.medicalPresetLabel,
             style: const TextStyle(color: Colors.white54, fontSize: 12)),
-        const SizedBox(width: 12),
-        _presetChip(s.medicalPresetMinimal, MedicalField.presetMinimal),
-        const SizedBox(width: 8),
-        _presetChip(s.medicalPresetRecommended, MedicalField.presetRecommended),
-        const SizedBox(width: 8),
-        _presetChip(s.medicalPresetFull, MedicalField.presetFull),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            _presetChip(s.medicalPresetMinimal, MedicalField.presetMinimal),
+            _presetChip(
+                s.medicalPresetRecommended, MedicalField.presetRecommended),
+            _presetChip(s.medicalPresetFull, MedicalField.presetFull),
+          ],
+        ),
       ],
     );
   }

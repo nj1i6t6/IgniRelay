@@ -123,6 +123,11 @@ class MapScreenController extends ChangeNotifier {
   LatLngBounds? _viewportBounds;
   bool get mapReady => _mapReady;
 
+  /// 當前 viewport zoom（由 MapView 透過 [setViewport] 回報）。
+  /// widget 端在「點擊地圖空白處查 POI」這種需要 zoom guard 的地方使用，
+  /// 用以保留舊版「zoom < 12 不查」的行為與「以實際 zoom 為 nearest tolerance」的契約。
+  double get viewportZoom => _viewportZoom;
+
   // ── 圖層設定 ──
   final MapLayerSettings _layerSettings = MapLayerSettings();
   MapLayerSettings get layerSettings => _layerSettings;
@@ -818,13 +823,25 @@ class MapScreenController extends ChangeNotifier {
     }
   }
 
-  Future<CancelSosOutcome> cancelSos() async {
+  /// 發布「SOS 取消」事件。
+  ///
+  /// 設計考量：
+  ///   - r2 第一版曾把 description 寫成 `__CANCEL__:$desc` 這種內部 sentinel 字串，
+  ///     但 repo 內沒有 consumer 解析這個 prefix；event log / detail UI 反而會直接
+  ///     露出 `__CANCEL__:` 給使用者看。同時 r1 原本是用 i18n key
+  ///     `mapSosCancelledPrefix`（"【SOS 已取消】"/"[SOS Cancelled]"）組 human-readable
+  ///     文案，這個格式仍是 wire 上唯一被認得的取消標記。
+  ///   - 為避免 controller 直接吃 BuildContext / l10n，由 widget 端把已本地化的
+  ///     prefix 字串傳進來；controller 仍保持「無 BuildContext」的純度。
+  ///
+  /// [descriptionPrefix] 通常是 `context.l10n.mapSosCancelledPrefix`。
+  Future<CancelSosOutcome> cancelSos({required String descriptionPrefix}) async {
     try {
       final desc = _sos.description;
       final loc = _selfLocation?.location;
       await _eventManager.publishEvent(
         urgency: 0,
-        description: '__CANCEL__:$desc',
+        description: '$descriptionPrefix$desc',
         lat: loc?.latitude,
         lng: loc?.longitude,
       );

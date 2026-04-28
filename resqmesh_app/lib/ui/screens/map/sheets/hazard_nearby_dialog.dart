@@ -25,35 +25,39 @@ class HazardNearbyDialog {
     final l = context.l10n;
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: ctx.igni.bg2,
-        title: Row(children: [
-          const Icon(Icons.people, color: Colors.orange),
-          const SizedBox(width: 8),
-          Text(l.mapMarkingNearbyExists,
-              style: const TextStyle(color: Colors.white, fontSize: 16)),
-        ]),
-        content: Text(
-          '距離 ${distanceMeters}m 處已有「$typeLabel」回報\n'
-          '目前已有 $confirmCount 人確認\n\n'
-          '你可以「確認」來增加可信度，\n或建立全新標記。',
-          style: const TextStyle(color: Colors.white70, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'new'),
-            child: Text(l.mapMarkingCreateNew,
-                style: const TextStyle(color: Colors.white54)),
+      builder: (ctx) {
+        final p = ctx.igni;
+        return AlertDialog(
+          backgroundColor: p.bg1,
+          title: Row(children: [
+            Icon(Icons.people, color: p.warn),
+            const SizedBox(width: 8),
+            Text(l.mapMarkingNearbyExists,
+                style: TextStyle(color: p.text0, fontSize: 16)),
+          ]),
+          content: Text(
+            l.mapMarkingNearbyContent(distanceMeters, typeLabel, confirmCount),
+            style: TextStyle(color: p.text1, fontSize: 14),
           ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(ctx, 'confirm'),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-            icon: const Icon(Icons.check, color: Colors.white, size: 18),
-            label: Text(l.mapMarkingConfirmReport,
-                style: const TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'new'),
+              child: Text(l.mapMarkingCreateNew,
+                  style: TextStyle(color: p.text2)),
+            ),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(ctx, 'confirm'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: p.warn,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.check, color: Colors.white, size: 18),
+              label: Text(l.mapMarkingConfirmReport,
+                  style: const TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
   }
 }

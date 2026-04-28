@@ -16,26 +16,29 @@ class SosCancelDialog {
     final l = context.l10n;
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: ctx.igni.bg2,
-        title: Text(l.mapCancelSosTitle,
-            style: const TextStyle(color: Colors.white)),
-        content: Text(
-          l.mapCancelSosContent,
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l.mapCancelSosBack),
+      builder: (ctx) {
+        final p = ctx.igni;
+        return AlertDialog(
+          backgroundColor: p.bg1,
+          title: Text(l.mapCancelSosTitle,
+              style: TextStyle(color: p.text0)),
+          content: Text(
+            l.mapCancelSosContent,
+            style: TextStyle(color: p.text1),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l.mapCancelSosConfirm,
-                style: const TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l.mapCancelSosBack),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l.mapCancelSosConfirm,
+                  style: TextStyle(color: p.sos)),
+            ),
+          ],
+        );
+      },
     );
     return result == true;
   }

@@ -9,12 +9,29 @@ import android.os.*
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+/**
+ * 為什麼是 [FlutterFragmentActivity] 而不是 [io.flutter.embedding.android.FlutterActivity]？
+ *
+ * `health` plugin（13.x，cachet.plugins.health.HealthPlugin#onAttachedToActivity）會直接做：
+ *
+ *     (activity as ComponentActivity).registerForActivityResult(...)
+ *
+ * `FlutterActivity` 不是 `ComponentActivity`，這個強制 cast 會在 release 啟動的
+ * `GeneratedPluginRegistrant.registerWith(...)` 路徑上拋 `ClassCastException`，
+ * 雖然 Flutter 會 catch 住、不直接 crash，但 plugin 從此沒有 attach Activity，
+ * 之後任何 Health Connect 權限 / 匯入流程都會因 launcher 不存在而失敗。
+ *
+ * `FlutterFragmentActivity` 繼承自 `androidx.fragment.app.FragmentActivity`，後者繼承
+ * `ComponentActivity`，cast 成立、`registerForActivityResult` 可正常呼叫。
+ *
+ * 這也是 health plugin README 對 host activity 的明文要求。
+ */
+class MainActivity : FlutterFragmentActivity() {
 
     companion object {
         private const val METHOD_CHANNEL = "network.ignirelay/native"

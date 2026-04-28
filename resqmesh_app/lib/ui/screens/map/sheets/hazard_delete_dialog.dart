@@ -16,26 +16,30 @@ class HazardDeleteDialog {
     final l = context.l10n;
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: ctx.igni.bg2,
-        title: Text(l.mapHazardDeleteTitle,
-            style: const TextStyle(color: Colors.white, fontSize: 16)),
-        content: Text(l.mapHazardDeleteContent,
-            style: const TextStyle(color: Colors.white70, fontSize: 14)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l.mapHazardDeleteCancel,
-                style: const TextStyle(color: Colors.white54)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: Text(l.mapHazardDeleteConfirm,
-                style: const TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final p = ctx.igni;
+        return AlertDialog(
+          backgroundColor: p.bg1,
+          title: Text(l.mapHazardDeleteTitle,
+              style: TextStyle(color: p.text0, fontSize: 16)),
+          content: Text(l.mapHazardDeleteContent,
+              style: TextStyle(color: p.text1, fontSize: 14)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l.mapHazardDeleteCancel,
+                  style: TextStyle(color: p.text2)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: p.sos, foregroundColor: Colors.white),
+              child: Text(l.mapHazardDeleteConfirm,
+                  style: const TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
     return result == true;
   }

@@ -50,6 +50,7 @@ class MarkingPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = context.l10n;
+    final p = context.igni;
     final (_, _, typeColor) = hazardInfoBuilder(context, markType);
     const types = [
       'ROADBLOCK',
@@ -66,7 +67,7 @@ class MarkingPanel extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
         decoration: BoxDecoration(
-          color: context.igni.bg2.withValues(alpha: 0.97),
+          color: p.bg1.withValues(alpha: 0.97),
           borderRadius:
               const BorderRadius.vertical(top: Radius.circular(20)),
           boxShadow: [
@@ -83,28 +84,27 @@ class MarkingPanel extends StatelessWidget {
           children: [
             // 標題 + 取消
             Row(children: [
-              const Icon(Icons.warning_amber,
-                  color: Colors.orange, size: 22),
+              Icon(Icons.warning_amber, color: p.warn, size: 22),
               const SizedBox(width: 8),
               Text(
                 isEditing
                     ? l.mapMarkingEditTitle
                     : l.mapMarkingNewTitle,
-                style: const TextStyle(
-                    color: Colors.white,
+                style: TextStyle(
+                    color: p.text0,
                     fontSize: 16,
                     fontWeight: FontWeight.bold),
               ),
               const Spacer(),
               IconButton(
                 onPressed: onCancel,
-                icon: const Icon(Icons.close, color: Colors.white38),
+                icon: Icon(Icons.close, color: p.text3),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
             ]),
             Text(l.mapMarkingTapHint,
-                style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                style: TextStyle(color: p.text3, fontSize: 11)),
             const SizedBox(height: 10),
 
             // 危險類型選擇
@@ -123,13 +123,13 @@ class MarkingPanel extends StatelessWidget {
                       label: Text(label),
                       selected: selected,
                       selectedColor: color.withValues(alpha: 0.3),
-                      backgroundColor: Colors.white10,
+                      backgroundColor: p.bg3,
                       labelStyle: TextStyle(
-                        color: selected ? color : Colors.white70,
+                        color: selected ? color : p.text1,
                         fontSize: 12,
                       ),
                       side: BorderSide(
-                          color: selected ? color : Colors.white24),
+                          color: selected ? color : p.border1),
                       onSelected: (_) => onTypeChanged(key),
                     ),
                   );
@@ -141,8 +141,7 @@ class MarkingPanel extends StatelessWidget {
             // 嚴重程度
             Row(children: [
               Text(l.mapMarkingSeverityLabel,
-                  style:
-                      const TextStyle(color: Colors.white54, fontSize: 12)),
+                  style: TextStyle(color: p.text2, fontSize: 12)),
               Expanded(
                 child: Slider(
                   value: markSeverity,
@@ -150,36 +149,33 @@ class MarkingPanel extends StatelessWidget {
                   max: 5,
                   divisions: 4,
                   activeColor: typeColor,
-                  inactiveColor: Colors.white12,
+                  inactiveColor: p.border0,
                   label: '${markSeverity.round()}',
                   onChanged: onSeverityChanged,
                 ),
               ),
               Text('${markSeverity.round()}/5',
-                  style:
-                      const TextStyle(color: Colors.white38, fontSize: 12)),
+                  style: TextStyle(color: p.text3, fontSize: 12)),
             ]),
 
             // 影響半徑
             Row(children: [
               Text(l.mapMarkingRadiusLabel,
-                  style:
-                      const TextStyle(color: Colors.white54, fontSize: 12)),
+                  style: TextStyle(color: p.text2, fontSize: 12)),
               Expanded(
                 child: Slider(
                   value: markRadius,
                   min: 50,
                   max: 2000,
                   divisions: 39,
-                  activeColor: Colors.orange,
-                  inactiveColor: Colors.white12,
+                  activeColor: p.warn,
+                  inactiveColor: p.border0,
                   label: '${markRadius.round()}m',
                   onChanged: onRadiusChanged,
                 ),
               ),
               Text('${markRadius.round()}m',
-                  style:
-                      const TextStyle(color: Colors.white38, fontSize: 12)),
+                  style: TextStyle(color: p.text3, fontSize: 12)),
             ]),
 
             // 描述
@@ -187,17 +183,16 @@ class MarkingPanel extends StatelessWidget {
               height: 40,
               child: TextField(
                 controller: descController,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
+                style: TextStyle(color: p.text0, fontSize: 13),
                 decoration: InputDecoration(
                   hintText: l.mapMarkingDescHint,
-                  hintStyle: const TextStyle(
-                      color: Colors.white24, fontSize: 13),
+                  hintStyle: TextStyle(color: p.text3, fontSize: 13),
                   enabledBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.white24),
+                    borderSide: BorderSide(color: p.border1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.orange),
+                    borderSide: BorderSide(color: p.warn),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
@@ -214,7 +209,8 @@ class MarkingPanel extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: isPublishing ? null : onPublish,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
+                  backgroundColor: p.warn,
+                  foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),

@@ -105,9 +105,10 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
     return Scaffold(
       backgroundColor: p.bg0,
       appBar: AppBar(
-        title: Text(context.l10n.reqSheetTitle, style: const TextStyle(color: Colors.white)),
-        backgroundColor: p.bg2,
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(context.l10n.reqSheetTitle,
+            style: TextStyle(color: p.text0)),
+        backgroundColor: p.bg1,
+        iconTheme: IconThemeData(color: p.text0),
       ),
       body: Form(
         key: _formKey,
@@ -116,7 +117,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
           children: [
             // ── 第一層：物資大類 ──
             Text(context.l10n.reqSheetCategoryLabel,
-                style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                style: TextStyle(color: p.text1, fontSize: 14)),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -138,19 +139,19 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                           ? cat.color.withValues(alpha: 0.3)
                           : p.bg2,
                       border: Border.all(
-                          color: selected ? cat.color : Colors.white24),
+                          color: selected ? cat.color : p.border1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(cat.icon,
-                            color: selected ? cat.color : Colors.white54,
+                            color: selected ? cat.color : p.text2,
                             size: 18),
                         const SizedBox(width: 6),
                         Text(SupplyCategoryLocalizer.categoryLabel(context, cat.code),
                             style: TextStyle(
-                              color: selected ? cat.color : Colors.white54,
+                              color: selected ? cat.color : p.text1,
                               fontWeight: selected
                                   ? FontWeight.bold
                                   : FontWeight.normal,
@@ -166,7 +167,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
             // ── 第二層：子類別 ──
             if (_selectedCategory != null) ...[
               Text('${SupplyCategoryLocalizer.categoryLabel(context, _selectedCategory!.code)} ${context.l10n.reqSheetSubCategoryLabel}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                  style: TextStyle(color: p.text1, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -181,11 +182,11 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                     backgroundColor: p.bg2,
                     labelStyle: TextStyle(
                       color:
-                          selected ? _selectedCategory!.color : Colors.white54,
+                          selected ? _selectedCategory!.color : p.text1,
                     ),
                     side: BorderSide(
                       color:
-                          selected ? _selectedCategory!.color : Colors.white24,
+                          selected ? _selectedCategory!.color : p.border1,
                     ),
                     onSelected: (_) => setState(() {
                       _selectedSubCategory = sub;
@@ -201,7 +202,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
             if (_selectedSubCategory != null &&
                 _selectedSubCategory!.items.isNotEmpty) ...[
               Text(context.l10n.reqSheetItemLabel,
-                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                  style: TextStyle(color: p.text1, fontSize: 14)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 6,
@@ -211,17 +212,17 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                   return FilterChip(
                     label: Text(SupplyCategoryLocalizer.itemLabel(context, item.code),
                         style: TextStyle(
-                          color: selected ? Colors.white : Colors.white54,
+                          color: selected ? p.text0 : p.text2,
                           fontSize: 12,
                         )),
                     selected: selected,
                     selectedColor:
                         _selectedCategory!.color.withValues(alpha: 0.4),
-                    backgroundColor: const Color(0xFF222244),
-                    checkmarkColor: Colors.white,
+                    backgroundColor: p.bg3,
+                    checkmarkColor: p.text0,
                     side: BorderSide(
                       color:
-                          selected ? _selectedCategory!.color : Colors.white12,
+                          selected ? _selectedCategory!.color : p.border0,
                     ),
                     onSelected: (v) =>
                         setState(() => _selectedItem = v ? item.code : null),
@@ -235,18 +236,19 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: p.bg2,
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: p.border0),
               ),
               child: Row(
                 children: [
                   Icon(Icons.label,
-                      color: _selectedCategory?.color ?? Colors.grey, size: 16),
+                      color: _selectedCategory?.color ?? p.text3, size: 16),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       getLocalizedReadableName(_fullResourceType, context),
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      style: TextStyle(color: p.text0, fontSize: 13),
                     ),
                   ),
                 ],
@@ -257,24 +259,25 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
             // ── 需求數量 ──
             TextFormField(
               controller: _quantityCtrl,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: p.text0),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: _inputDecoration(context.l10n.reqSheetQtyLabel, Icons.numbers),
+              decoration: _inputDecoration(
+                  context, context.l10n.reqSheetQtyLabel, Icons.numbers),
               validator: (v) => (v == null || v.isEmpty) ? context.l10n.supplyRegQtyValidator : null,
             ),
             const SizedBox(height: 20),
 
             // ── 交接方式 ──
             Text(context.l10n.reqSheetMobilitySection,
-                style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                style: TextStyle(color: p.text1, fontSize: 14)),
             const SizedBox(height: 8),
             _buildMobilityOption(
               mode: 'CAN_GO',
               icon: Icons.directions_walk,
               label: context.l10n.reqSheetMobilityPickup,
               subtitle: context.l10n.reqSheetMobilityPickupDesc,
-              activeColor: Colors.greenAccent,
+              activeColor: p.ok,
             ),
             const SizedBox(height: 8),
             _buildMobilityOption(
@@ -282,7 +285,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
               icon: Icons.accessibility_new,
               label: context.l10n.reqSheetMobilityDelivery,
               subtitle: context.l10n.reqSheetMobilityDeliveryDesc,
-              activeColor: Colors.orange,
+              activeColor: p.warn,
             ),
             const SizedBox(height: 8),
             _buildMobilityOption(
@@ -290,19 +293,19 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
               icon: Icons.inventory_2,
               label: context.l10n.reqSheetMobilityDropoff,
               subtitle: context.l10n.reqSheetMobilityDropoffDesc,
-              activeColor: Colors.amber,
+              activeColor: p.brand,
             ),
             const SizedBox(height: 20),
 
             // ── 搜尋半徑 ──
             Row(
               children: [
-                const Icon(Icons.radar, color: Colors.white54, size: 18),
+                Icon(Icons.radar, color: p.text2, size: 18),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     context.l10n.reqSheetRange((_maxRange / 1000).toStringAsFixed(1)),
-                    style: const TextStyle(color: Colors.white70),
+                    style: TextStyle(color: p.text1),
                   ),
                 ),
               ],
@@ -312,23 +315,24 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
               min: 100,
               max: 20000,
               divisions: 39,
-              activeColor: Colors.redAccent,
-              inactiveColor: Colors.white12,
+              activeColor: p.sos,
+              inactiveColor: p.border1,
               label: '${(_maxRange / 1000).toStringAsFixed(1)} km',
               onChanged: (v) => setState(() => _maxRange = v),
             ),
             Text(
               context.l10n.supplyRegRangeNote,
-              style: const TextStyle(color: Colors.white30, fontSize: 11),
+              style: TextStyle(color: p.text3, fontSize: 11),
             ),
             const SizedBox(height: 16),
 
             // ── 備註 ──
             TextFormField(
               controller: _descCtrl,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: p.text0),
               maxLines: 2,
-              decoration: _inputDecoration(context.l10n.supplyRegNoteHint, Icons.notes),
+              decoration: _inputDecoration(
+                  context, context.l10n.supplyRegNoteHint, Icons.notes),
             ),
             const SizedBox(height: 24),
 
@@ -351,7 +355,8 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
+                  backgroundColor: p.sos,
+                  foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
@@ -371,6 +376,7 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
     required String subtitle,
     required Color activeColor,
   }) {
+    final p = context.igni;
     final selected = _mobilityMode == mode;
     return GestureDetector(
       onTap: () => setState(() => _mobilityMode = mode),
@@ -380,21 +386,21 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
         decoration: BoxDecoration(
           color: selected
               ? activeColor.withValues(alpha: 0.15)
-              : context.igni.bg2,
+              : p.bg2,
           border: Border.all(
-              color: selected ? activeColor : Colors.white24),
+              color: selected ? activeColor : p.border1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
             Icon(
               selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: selected ? activeColor : Colors.white38,
+              color: selected ? activeColor : p.text3,
               size: 22,
             ),
             const SizedBox(width: 12),
             Icon(icon,
-                color: selected ? activeColor : Colors.white54, size: 24),
+                color: selected ? activeColor : p.text2, size: 24),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -402,14 +408,14 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
                 children: [
                   Text(label,
                       style: TextStyle(
-                        color: selected ? activeColor : Colors.white54,
+                        color: selected ? activeColor : p.text1,
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
                       )),
                   const SizedBox(height: 2),
                   Text(subtitle,
                       style: TextStyle(
-                        color: selected ? Colors.white54 : Colors.white30,
+                        color: selected ? p.text2 : p.text3,
                         fontSize: 11,
                       )),
                 ],
@@ -421,25 +427,29 @@ class _ResourceRequestScreenState extends State<ResourceRequestScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, IconData icon) {
+  InputDecoration _inputDecoration(
+      BuildContext ctx, String label, IconData icon) {
+    final p = ctx.igni;
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: Colors.white54),
-      prefixIcon: Icon(icon, color: Colors.white54),
+      labelStyle: TextStyle(color: p.text2),
+      prefixIcon: Icon(icon, color: p.text2),
+      filled: true,
+      fillColor: p.bg2,
       enabledBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Colors.white24),
+        borderSide: BorderSide(color: p.border1),
         borderRadius: BorderRadius.circular(8),
       ),
       focusedBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Colors.redAccent),
+        borderSide: BorderSide(color: p.sos),
         borderRadius: BorderRadius.circular(8),
       ),
       errorBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Colors.red),
+        borderSide: BorderSide(color: p.sos),
         borderRadius: BorderRadius.circular(8),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Colors.red),
+        borderSide: BorderSide(color: p.sos),
         borderRadius: BorderRadius.circular(8),
       ),
     );

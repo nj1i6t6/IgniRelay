@@ -31,6 +31,7 @@ import 'package:ignirelay_app/ui/screens/map/sheets/hazard_info_sheet.dart';
 import 'package:ignirelay_app/ui/screens/map/sheets/poi_info_sheet.dart';
 import 'package:ignirelay_app/ui/screens/map/sheets/sos_cancel_dialog.dart';
 import 'package:ignirelay_app/ui/screens/map/widgets/hazard_report_flow.dart';
+import 'package:ignirelay_app/ui/screens/map/widgets/map_attribution_badge.dart';
 import 'package:ignirelay_app/ui/screens/map/widgets/map_error_screen.dart';
 import 'package:ignirelay_app/ui/screens/map/widgets/map_fab_column.dart';
 import 'package:ignirelay_app/ui/screens/map/widgets/map_legend_panel.dart';
@@ -143,8 +144,12 @@ class _MapScreenState extends State<MapScreen>
     }
     final pq = _ctrl.poiQuery;
     if (pq == null || !_ctrl.mapReady) return;
-    // 利用 controller 的 viewport 守衛：太遠的 zoom 不查
-    final poi = await pq.queryNearestPoi(latlng, 14.0);
+    // 對齊 r2 之前的行為：縮太遠時不查（避免低縮放時點到大片空地誤開 POI 詳情），
+    // 並把實際 viewport zoom 傳進去做 nearest/tolerance 判定，避免用假 zoom (14)
+    // 造成判定半徑與畫面不一致。
+    final zoom = _ctrl.viewportZoom;
+    if (zoom < 12) return;
+    final poi = await pq.queryNearestPoi(latlng, zoom);
     if (poi == null || !mounted) return;
     PoiInfoSheet.show(context, poi);
   }
@@ -291,7 +296,10 @@ class _MapScreenState extends State<MapScreen>
   Future<void> _cancelSos() async {
     final confirm = await SosCancelDialog.show(context);
     if (!confirm || !mounted) return;
-    final outcome = await _ctrl.cancelSos();
+    // i18n 由 widget 端組好再交給 controller，避免 controller 持有 BuildContext。
+    final outcome = await _ctrl.cancelSos(
+      descriptionPrefix: context.l10n.mapSosCancelledPrefix,
+    );
     if (!mounted) return;
     switch (outcome) {
       case CancelSosSucceeded():
@@ -454,6 +462,12 @@ class _MapScreenState extends State<MapScreen>
                         ),
                         if (_showLegend && !_ctrl.marking.isActive)
                           const MapLegendPanel(),
+                        // OSM 圖資 attribution（左下、半透明、不吃手勢）。
+                        const Positioned(
+                          left: 8,
+                          bottom: 8,
+                          child: MapAttributionBadge(),
+                        ),
                       ],
                     ),
           floatingActionButton: _ctrl.marking.isActive

@@ -242,7 +242,8 @@ class _MatchScreenState extends State<MatchScreen>
                                 style: IgniTypography.display(p.text0)),
                             const SizedBox(height: 4),
                             Text(
-                              '${_communityItems.length} 項社區資源',
+                              s.matchHeaderItemsSubtitle(
+                                  _communityItems.length),
                               style: IgniTypography.monoSmall(p.text2),
                             ),
                           ],

@@ -42,8 +42,9 @@ class _HazardDialogState extends State<HazardDialog> {
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) {
+        final p = context.igni;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.l10n.supplyRegFailSnack(e.toString())), backgroundColor: Colors.red),
+          SnackBar(content: Text(context.l10n.supplyRegFailSnack(e.toString())), backgroundColor: p.sos),
         );
       }
     } finally {
@@ -59,13 +60,14 @@ class _HazardDialogState extends State<HazardDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
     return AlertDialog(
-      backgroundColor: context.igni.bg2,
+      backgroundColor: p.bg1,
       title: Row(
         children: [
-          const Icon(Icons.warning_amber, color: Colors.orange),
+          Icon(Icons.warning_amber, color: p.warn),
           const SizedBox(width: 8),
-          Text(context.l10n.hazardDialogTitle, style: const TextStyle(color: Colors.white, fontSize: 18)),
+          Text(context.l10n.hazardDialogTitle, style: TextStyle(color: p.text0, fontSize: 18)),
         ],
       ),
       content: Column(
@@ -74,10 +76,10 @@ class _HazardDialogState extends State<HazardDialog> {
         children: [
           Text(
             context.l10n.hazardDialogCoordinate(widget.lat.toStringAsFixed(4), widget.lng.toStringAsFixed(4)),
-            style: const TextStyle(color: Colors.white38, fontSize: 12),
+            style: TextStyle(color: p.text3, fontSize: 12),
           ),
           const SizedBox(height: 16),
-          Text(context.l10n.hazardDialogTypeLabel, style: const TextStyle(color: Colors.white70)),
+          Text(context.l10n.hazardDialogTypeLabel, style: TextStyle(color: p.text1)),
           const SizedBox(height: 8),
           ..._hazardTypes(context).entries.map((entry) {
             final (label, icon, color) = entry.value;
@@ -103,64 +105,63 @@ class _HazardDialogState extends State<HazardDialog> {
             );
           }),
           const SizedBox(height: 12),
-          Text(context.l10n.hazardDialogSeverityLabel, style: const TextStyle(color: Colors.white70)),
+          Text(context.l10n.hazardDialogSeverityLabel, style: TextStyle(color: p.text1)),
           Row(
             children: [
               Text(context.l10n.hazardDialogSeverityMin,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                  style: TextStyle(color: p.text3, fontSize: 12)),
               Expanded(
                 child: Slider(
                   value: _severity,
                   min: 1,
                   max: 5,
                   divisions: 4,
-                  activeColor: Colors.redAccent,
-                  inactiveColor: Colors.white12,
+                  activeColor: p.sos,
+                  inactiveColor: p.border0,
                   label: '${_severity.round()}',
                   onChanged: (v) => setState(() => _severity = v),
                 ),
               ),
               Text(context.l10n.hazardDialogSeverityMax,
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+                  style: TextStyle(color: p.sos, fontSize: 12)),
             ],
           ),
           const SizedBox(height: 8),
-          Text(context.l10n.hazardDialogRadiusLabel, style: const TextStyle(color: Colors.white70)),
+          Text(context.l10n.hazardDialogRadiusLabel, style: TextStyle(color: p.text1)),
           Row(
             children: [
               Text('${_radius.round()}m',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                  style: TextStyle(color: p.text3, fontSize: 12)),
               Expanded(
                 child: Slider(
                   value: _radius,
                   min: 50,
                   max: 2000,
                   divisions: 39,
-                  activeColor: Colors.orange,
-                  inactiveColor: Colors.white12,
+                  activeColor: p.warn,
+                  inactiveColor: p.border0,
                   label: '${_radius.round()}m',
                   onChanged: (v) => setState(() => _radius = v),
                 ),
               ),
-              const Text('2km',
-                  style: TextStyle(color: Colors.orange, fontSize: 12)),
+              Text('2km', style: TextStyle(color: p.warn, fontSize: 12)),
             ],
           ),
           const SizedBox(height: 8),
           // 描述
           TextField(
             controller: _descCtrl,
-            style: const TextStyle(color: Colors.white, fontSize: 13),
+            style: TextStyle(color: p.text0, fontSize: 13),
             maxLines: 2,
             decoration: InputDecoration(
               hintText: context.l10n.hazardDialogDescHint,
-              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+              hintStyle: TextStyle(color: p.text3, fontSize: 13),
               enabledBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.white24),
+                borderSide: BorderSide(color: p.border1),
                 borderRadius: BorderRadius.circular(8),
               ),
               focusedBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.orange),
+                borderSide: BorderSide(color: p.warn),
                 borderRadius: BorderRadius.circular(8),
               ),
               contentPadding: const EdgeInsets.all(10),
@@ -171,11 +172,14 @@ class _HazardDialogState extends State<HazardDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: Text(context.l10n.hazardDialogCancel, style: const TextStyle(color: Colors.white38)),
+          child: Text(context.l10n.hazardDialogCancel, style: TextStyle(color: p.text3)),
         ),
         ElevatedButton(
           onPressed: _publishing ? null : _publish,
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: p.warn,
+            foregroundColor: Colors.white,
+          ),
           child: _publishing
               ? const SizedBox(
                   width: 16,
