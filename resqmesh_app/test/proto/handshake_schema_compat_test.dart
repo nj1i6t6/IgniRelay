@@ -3,7 +3,7 @@
 // Stage 6 (commit #10)：HandshakeCompleteData 的 schema_version 雙向相容性測試。
 //
 // 規範：
-//   - 新 client 寫出時 schema_version = kCurrentSchemaVersion（目前 = 1）。
+//   - 新 client 寫出時 schema_version = HandshakeSchema.currentSchemaVersion（目前 = 1）。
 //   - 舊 client 讀取（不識別 field 10）→ protobuf 自動把 unknown field 收進
 //     unknownFields 容器，整個 payload 不崩、其他欄位仍可用。
 //   - 新 client 讀取舊 payload（無 field 10）→ schemaVersion 取得 scalar
@@ -14,6 +14,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ignirelay_app/app/proto/handshake_schema.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 import 'package:protobuf/protobuf.dart' as $pb;
 
@@ -66,7 +67,7 @@ class _OldHandshakeBuilder extends $pb.GeneratedMessage {
 void main() {
   group('HandshakeCompleteData schema_version compat', () {
     test('current schema version 常數 = 1', () {
-      expect(pb.HandshakeCompleteData.kCurrentSchemaVersion, 1);
+      expect(HandshakeSchema.currentSchemaVersion, 1);
     });
 
     test('新 client 寫 → 新 client 讀：所有欄位 + schema_version 完整保留', () {
@@ -80,7 +81,7 @@ void main() {
         requesterPubKey: pubR,
         actualDeliveredQty: 5.5,
         method: 'PIN_4DIGIT',
-        schemaVersion: pb.HandshakeCompleteData.kCurrentSchemaVersion,
+        schemaVersion: HandshakeSchema.currentSchemaVersion,
       );
       final bytes = src.writeToBuffer();
 

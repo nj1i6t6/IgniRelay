@@ -46,8 +46,8 @@ class MatchRepository {
           quantity: totalQty > 0 ? totalQty : rd.quantity,
           availableQty: availableQty,
           deliveryMode: deliveryMode,
-          lat: rd.lat != 0 ? rd.lat : null,
-          lng: rd.lng != 0 ? rd.lng : null,
+          lat: rd.hasLat() ? rd.lat : null,
+          lng: rd.hasLng() ? rd.lng : null,
           maxRangeMeters: rd.maxRangeMeters,
           unit: rd.unit.isNotEmpty ? rd.unit : '份',
         ));
@@ -120,8 +120,8 @@ class MatchRepository {
           urgency: (row['urgency'] as int?) ?? 0,
           identityLevel: (row['identity_level'] as int?) ?? 0,
           hlcTimestamp: (row['hlc_timestamp'] as int?) ?? 0,
-          lat: rd.lat != 0 ? rd.lat : null,
-          lng: rd.lng != 0 ? rd.lng : null,
+          lat: rd.hasLat() ? rd.lat : null,
+          lng: rd.hasLng() ? rd.lng : null,
           maxRangeMeters: rd.maxRangeMeters,
           senderPubKey: (row['sender_pub_key'] as Uint8List?)?.toList(),
           status: (row['status'] as String?) ?? 'OPEN',
@@ -302,8 +302,8 @@ class MatchRepository {
           quantity: totalQty,
           availableQty: availableQty,
           deliveryMode: deliveryMode,
-          lat: rd.lat != 0 ? rd.lat : null,
-          lng: rd.lng != 0 ? rd.lng : null,
+          lat: rd.hasLat() ? rd.lat : null,
+          lng: rd.hasLng() ? rd.lng : null,
           maxRangeMeters: rd.maxRangeMeters,
           senderPubKey: (row['sender_pub_key'] as Uint8List?)?.toList(),
           unit: rd.unit.isNotEmpty ? rd.unit : '份',
@@ -378,8 +378,8 @@ class MatchRepository {
           urgency: (row['urgency'] as int?) ?? 0,
           identityLevel: (row['identity_level'] as int?) ?? 0,
           hlcTimestamp: (row['hlc_timestamp'] as int?) ?? 0,
-          lat: rd.lat != 0 ? rd.lat : null,
-          lng: rd.lng != 0 ? rd.lng : null,
+          lat: rd.hasLat() ? rd.lat : null,
+          lng: rd.hasLng() ? rd.lng : null,
           maxRangeMeters: rd.maxRangeMeters,
           senderPubKey: (row['sender_pub_key'] as Uint8List?)?.toList(),
           status: (row['status'] as String?) ?? 'OPEN',
@@ -453,8 +453,11 @@ class MatchRepository {
       if (payload == null) continue;
 
       final isSupply = eventType == EventType.resourceRegister;
-      final originLat = (row['origin_lat'] as num?)?.toDouble();
-      final originLng = (row['origin_lng'] as num?)?.toDouble();
+      // 0.0 視為無座標（向後相容舊版記錄），null 也一樣跳過地理圍欄
+      final rawOriginLat = (row['origin_lat'] as num?)?.toDouble();
+      final rawOriginLng = (row['origin_lng'] as num?)?.toDouble();
+      final originLat = (rawOriginLat != 0.0) ? rawOriginLat : null;
+      final originLng = (rawOriginLng != 0.0) ? rawOriginLng : null;
 
       // 地理圍欄篩選：有座標時檢查是否同里
       if (originLat != null && originLng != null && myLoc != null) {
@@ -488,8 +491,8 @@ class MatchRepository {
             urgency: (row['urgency'] as int?) ?? 0,
             identityLevel: (row['identity_level'] as int?) ?? 0,
             timestamp: (row['hlc_timestamp'] as int?) ?? 0,
-            lat: rd.lat != 0 ? rd.lat : null,
-            lng: rd.lng != 0 ? rd.lng : null,
+            lat: rd.hasLat() ? rd.lat : null,
+            lng: rd.hasLng() ? rd.lng : null,
           ));
         } catch (_) {
           continue;
@@ -514,8 +517,8 @@ class MatchRepository {
             urgency: (row['urgency'] as int?) ?? 0,
             identityLevel: (row['identity_level'] as int?) ?? 0,
             timestamp: (row['hlc_timestamp'] as int?) ?? 0,
-            lat: rd.lat != 0 ? rd.lat : null,
-            lng: rd.lng != 0 ? rd.lng : null,
+            lat: rd.hasLat() ? rd.lat : null,
+            lng: rd.hasLng() ? rd.lng : null,
           ));
         } catch (_) {
           continue;

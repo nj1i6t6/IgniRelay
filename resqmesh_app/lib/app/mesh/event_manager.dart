@@ -9,6 +9,7 @@ import 'package:ignirelay_app/app/crypto/signer.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/models/medical_card.dart';
 import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
+import 'package:ignirelay_app/app/proto/handshake_schema.dart';
 import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 import 'package:ignirelay_app/app/mesh/hazard_manager.dart';
 import 'package:ignirelay_app/app/mesh/triage_queue.dart';
@@ -604,7 +605,7 @@ class EventManager {
       actualDeliveredQty: actualDeliveredQty,
       method: method,
       // Stage 6 (commit #10)：標示本 payload 由新版 schema 寫出。
-      schemaVersion: pb.HandshakeCompleteData.kCurrentSchemaVersion,
+      schemaVersion: HandshakeSchema.currentSchemaVersion,
     );
 
     final payload = data.writeToBuffer();
@@ -766,8 +767,8 @@ class EventManager {
       eventId: cancelId, eventType: EventType.matchCancel, ttl: 8, payload: cancelPayload,
     );
     final pos = LocationService().currentLocation;
-    final cLat = pos?.latitude ?? 0.0;
-    final cLng = pos?.longitude ?? 0.0;
+    final cLat = pos?.latitude;
+    final cLng = pos?.longitude;
     await db.insert('Event_Logs', {
       'event_id': cancelId,
       'sender_pub_key': Uint8List.fromList(pubKeyBytes),
@@ -815,8 +816,8 @@ class EventManager {
       eventId: cancelId, eventType: EventType.matchCancel, ttl: 8, payload: cancelPayload,
     );
     final pos = LocationService().currentLocation;
-    final cLat = pos?.latitude ?? 0.0;
-    final cLng = pos?.longitude ?? 0.0;
+    final cLat = pos?.latitude;
+    final cLng = pos?.longitude;
     await db.insert('Event_Logs', {
       'event_id': cancelId,
       'sender_pub_key': Uint8List.fromList(pubKeyBytes),
@@ -843,9 +844,10 @@ class EventManager {
   // ── 簽名、儲存、廣播 helper ──────────────────────────────────────
   ///
   /// [lat]/[lng]：當前裝置（=發送者）的座標。若 caller 沒提供，會從
-  /// `LocationService().currentLocation` 取；仍取不到則寫 0.0。
+  /// `LocationService().currentLocation` 取；仍取不到則寫 null。
+  /// null 代表無座標；接收端路由將跳過地理圍欄，以有限跳數傳播。
   /// 這兩個值同時當作 `received_lat/lng`（接收節點 = 自己）和
-  /// `origin_lat/lng`（事件發源地）寫入，讓地理圍欄路由可用。
+  /// `origin_lat/lng`（事件發源地）寫入。
   Future<String> _publishAndStore({
     required List<int> payload,
     required int eventType,
@@ -862,14 +864,14 @@ class EventManager {
       eventId: eventId, eventType: eventType, ttl: ttl, payload: payload,
     );
 
-    // 取得座標：caller 顯式提供 > LocationService > 0.0
-    double effLat = lat ?? 0.0;
-    double effLng = lng ?? 0.0;
+    // 取得座標：caller 顯式提供 > LocationService > null（無座標，跳過地理圍欄）
+    double? effLat = lat;
+    double? effLng = lng;
     if (lat == null || lng == null) {
       final pos = LocationService().currentLocation;
       if (pos != null) {
-        effLat = lat ?? pos.latitude;
-        effLng = lng ?? pos.longitude;
+        effLat ??= pos.latitude;
+        effLng ??= pos.longitude;
       }
     }
 

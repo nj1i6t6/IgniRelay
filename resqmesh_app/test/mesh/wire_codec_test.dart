@@ -97,11 +97,16 @@ void main() {
       expect(wp.originLng, closeTo(121.565, 1e-4));
     });
 
-    test('originLat=0 decodes as null (zone-routing skip signal)', () {
-      // Protobuf 預設值 0.0 → decodeWirePayload 應回傳 null，跳過 zone routing
+    test('no-coord encode: all 4 geo fields decode as null (skip zone routing)', () {
+      // 不帶座標編碼 → proto3 預設 0.0 → decode 全部轉為 null
+      // 接收端判斷 originLat == null 即跳過地理圍欄，事件正常傳播
       final wire = MeshEventHandler.encodeWirePayload('no-geo-001', []);
       final wp = MeshEventHandler.decodeWirePayload(wire);
-      expect(wp!.originLat, isNull);
+      expect(wp!.lat, isNull,
+          reason: 'no receivedLat encoded → must decode as null');
+      expect(wp.lng, isNull);
+      expect(wp.originLat, isNull,
+          reason: 'no originLat encoded → must decode as null');
       expect(wp.originLng, isNull);
     });
 

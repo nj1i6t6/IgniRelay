@@ -44,12 +44,14 @@ message MeshEvent {
 
   // 事件原始座標 (Origin Location — 創建者設定，中繼節點禁止修改)
   // 用於地理圍欄路由判斷：確認封包屬於哪個里/鄉鎮市區。
-  double origin_lat = 15;        // 事件創建者的緯度（發送時設定，不隨轉發改變）
-  double origin_lng = 16;        // 事件創建者的經度（發送時設定，不隨轉發改變）
+  // optional：無 GPS 時不寫入；接收端以 hasOriginLat() 判斷是否存在。
+  optional double origin_lat = 15;   // 事件創建者的緯度（發送時設定，不隨轉發改變）
+  optional double origin_lng = 16;   // 事件創建者的經度（發送時設定，不隨轉發改變）
 
   // 接收位置快照 (Received Location Snapshot — 每跳由接收方覆寫)
-  double received_lat = 13;      // 接收機的緯度
-  double received_lng = 14;      // 接收機的經度
+  // optional：無 GPS 時不寫入；接收端以 hasReceivedLat() 判斷是否存在。
+  optional double received_lat = 13; // 接收機的緯度
+  optional double received_lng = 14; // 接收機的經度
 
   // 分塊傳輸機制 (Chunking)
   int32 chunk_index = 9;         // 當前區塊索引 (若無分塊為 0)
@@ -75,15 +77,11 @@ message ResourceData {
   float quantity = 4;            // 數量
   string unit = 5;               // 單位
   float max_range_meters = 6;    // Provider 願意移動的最大服務半徑 (公尺)
-  double lat = 7;                // Provider 目前緯度
-  double lng = 8;                // Provider 目前經度
-  int64 expires_at = 9;          // 物資有效期限 (Unix ms, 0 = 無期限)
-  bool is_station = 10;                    // 據點旗標
-  int32 per_user_category_limit = 11;      // 每人每子類別上限
-  int32 per_user_total_limit = 12;         // 每人總上限
-  int64 reset_interval_ms = 13;            // 額度重置間隔 (0=手動)
-  repeated string visible_zones = 14;      // 里代碼列表（多選）
-  string visible_township = 15;            // 鄉鎮區代碼（單選，可選）
+  optional double lat = 7;      // Provider 目前緯度（無 GPS 時缺席）
+  optional double lng = 8;      // Provider 目前經度（無 GPS 時缺席）
+  int64 expires_at = 9;         // 物資有效期限 (Unix ms, 0 = 無期限)
+  // 注意：tags 10–15 已保留，未來可擴充據點相關欄位
+  string delivery_mode = 16;    // 配送方式 ("PICKUP" / "DELIVER" / "EITHER")
 }
 
 // 需求廣播 (EventType.REQUEST_BROADCAST)
@@ -93,9 +91,11 @@ message RequestData {
   string description = 3;        // 補充說明
   float quantity_needed = 4;     // 需求數量
   UrgencyLevel urgency = 5;      // 緊急度
-  double lat = 6;                // Requester 目前緯度
-  double lng = 7;                // Requester 目前經度
-  float max_range_meters = 8;    // Requester 願意等候的最大服務半徑 (公尺)
+  optional double lat = 6;      // Requester 目前緯度（無 GPS 時缺席）
+  optional double lng = 7;      // Requester 目前經度（無 GPS 時缺席）
+  float max_range_meters = 8;   // Requester 願意等候的最大服務半徑 (公尺)
+  string mobility_mode = 9;     // 移動模式 ("WALK" / "VEHICLE" / "STATIONARY")
+  string note = 10;             // 補充備註
 }
 
 // 媒合意向 (EventType.MATCH_INTENT)
@@ -141,9 +141,10 @@ message QuarantineVoteData {
 
 // 釋放配對 (EventType.MATCH_CANCEL)
 message MatchCancelData {
-  string request_id = 1;   // 要取消的需求 ID
-  string resource_id = 2;  // 要釋放的物資 ID
-  string reason = 3;       // 取消原因代碼
+  string request_id = 1;      // 要取消的需求 ID
+  string resource_id = 2;     // 要釋放的物資 ID
+  string reason = 3;          // 取消原因代碼
+  string negotiation_id = 4;  // 關聯的協商 ID（可選）
 }
 
 // 醫療卡摘要 (附加在 SOS 廣播 payload 中，僅包含用戶授權的欄位)
@@ -175,14 +176,18 @@ message EmergencyContact {
 
 // 433MHz RF 住警器火警訊號 (EventType.FIRE_ALARM_RF)
 // 由 Tier 0 基地台接收傳統住警器 RF 訊號後轉譯生成，自動設為 SOS_RED 優先級
+//
+// ⚠ Wire-format 注意：
+//   tag 2 在舊版草稿中曾定義為 uint32 rf_frequency_mhz；
+//   此版本改為 int32 rssi，語意不同但 wire-type 相同（varint）。
+//   因 0.2.0 尚未部署，目前無在野 payload，判定向後相容風險可接受。
+//   若日後需新增 rf_frequency_mhz，請使用 tag 8 或更高。
+//   tags 5–7 保留給未來擴充 (detected_at, raw_rf_payload 等)。
 message FireAlarmRfData {
-  string detector_brand   = 1;  // 住警器品牌識別 (如 "HONG_LI", "TYY", "UNKNOWN")
-  uint32 rf_frequency_mhz = 2;  // RF 頻率 (通常為 433)
-  double station_lat      = 3;  // 接收基地台緯度 (近似火警位置)
-  double station_lng      = 4;  // 接收基地台經度
-  int32  rssi_dbm         = 5;  // 接收訊號強度 (可用於粗估距離)
-  int64  detected_at      = 6;  // 偵測時間 (HLC timestamp, Unix ms)
-  bytes  raw_rf_payload   = 7;  // 原始 RF 資料幀 (供後續分析/擴充解碼)
+  string detector_brand = 1;  // 住警器品牌識別 (如 "HONG_LI", "TYY", "UNKNOWN")
+  int32  rssi           = 2;  // 接收訊號強度 dBm (可用於粗估距離)
+  double station_lat    = 3;  // 接收基地台緯度 (近似火警位置)
+  double station_lng    = 4;  // 接收基地台經度
 }
 
 // 媒合確認 (EventType.MATCH_CONFIRM)
@@ -241,8 +246,65 @@ message ChatRoomConfig {
   repeated bytes admin_pub_keys = 7; // 管理員公鑰列表
 }
 
-// 據點物資擴充欄位（附加在 ResourceData 中）
-// 注意：ResourceData 新增 field 10-15 給據點使用
+// 媒合出價 — Provider 發起，帶有 negotiation_id 追蹤協商狀態
+message MatchOfferData {
+  string negotiation_id = 1;
+  string resource_id = 2;
+  string request_id = 3;
+  bytes provider_pub_key = 4;
+  bytes requester_pub_key = 5;
+  float offered_qty = 6;
+  float match_score = 7;
+  int64 expires_at = 8;
+}
+
+// 媒合請求 — Requester 發起，帶有 negotiation_id
+message MatchRequestData {
+  string negotiation_id = 1;
+  string resource_id = 2;
+  string request_id = 3;
+  bytes provider_pub_key = 4;
+  bytes requester_pub_key = 5;
+  float requested_qty = 6;
+  int64 expires_at = 7;
+}
+
+// 媒合接受 — 任一方接受出價/請求
+message MatchAcceptData {
+  string negotiation_id = 1;
+  string resource_id = 2;
+  string request_id = 3;
+  bytes acceptor_pub_key = 4;
+  float agreed_qty = 5;
+}
+
+// 媒合拒絕（協商層）— 區別於 MatchRejectData（廣播層）
+message MatchDeclineData {
+  string negotiation_id = 1;
+  string resource_id = 2;
+  string request_id = 3;
+  string reason = 4;
+}
+
+// 據點領取請求
+message StationClaimData {
+  string resource_id = 1;
+  string request_id = 2;
+  bytes requester_pub_key = 3;
+  string category = 4;
+  float requested_qty = 5;
+}
+
+// 據點領取回應
+message StationResponseData {
+  string resource_id = 1;
+  string request_id = 2;
+  bytes requester_pub_key = 3;
+  bool approved = 4;
+  float approved_qty = 5;
+  string deny_reason = 6;
+  int64 pickup_deadline = 7;
+}
 
 // ── BLE Mesh 廣播封包 ──────────────────────────────────
 
@@ -263,10 +325,6 @@ message MeshEnvelope {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HandshakeCompleteData (交割完成憑證)
-//
-// 注意：本 message 的對應 Dart class 直接維護於 lib/app/proto/mesh_protocol.pb.dart，
-// 並非由本 .proto 重新生成（pb.dart 已含其它非 proto-source 訊息）。
-// 將此宣告納入 .proto 僅為文件用，便於審查 wire-format 對照。
 // ─────────────────────────────────────────────────────────────────────────────
 message HandshakeCompleteData {
   string negotiation_id = 1;
@@ -280,8 +338,6 @@ message HandshakeCompleteData {
   bytes requester_signature = 9;
   // Stage 6 (commit #10)：wire-format 版本。
   // 預設 0 = 未升級之舊 client；新 client 寫入 1。
-  // 利用 protobuf 未知欄位向後相容特性：
-  //   - 新 client 解析舊 payload（無 schema_version）→ 取得 0
-  //   - 舊 client 解析新 payload（含 schema_version=1）→ 自動 silently ignore
-  int32 schema_version = 10;
+  // optional：使接收端可用 hasSchemaVersion() 區分「未帶此欄位的舊 payload」。
+  optional int32 schema_version = 10;
 }

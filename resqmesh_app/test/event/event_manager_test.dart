@@ -337,11 +337,11 @@ void main() {
     });
   });
 
-  // P0-1 回歸：_publishAndStore 必須把座標寫入 Event_Logs 4 個 geo 欄位
-  // （received_lat/lng + origin_lat/lng）。沒填這 4 個欄位，地理圍欄
-  // 路由（match_repository.dart 用 origin_*）會失效，成「全域廣播」。
-  group('EventManager — _publishAndStore geo coords (P0-1 regression)', () {
-    test('publishLocationUpdate writes explicit lat/lng to all 4 geo columns',
+  // 回歸：座標語意統一用 null 表示「無座標」，不用 0.0 作 sentinel。
+  // 有 GPS → 4 個 geo 欄位寫入實際座標；無 GPS → 4 個欄位為 null。
+  // 無座標事件仍正常發出，接收端路由跳過地理圍欄、以有限跳數傳播。
+  group('EventManager — geo coord semantics', () {
+    test('publishLocationUpdate (explicit lat/lng) writes all 4 geo columns',
         () async {
       const targetLat = 25.034;
       const targetLng = 121.564;
@@ -366,15 +366,38 @@ void main() {
       expect(rows[0]['origin_lng'], closeTo(targetLng, 1e-9));
     });
 
-    test('publishMatchDecline (no explicit coords, no GPS) falls back to 0.0',
+    test('publishSupply (explicit lat/lng) writes all 4 geo columns', () async {
+      const lat = 25.011;
+      const lng = 121.533;
+      final resourceId = await em.publishSupply(
+        resourceType: 'FOOD',
+        quantity: 3,
+        maxRangeMeters: 500.0,
+        lat: lat,
+        lng: lng,
+      );
+      final db = await DatabaseHelper().database;
+      final rows = await db.rawQuery('''
+        SELECT e.received_lat, e.received_lng, e.origin_lat, e.origin_lng
+        FROM Event_Logs e
+        JOIN Materials_State m ON e.payload = m.payload
+        WHERE m.resource_id = ?
+      ''', [resourceId]);
+      expect(rows.length, equals(1));
+      expect(rows[0]['received_lat'], closeTo(lat, 1e-9));
+      expect(rows[0]['received_lng'], closeTo(lng, 1e-9));
+      expect(rows[0]['origin_lat'], closeTo(lat, 1e-9));
+      expect(rows[0]['origin_lng'], closeTo(lng, 1e-9));
+    });
+
+    test('publishMatchDecline (no coords, no GPS) writes null to all 4 geo columns',
         () async {
-      // 此 caller 不傳 lat/lng；測試環境沒初始化 LocationService，
-      // currentLocation 為 null → 應 fallback 0.0（而非 NULL）。
+      // 無 GPS 的事件：4 個 geo 欄位應為 null，讓接收端跳過地理圍欄、正常傳播
       final id = await em.publishMatchDecline(
         negotiationId: _uid('neg'),
         resourceId: _uid('res'),
         requestId: _uid('req'),
-        reason: 'test-fallback',
+        reason: 'test-no-gps',
       );
       expect(id, isNotNull);
       final db = await DatabaseHelper().database;
@@ -384,13 +407,32 @@ void main() {
         whereArgs: [id],
       );
       expect(rows.length, equals(1));
-      // 4 個欄位都不能是 NULL（NULL 會讓 origin_* 路由直接 skip）
-      expect(rows[0]['received_lat'], isNotNull);
-      expect(rows[0]['received_lng'], isNotNull);
-      expect(rows[0]['origin_lat'], isNotNull);
-      expect(rows[0]['origin_lng'], isNotNull);
-      expect(rows[0]['received_lat'], equals(0.0));
-      expect(rows[0]['origin_lat'], equals(0.0));
+      expect(rows[0]['received_lat'], isNull,
+          reason: 'no GPS → received_lat must be null, not 0.0');
+      expect(rows[0]['received_lng'], isNull);
+      expect(rows[0]['origin_lat'], isNull,
+          reason: 'no GPS → origin_lat must be null, not 0.0');
+      expect(rows[0]['origin_lng'], isNull);
+    });
+
+    test('publishRequest (no coords, no GPS) writes null to all 4 geo columns',
+        () async {
+      final id = await em.publishRequest(
+        resourceType: 'WATER',
+        quantity: 2,
+        note: 'no-gps-test',
+        maxRangeMeters: 500.0,
+      );
+      final db = await DatabaseHelper().database;
+      final rows = await db.query(
+        'Event_Logs',
+        where: 'event_id = ?',
+        whereArgs: [id],
+      );
+      expect(rows.length, equals(1));
+      expect(rows[0]['origin_lat'], isNull,
+          reason: 'no GPS → origin_lat must be null');
+      expect(rows[0]['origin_lng'], isNull);
     });
   });
 

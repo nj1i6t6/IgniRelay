@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/theme/igni_colors.dart';
+import 'package:ignirelay_app/ui/widgets/igni_button.dart';
 
 class TriageInputWidget extends StatefulWidget {
   final Function(int urgencyLevel, String description,
@@ -90,6 +92,8 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.igni;
+
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -100,32 +104,35 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Drag handle
           Container(
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-                color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                color: p.border1, borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 16),
+          // Title
           Text(
             context.l10n.triageTitle,
-            style: const TextStyle(
-                fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+            style: TextStyle(
+                fontSize: 20, fontWeight: FontWeight.bold, color: p.text0),
           ),
           const SizedBox(height: 16),
+          // Description text field
           TextField(
             controller: _descController,
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(color: p.text0),
             maxLines: 2,
             decoration: InputDecoration(
               hintText: context.l10n.triageDescHint,
-              hintStyle: const TextStyle(color: Colors.white38),
+              hintStyle: TextStyle(color: p.text3),
               enabledBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.white24),
+                borderSide: BorderSide(color: p.border1),
                 borderRadius: BorderRadius.circular(8),
               ),
               focusedBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.redAccent),
+                borderSide: BorderSide(color: p.sos),
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
@@ -140,22 +147,19 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: _attachMedicalCard
-                      ? Colors.redAccent.withValues(alpha: 0.1)
-                      : Colors.transparent,
+                  color: _attachMedicalCard ? p.sosSoft : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: _attachMedicalCard
-                        ? Colors.redAccent.withValues(alpha: 0.5)
-                        : Colors.white12,
+                        ? p.sos.withValues(alpha: 0.5)
+                        : p.border0,
                   ),
                 ),
                 child: Row(
                   children: [
                     Icon(
                       Icons.medical_information,
-                      color:
-                          _attachMedicalCard ? Colors.redAccent : Colors.white38,
+                      color: _attachMedicalCard ? p.sos : p.text3,
                       size: 18,
                     ),
                     const SizedBox(width: 8),
@@ -163,19 +167,17 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
                       child: Text(
                         context.l10n.triageMedicalCardToggle,
                         style: TextStyle(
-                          color: _attachMedicalCard
-                              ? Colors.white
-                              : Colors.white38,
+                          color: _attachMedicalCard ? p.text0 : p.text2,
                           fontSize: 13,
                         ),
                       ),
                     ),
                     Text(
-                      _attachMedicalCard ? context.l10n.triageMedicalCardOn : context.l10n.triageMedicalCardOff,
+                      _attachMedicalCard
+                          ? context.l10n.triageMedicalCardOn
+                          : context.l10n.triageMedicalCardOff,
                       style: TextStyle(
-                        color: _attachMedicalCard
-                            ? Colors.redAccent
-                            : Colors.white24,
+                        color: _attachMedicalCard ? p.sos : p.text3,
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                       ),
@@ -186,23 +188,13 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
             ),
           const SizedBox(height: 12),
           // SOS_YELLOW 求助按鈕
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () => _submit(2),
-              icon: const Icon(Icons.warning, color: Colors.black, size: 18),
-              label: Text(context.l10n.triageSosYellowButton,
-                  style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.amber,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              ),
-            ),
+          IgniButton(
+            label: context.l10n.triageSosYellowButton,
+            onPressed: () => _submit(2),
+            variant: IgniButtonVariant.warn,
+            icon: Icons.warning,
+            fullWidth: true,
+            size: IgniButtonSize.large,
           ),
           const SizedBox(height: 12),
           // SOS_RED：真實 3 秒長按倒數解鎖
@@ -214,19 +206,17 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
               width: double.infinity,
               height: 64,
               decoration: BoxDecoration(
-                // Stage 5：鎖定態改用深紫 (0xFF222244) 對齊 dark palette；
-                // Colors.grey[800] 在實機上偏褐，與 0xFF0d0d1a 底層撞色。
                 color: _isSosRedUnlocked
-                    ? Colors.red
+                    ? p.sos
                     : _isHolding
-                        ? Colors.red
-                            .withValues(alpha:0.3 + (3 - _sosCountdown) * 0.2)
-                        : const Color(0xFF222244),
+                        ? p.sos.withValues(
+                            alpha: 0.3 + (3 - _sosCountdown) * 0.2)
+                        : p.sosSoft,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: _isSosRedUnlocked
-                      ? Colors.red
-                      : Colors.red.withValues(alpha:0.5),
+                      ? p.sos
+                      : p.sos.withValues(alpha: 0.5),
                   width: 2,
                 ),
               ),
@@ -241,7 +231,10 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
                       children: [
                         Icon(
                           _isSosRedUnlocked ? Icons.sos : Icons.lock_outline,
-                          color: Colors.white,
+                          // White on solid sos-red when unlocked; p.text0 on
+                          // sosSoft/semi-transparent bg to stay readable in
+                          // both light and dark themes.
+                          color: _isSosRedUnlocked ? Colors.white : p.text0,
                           size: 20,
                         ),
                         const SizedBox(width: 8),
@@ -250,10 +243,11 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
                             _isSosRedUnlocked
                                 ? context.l10n.triageSosRedButton
                                 : _isHolding
-                                    ? context.l10n.triageSosRedCountdown(_sosCountdown)
+                                    ? context.l10n
+                                        .triageSosRedCountdown(_sosCountdown)
                                     : context.l10n.triageSosRedHoldHint,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: _isSosRedUnlocked ? Colors.white : p.text0,
                               fontSize: 15,
                               fontWeight: FontWeight.bold,
                             ),
