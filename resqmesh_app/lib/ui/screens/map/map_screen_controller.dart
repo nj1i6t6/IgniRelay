@@ -110,6 +110,13 @@ class MapScreenController extends ChangeNotifier {
   List<EventVm> get events => _events;
   List<PoiVm> get pois => _pois;
 
+  /// POI 專用 notifier（Phase 2 拆出）。POI 更新只 push 到此 notifier，不再
+  /// 觸發 controller-level notifyListeners，避免外層 ListenableBuilder rebuild
+  /// 整個 FlutterMap（含 VectorTileLayer 與 hazard / event / self / marking 計算）。
+  /// MapView 對應位置以 ValueListenableBuilder 訂閱本 notifier 重建 POI MarkerLayer。
+  final ValueNotifier<List<PoiVm>> poiNotifier =
+      ValueNotifier<List<PoiVm>>(const []);
+
   Timer? _refreshTimer;
   StreamSubscription? _meshEventSub;
   Timer? _meshDebounce;
@@ -565,7 +572,9 @@ class MapScreenController extends ChangeNotifier {
     if (!_layerSettings.showPoi) {
       if (_pois.isNotEmpty && !_disposed) {
         _pois = const [];
-        _safeNotify();
+        // Phase 2：POI 更新只 push 到 poiNotifier，不再 _safeNotify()，
+        // 避免拖曳結束 idle refresh 還順便重建整個 FlutterMap / VectorTileLayer。
+        poiNotifier.value = const [];
       }
       return;
     }
@@ -575,7 +584,7 @@ class MapScreenController extends ChangeNotifier {
     if (zoom < 12) {
       if (_pois.isNotEmpty && !_disposed) {
         _pois = const [];
-        _safeNotify();
+        poiNotifier.value = const [];
       }
       return;
     }
@@ -608,7 +617,7 @@ class MapScreenController extends ChangeNotifier {
     }
     if (_disposed || gen != _poiGen) return;
     _pois = list;
-    _safeNotify();
+    poiNotifier.value = list;
   }
 
   // ── 圖層設定變更 ──
@@ -907,6 +916,7 @@ class MapScreenController extends ChangeNotifier {
     _poiQuery?.dispose();
     _mbTiles?.dispose();
     centerRequest.dispose();
+    poiNotifier.dispose();
     super.dispose();
   }
 }

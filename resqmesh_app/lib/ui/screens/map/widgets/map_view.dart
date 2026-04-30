@@ -165,10 +165,8 @@ class _MapViewState extends State<MapView> {
           iconFor: widget.hazardIconFor,
           onTap: widget.onHazardTap,
         );
-        final poiMarkers = PoiOverlay.build(
-          pois: c.pois,
-          onTap: widget.onPoiTap,
-        );
+        // Phase 2：POI 不再在外層 ListenableBuilder 內計算；下面 children 用
+        // ValueListenableBuilder 訂閱 c.poiNotifier 各自重建。
         final eventMarkers = <Marker>[];
         final eventCategories = <PinCategory>[];
         for (final e in c.events) {
@@ -250,7 +248,20 @@ class _MapViewState extends State<MapView> {
                 sprites: null,
                 layerMode: VectorTileLayerMode.vector,
               ),
-            if (poiMarkers.isNotEmpty) MarkerLayer(markers: poiMarkers),
+            // Phase 2：POI layer 由獨立 notifier 驅動。POI 更新只 rebuild 本層，
+            // 不會觸發外層 ListenableBuilder 重建 VectorTileLayer / hazard / event /
+            // self / marking。空 list 仍回 MarkerLayer(markers: const [])，
+            // flutter_map 7.0.2 children 不接受非 layer widget。
+            ValueListenableBuilder<List<PoiVm>>(
+              valueListenable: c.poiNotifier,
+              builder: (_, pois, __) {
+                final markers = PoiOverlay.build(
+                  pois: pois,
+                  onTap: widget.onPoiTap,
+                );
+                return MarkerLayer(markers: markers);
+              },
+            ),
             if (accuracyCircles.isNotEmpty)
               CircleLayer(circles: accuracyCircles),
             if (hazardPolygons.isNotEmpty)
