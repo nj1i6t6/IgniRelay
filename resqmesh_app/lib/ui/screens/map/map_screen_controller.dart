@@ -114,6 +114,7 @@ class MapScreenController extends ChangeNotifier {
   StreamSubscription? _meshEventSub;
   Timer? _meshDebounce;
   Timer? _poiRefreshTimer;
+  Timer? _poiIdleTimer;
   int _overlayGen = 0;
   int _poiGen = 0;
 
@@ -393,17 +394,46 @@ class MapScreenController extends ChangeNotifier {
     required double zoom,
     required LatLngBounds bounds,
     required bool ready,
+    bool hasGesture = false,
   }) {
     final wasReady = _mapReady;
     _mapReady = ready;
     _viewportZoom = zoom;
     _viewportBounds = bounds;
-    if (!wasReady && ready) {
-      // 第一次 ready 時刷一次 POI（viewport 已可用）
+
+    if (!ready) return;
+
+    if (!wasReady) {
+      // 第一次 ready：viewport 剛可用，立即排一次刷新（仍走 300ms request debounce，
+      // 因為 onMapReady 後可能還會有同 frame 的 onPositionChanged 補位）。
       requestPoiRefresh();
-    } else if (ready) {
-      requestPoiRefresh();
+      return;
     }
+
+    // 後續 viewport 變動：拖曳 idle 後才刷 POI；不再每次 setViewport 都打 query。
+    // 拖曳期間（hasGesture=true）給 500ms idle window，避免使用者手滑頻繁觸發；
+    // 程式化動作（hasGesture=false，例如 centerOn / 縮放動畫）給 350ms。
+    _schedulePoiRefreshAfterIdle(
+      hasGesture
+          ? const Duration(milliseconds: 500)
+          : const Duration(milliseconds: 350),
+    );
+  }
+
+  void _schedulePoiRefreshAfterIdle(Duration delay) {
+    // 取消任何先前由 requestPoiRefresh() 排下的 300ms debounce timer，避免在拖曳
+    // 開始前剛好排了一個（例如 _initMBTiles 完成、或 _onLayerSettingsChanged）
+    // 仍會在拖曳中觸發 _doRefreshPoi()，違反 Phase 1「拖曳期間不查 visible POI」契約。
+    _poiRefreshTimer?.cancel();
+    _poiRefreshTimer = null;
+
+    _poiIdleTimer?.cancel();
+    _poiIdleTimer = Timer(delay, () {
+      if (_disposed) return;
+      // 直接打 _doRefreshPoi()，不再經 requestPoiRefresh 的 300ms debounce，
+      // 否則停止拖曳要等 idle + request debounce 雙倍延遲（最壞 800ms）。
+      unawaited(_doRefreshPoi());
+    });
   }
 
   // ── Overlays load 序列（generation guard）──
@@ -869,6 +899,7 @@ class MapScreenController extends ChangeNotifier {
     _meshEventSub?.cancel();
     _meshDebounce?.cancel();
     _poiRefreshTimer?.cancel();
+    _poiIdleTimer?.cancel();
     _lookupDebounce?.cancel();
     _positionStream?.cancel();
     _layerSettings.removeListener(_onLayerSettingsChanged);

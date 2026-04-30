@@ -133,7 +133,7 @@ class _MapViewState extends State<MapView> {
     });
   }
 
-  void _reportViewport() {
+  void _reportViewport({bool hasGesture = false}) {
     if (!mounted) return;
     try {
       final cam = _flutterMapController.camera;
@@ -141,6 +141,7 @@ class _MapViewState extends State<MapView> {
         zoom: cam.zoom,
         bounds: cam.visibleBounds,
         ready: _ready,
+        hasGesture: hasGesture,
       );
     } catch (e) {
       // controller 還沒 attach（onMapReady 之前極小 race）— 這次 viewport 略過，
@@ -230,14 +231,14 @@ class _MapViewState extends State<MapView> {
               // 偏緊，曾觀察到 MapController 內部 _state 還沒接上而 throw。
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!mounted) return;
-                _reportViewport();
+                _reportViewport(hasGesture: false);
                 _onCenterRequest();
               });
             },
             onTap: widget.onMapTap,
             onLongPress: widget.onMapLongPress,
             onPositionChanged: (pos, hasGesture) {
-              _reportViewport();
+              _reportViewport(hasGesture: hasGesture);
             },
           ),
           children: [
