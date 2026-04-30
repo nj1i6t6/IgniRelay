@@ -1,5 +1,5 @@
 // ignore_for_file: library_private_types_in_public_api
-import 'dart:ui' show Locale;
+import 'dart:ui' show Brightness, Locale;
 
 import 'package:vector_tile_renderer/vector_tile_renderer.dart';
 // lightThemeData() 不在公開 API 中，直接 import src
@@ -15,13 +15,16 @@ import 'package:ignirelay_app/ui/theme/map_label_language.dart';
 /// 3. label 多語：依 [locale] 用 coalesce expression 取代原 `{name_en}` / `{name}`，
 ///    讓中文 UI 顯示繁中、英文 UI 顯示英文、其他語言走支援表 fallback（Phase 4）。
 /// 4. 道路標籤文字大小優化 (減少重疊)
+/// 5. 深淺色：[brightness] == dark 時依 §9.3 dark palette 覆寫 paint（Phase 5）。
 ///
 /// [locale] UI 語系；由 caller（map_screen / navigation_screen）從
 ///   `Localizations.localeOf(context)` 取出再傳入。
+/// [brightness] UI 亮/暗模式；由 `Theme.of(context).brightness` 取出。
 /// [disabledPoi] 傳入要隱藏的 POI category ID 集合
 ///   (如 {'resq_hospital', 'resq_school'})，對應的圖標+文字層會被排除。
 Theme buildIgniRelayTheme({
   required Locale locale,
+  required Brightness brightness,
   Logger? logger,
   Set<String>? disabledPoi,
 }) {
@@ -186,6 +189,13 @@ Theme buildIgniRelayTheme({
 
   // 7E. 救災 POI 圖標層已移除 — sprites 未啟用，改用 Flutter Marker 圓點
 
+  // ── 8. Phase 5：dark palette 覆寫 ──
+  // 在所有 layer mutation（含新增 road_label_major/minor 與 place_suburb）之後執行，
+  // 讓 dark patch 一併覆蓋我們自己加的 symbol 層 paint。
+  if (brightness == Brightness.dark) {
+    _applyDarkPalette(layers);
+  }
+
   return ThemeReader(logger: logger).read(json);
 }
 
@@ -233,4 +243,165 @@ bool _isNameTextField(Object? textField) {
   return textField == '{name}' ||
       textField == '{name_en}' ||
       textField.startsWith('{name:');
+}
+
+/// Phase 5 dark palette。對應企畫書 §9.3。
+///
+/// 第一版策略（§9.2）：直接在 `lightThemeData()` 上做 paint patch，
+/// 不切換 `bright_map_style.json` / `dark_map_style.json`，避免 ThemeReader
+/// parse 差異拖慢主線。識別 layer 透過 `id` / `source-layer` / `type` heuristic：
+/// - `transportation` source-layer 中 id 含 motorway/trunk/primary 視為主幹道，
+///   id 含 `casing` 視為道路 casing；其餘視為 minor。
+/// - 我們新增的 road_label_major / road_label_minor / place_suburb 也會被
+///   重新染色，避免在 dark mode 看不清楚。
+const Map<String, String> _darkPalette = {
+  'background': '#0F1419',
+  'landuse': '#172027',
+  'landcover': '#1B2A22',
+  'water': '#0A2540',
+  'roadMinor': '#2B3440',
+  'roadMajor': '#3A4452',
+  'roadCasing': '#111820',
+  'building': '#1E2630',
+  'buildingOutline': '#111820',
+  'boundary': '#56606B',
+  'labelText': '#C8CDD3',
+  'labelTextSecondary': '#9AA3AD',
+  'labelHalo': 'rgba(0,0,0,0.60)',
+  'suburbText': '#8FA0B0',
+};
+
+void _applyDarkPalette(List<dynamic> layers) {
+  for (final layer in layers) {
+    if (layer is! Map<String, dynamic>) continue;
+
+    // 規則：dark patch 只能改既有 paint，不可替原本沒有 paint 的 layer 新增 paint。
+    // 否則會讓 ThemeReader 在 dark mode 多 parse 出 light mode 不會渲染的 layer
+    // （例：`road_shield` 沒有 paint.text-color，原本 ThemeReader 會 skip，dark
+    // patch 補上 text-color 後反而被納入），造成 light/dark layer 集合不一致。
+    final existingPaint = layer['paint'];
+    if (existingPaint is! Map) continue;
+
+    final id = layer['id'] as String? ?? '';
+    final type = layer['type'] as String? ?? '';
+    final sourceLayer = layer['source-layer'] as String? ?? '';
+
+    // symbol layer 額外要求：必須既有 paint 已宣告 text-color。否則 ThemeReader
+    // 在 light mode 也不會把它當成可渲染的 symbol，dark mode 也不該補。
+    if (type == 'symbol' && !existingPaint.containsKey('text-color')) continue;
+
+    final patches = _darkPatchesFor(
+      id: id,
+      type: type,
+      sourceLayer: sourceLayer,
+    );
+    if (patches.isEmpty) continue;
+
+    // lightThemeData() 內 Dart literal 推斷出的 paint 多為窄型別
+    // （`Map<String, String>` / `Map<String, Map<String, Object>>` 等），
+    // 直接 mutate 會 throw `type 'String' is not a subtype of type ...`。
+    // 因此先複製到我們持有的 `Map<String, dynamic>`，再寫 patch。
+    final paint = <String, dynamic>{};
+    existingPaint.forEach((k, v) {
+      if (k is String) paint[k] = v;
+    });
+    paint.addAll(patches);
+    layer['paint'] = paint;
+  }
+}
+
+Map<String, dynamic> _darkPatchesFor({
+  required String id,
+  required String type,
+  required String sourceLayer,
+}) {
+  if (type == 'background') {
+    return {'background-color': _darkPalette['background']};
+  }
+
+  final isWater = sourceLayer == 'water' ||
+      sourceLayer == 'waterway' ||
+      sourceLayer == 'water_name' ||
+      id.contains('water');
+  if (isWater) {
+    switch (type) {
+      case 'fill':
+        return {'fill-color': _darkPalette['water']};
+      case 'line':
+        return {'line-color': _darkPalette['water']};
+      case 'symbol':
+        return {
+          'text-color': _darkPalette['labelTextSecondary'],
+          'text-halo-color': _darkPalette['labelHalo'],
+          'text-halo-width': 1.0,
+        };
+    }
+    return const {};
+  }
+
+  if (sourceLayer == 'building' && type == 'fill') {
+    return {
+      'fill-color': _darkPalette['building'],
+      'fill-outline-color': _darkPalette['buildingOutline'],
+    };
+  }
+
+  if (sourceLayer == 'boundary' && type == 'line') {
+    return {'line-color': _darkPalette['boundary']};
+  }
+
+  if (sourceLayer == 'landuse' ||
+      sourceLayer == 'landcover' ||
+      sourceLayer == 'park') {
+    final isLandcover = sourceLayer == 'landcover';
+    if (type == 'fill') {
+      return {
+        'fill-color': isLandcover
+            ? _darkPalette['landcover']
+            : _darkPalette['landuse'],
+      };
+    }
+    if (type == 'line') {
+      return {'line-color': _darkPalette['landcover']};
+    }
+    return const {};
+  }
+
+  if (sourceLayer == 'aeroway') {
+    if (type == 'fill') return {'fill-color': _darkPalette['landuse']};
+    if (type == 'line') return {'line-color': _darkPalette['roadMajor']};
+    return const {};
+  }
+
+  if (sourceLayer == 'transportation') {
+    final isMajor = id.contains('motorway') ||
+        id.contains('trunk') ||
+        id.contains('primary');
+    final isCasing = id.contains('casing');
+    if (type == 'line') {
+      return {
+        'line-color': isCasing
+            ? _darkPalette['roadCasing']
+            : (isMajor
+                ? _darkPalette['roadMajor']
+                : _darkPalette['roadMinor']),
+      };
+    }
+    if (type == 'fill') return {'fill-color': _darkPalette['roadMinor']};
+    return const {};
+  }
+
+  // place / road labels / 其它 symbol 層
+  if (type == 'symbol') {
+    final isSuburb = id == 'place_suburb' || id.contains('suburb');
+    return {
+      'text-color': isSuburb
+          ? _darkPalette['suburbText']
+          : _darkPalette['labelText'],
+      'text-halo-color': _darkPalette['labelHalo'],
+      'text-halo-width': 1.0,
+    };
+  }
+
+  return const {};
 }

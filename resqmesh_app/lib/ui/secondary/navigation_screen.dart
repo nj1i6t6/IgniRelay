@@ -69,6 +69,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
   bool _mbtilesBootstrapped = false;
   // Phase 4：當前 map theme 對應的 locale，用於 runtime locale 變更時重建 theme。
   Locale? _mapLocale;
+  // Phase 5：當前 map theme 對應的 brightness（淺色 / 深色）。
+  Brightness? _mapBrightness;
 
   @override
   void initState() {
@@ -167,7 +169,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
     } catch (_) {}
   }
 
-  Future<void> _initMBTiles(Locale locale) async {
+  Future<void> _initMBTiles(Locale locale, Brightness brightness) async {
     try {
       final available = await MBTilesLoader.isAvailable();
       if (!available) return;
@@ -178,6 +180,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
       // 不帶 POI → 傳入全部 disabled（空 set = 全部啟用，我們直接用無 POI 的 theme）
       final theme = buildIgniRelayTheme(
         locale: locale,
+        brightness: brightness,
         disabledPoi: _allPoiIds,
       );
       if (mounted) {
@@ -186,6 +189,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
           _tileProviders = TileProviders({'openmaptiles': provider});
           _mapTheme = theme;
           _mapLocale = locale;
+          _mapBrightness = brightness;
           _mapReady = true;
         });
       }
@@ -704,24 +708,28 @@ class _NavigationScreenState extends State<NavigationScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Phase 4：MBTiles 初始化需要 UI locale。Localizations.localeOf 在 initState
-    // 時可能不安全；統一在這裡觸發，並用旗標保證只跑一次。
+    // Phase 4/5：MBTiles 初始化需要 UI locale + brightness。Localizations.localeOf
+    // 與 Theme.of(context).brightness 在 initState 時可能不安全；統一在這裡觸發，
+    // 並用旗標保證只跑一次。
     final locale = Localizations.localeOf(context);
+    final brightness = Theme.of(context).brightness;
     if (!_mbtilesBootstrapped) {
       _mbtilesBootstrapped = true;
-      _initMBTiles(locale);
+      _initMBTiles(locale, brightness);
       return;
     }
-    // 已 bootstrap：runtime locale 變更時，只重建 theme，不重載 MBTiles。
-    if (_mapLocale == locale) return;
+    // 已 bootstrap：runtime locale / brightness 變更時，只重建 theme，不重載 MBTiles。
+    if (_mapLocale == locale && _mapBrightness == brightness) return;
     final mbTiles = _mbTiles;
     if (mbTiles == null) return;
     setState(() {
       _mapTheme = buildIgniRelayTheme(
         locale: locale,
+        brightness: brightness,
         disabledPoi: _allPoiIds,
       );
       _mapLocale = locale;
+      _mapBrightness = brightness;
     });
   }
 

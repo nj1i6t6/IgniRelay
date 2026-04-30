@@ -234,15 +234,17 @@ class MapScreenController extends ChangeNotifier {
       final poiDbPath = await _ensurePoiDetailsDb();
       final mbTiles = MbTiles(mbtilesPath: path, gzip: true);
       final provider = MbTilesVectorTileProvider(mbtiles: mbTiles);
-      // Phase 4：theme 需要 UI locale；若 didChangeDependencies 尚未把 locale
-      // 送入（極快的啟動路徑可能 race），保留 _mapTheme=null，等
+      // Phase 4/5：theme 需要 UI locale + brightness；若 didChangeDependencies 尚未
+      // 把兩者送入（極快的啟動路徑可能 race），保留 _mapTheme=null，等
       // updateMapPresentation 觸發 _rebuildTheme()。MapView children 會 gate 在
-      // `mapTheme != null` 上不渲染 VectorTileLayer，避免閃爍中文後英文。
+      // `mapTheme != null` 上不渲染 VectorTileLayer，避免閃爍中文後英文 / 亮色後暗色。
       final locale = _mapLocale;
-      final theme = locale == null
+      final brightness = _mapBrightness;
+      final theme = (locale == null || brightness == null)
           ? null
           : buildIgniRelayTheme(
               locale: locale,
+              brightness: brightness,
               disabledPoi: _layerSettings.disabledPoiIds,
             );
 
@@ -656,9 +658,13 @@ class MapScreenController extends ChangeNotifier {
     final mb = _mbTiles;
     if (!_mbTilesState.available || mb == null) return;
     final locale = _mapLocale;
-    if (locale == null) return; // 等 updateMapPresentation 把 locale 送入
+    final brightness = _mapBrightness;
+    if (locale == null || brightness == null) {
+      return; // 等 updateMapPresentation 把 locale + brightness 送入
+    }
     final theme = buildIgniRelayTheme(
       locale: locale,
+      brightness: brightness,
       disabledPoi: _layerSettings.disabledPoiIds,
     );
     final provider = MbTilesVectorTileProvider(mbtiles: mb);
@@ -689,10 +695,9 @@ class MapScreenController extends ChangeNotifier {
     if (!localeChanged && !brightnessChanged) return;
     _mapLocale = locale;
     _mapBrightness = brightness;
-    // Phase 4：只有 locale 變動會影響 theme；brightness 等 Phase 5 啟用 dark
-    // palette 後再讓 _rebuildTheme 認得。第一次首次進地圖時兩者都是「從 null
-    // → 值」，會走進這個分支建立 theme。
-    if (localeChanged || _mapTheme == null) {
+    // Phase 5：locale 或 brightness 任一變動都重建 theme；首次（_mapTheme == null）
+    // 也走這條路。
+    if (localeChanged || brightnessChanged || _mapTheme == null) {
       _rebuildTheme();
     }
   }
