@@ -35,6 +35,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show Brightness, Locale;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -131,6 +132,16 @@ class MapScreenController extends ChangeNotifier {
   LatLngBounds? _viewportBounds;
   bool get mapReady => _mapReady;
 
+  // ── 地圖呈現參數（由 MapScreen.didChangeDependencies 回報）──
+  // Phase 4：地圖 label 多語要求 theme 建立時必須知道 UI locale；
+  // Phase 5（後續）會把 brightness 也納入 theme 推導，這裡先平行追蹤以避免
+  // 兩階段交替時的 plumbing churn。
+  // 不寫死 fallback locale（如 zh_TW）：避免英文系統首次進地圖先中文後英文閃爍。
+  Locale? _mapLocale;
+  Brightness? _mapBrightness;
+  Locale? get mapLocale => _mapLocale;
+  Brightness? get mapBrightness => _mapBrightness;
+
   /// 當前 viewport zoom（由 MapView 透過 [setViewport] 回報）。
   /// widget 端在「點擊地圖空白處查 POI」這種需要 zoom guard 的地方使用，
   /// 用以保留舊版「zoom < 12 不查」的行為與「以實際 zoom 為 nearest tolerance」的契約。
@@ -223,7 +234,17 @@ class MapScreenController extends ChangeNotifier {
       final poiDbPath = await _ensurePoiDetailsDb();
       final mbTiles = MbTiles(mbtilesPath: path, gzip: true);
       final provider = MbTilesVectorTileProvider(mbtiles: mbTiles);
-      final theme = buildIgniRelayTheme();
+      // Phase 4：theme 需要 UI locale；若 didChangeDependencies 尚未把 locale
+      // 送入（極快的啟動路徑可能 race），保留 _mapTheme=null，等
+      // updateMapPresentation 觸發 _rebuildTheme()。MapView children 會 gate 在
+      // `mapTheme != null` 上不渲染 VectorTileLayer，避免閃爍中文後英文。
+      final locale = _mapLocale;
+      final theme = locale == null
+          ? null
+          : buildIgniRelayTheme(
+              locale: locale,
+              disabledPoi: _layerSettings.disabledPoiIds,
+            );
 
       // tile 健檢（不致命）
       String tileTestResult = 'untested';
@@ -244,10 +265,12 @@ class MapScreenController extends ChangeNotifier {
       try {
         final fileSize = File(path).lengthSync();
         final fileSizeMB = (fileSize / 1024 / 1024).toStringAsFixed(1);
+        final themeDesc =
+            theme == null ? 'pending(locale)' : '${theme.layers.length} layers';
         debugPrint(
             '[MapController] MBTiles ready: $path, ${fileSizeMB}MB, '
             'zoom=${provider.minimumZoom}-${provider.maximumZoom}, '
-            'theme=${theme.layers.length} layers, tileTest=$tileTestResult');
+            'theme=$themeDesc, tileTest=$tileTestResult');
       } catch (_) {}
 
       if (_disposed) {
@@ -632,7 +655,12 @@ class MapScreenController extends ChangeNotifier {
   void _rebuildTheme() {
     final mb = _mbTiles;
     if (!_mbTilesState.available || mb == null) return;
-    final theme = buildIgniRelayTheme(disabledPoi: _layerSettings.disabledPoiIds);
+    final locale = _mapLocale;
+    if (locale == null) return; // 等 updateMapPresentation 把 locale 送入
+    final theme = buildIgniRelayTheme(
+      locale: locale,
+      disabledPoi: _layerSettings.disabledPoiIds,
+    );
     final provider = MbTilesVectorTileProvider(mbtiles: mb);
     _tileProviders = TileProviders({'openmaptiles': provider});
     _mapTheme = theme;
@@ -644,6 +672,29 @@ class MapScreenController extends ChangeNotifier {
       themeGeneration: _mbTilesState.themeGeneration + 1,
     );
     _safeNotify();
+  }
+
+  /// 由 [MapScreen.didChangeDependencies] 在每次 inherited locale / theme 變動
+  /// 時呼叫。Phase 4 只用 [locale] 影響 theme（label 多語）；[brightness] 已 plumb
+  /// 進來但 theme 還沒吃，留給 Phase 5（地圖深淺色 theme）填上。
+  ///
+  /// 同 locale + brightness 重入會 short-circuit，避免每次 build 都重建 theme。
+  void updateMapPresentation({
+    required Locale locale,
+    required Brightness brightness,
+  }) {
+    if (_disposed) return;
+    final localeChanged = _mapLocale != locale;
+    final brightnessChanged = _mapBrightness != brightness;
+    if (!localeChanged && !brightnessChanged) return;
+    _mapLocale = locale;
+    _mapBrightness = brightness;
+    // Phase 4：只有 locale 變動會影響 theme；brightness 等 Phase 5 啟用 dark
+    // palette 後再讓 _rebuildTheme 認得。第一次首次進地圖時兩者都是「從 null
+    // → 值」，會走進這個分支建立 theme。
+    if (localeChanged || _mapTheme == null) {
+      _rebuildTheme();
+    }
   }
 
   // ── 標記模式 commands ──

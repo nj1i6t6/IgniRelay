@@ -73,6 +73,18 @@ class _MapScreenState extends State<MapScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Phase 4：地圖 label 依 UI locale 渲染；同時 plumb brightness 給 Phase 5。
+    // 此 callback 在 Localizations / Theme inherited widget 變動時自動 fire，
+    // controller 內部會 dedupe 同值（避免每次 build 都 rebuild theme）。
+    _ctrl.updateMapPresentation(
+      locale: Localizations.localeOf(context),
+      brightness: Theme.of(context).brightness,
+    );
+  }
+
+  @override
   void dispose() {
     _refreshSpinCtrl.dispose();
     _ctrl.dispose();

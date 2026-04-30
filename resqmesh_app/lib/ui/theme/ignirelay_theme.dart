@@ -1,32 +1,52 @@
 // ignore_for_file: library_private_types_in_public_api
+import 'dart:ui' show Locale;
+
 import 'package:vector_tile_renderer/vector_tile_renderer.dart';
 // lightThemeData() 不在公開 API 中，直接 import src
 // ignore: implementation_imports
 import 'package:vector_tile_renderer/src/themes/light_theme.dart';
 
+import 'package:ignirelay_app/ui/theme/map_label_language.dart';
+
 /// 建立 IgniRelay 烽傳專用地圖主題
 /// 基於 lightTheme (OSM Liberty) 加上：
 /// 1. 移除原有 POI 層 (避免搶佔 label space 導致救災圖標無法顯示)
 /// 2. 救災 POI 彩色圓形圖標 (醫院/警消/學校/藥局/物資)
-/// 3. 中文名稱顯示 ({name} 取代 {name_en})
+/// 3. label 多語：依 [locale] 用 coalesce expression 取代原 `{name_en}` / `{name}`，
+///    讓中文 UI 顯示繁中、英文 UI 顯示英文、其他語言走支援表 fallback（Phase 4）。
 /// 4. 道路標籤文字大小優化 (減少重疊)
 ///
+/// [locale] UI 語系；由 caller（map_screen / navigation_screen）從
+///   `Localizations.localeOf(context)` 取出再傳入。
 /// [disabledPoi] 傳入要隱藏的 POI category ID 集合
 ///   (如 {'resq_hospital', 'resq_school'})，對應的圖標+文字層會被排除。
-Theme buildIgniRelayTheme({Logger? logger, Set<String>? disabledPoi}) {
+Theme buildIgniRelayTheme({
+  required Locale locale,
+  Logger? logger,
+  Set<String>? disabledPoi,
+}) {
+  final language = MapLabelLanguage.forLocale(locale);
+  final textFieldExpr = language.toCoalesceExpression();
+
   final json = lightThemeData();
   final originalLayers = json['layers'] as List;
   final layers = List<dynamic>.from(originalLayers);
   json['layers'] = layers;
 
-  // ── 1. 修補所有現有 symbol 層：name_en → name (顯示中文) ──
+  // ── 1. 把所有 symbol 層的「地名」text-field 換成 locale-aware coalesce expression ──
+  // 原版只把字串 `{name_en}` 換成 `{name}`；Phase 4 改成：凡是地名類字串 text-field
+  // （`{name_en}` / `{name}` / `{name:xx}` 之類），都用 coalesce expression 覆寫，
+  // 讓 vector_tile_renderer 5.2.1 在每個 feature 上做 per-feature fallback。
+  //
+  // 只覆寫地名 token：road_shield 的 `{ref}`（路線編號）、其他 `{ele}` 等非 name
+  // token 不能被覆寫，否則會把「台 9 / 國 1」變成地名 fallback expression。
   for (final layer in layers) {
     if (layer is Map<String, dynamic>) {
       final layout = layer['layout'];
       if (layout is Map<String, dynamic>) {
         final textField = layout['text-field'];
-        if (textField == '{name_en}') {
-          layout['text-field'] = '{name}';
+        if (_isNameTextField(textField)) {
+          layout['text-field'] = textFieldExpr;
         }
       }
     }
@@ -113,6 +133,7 @@ Theme buildIgniRelayTheme({Logger? logger, Set<String>? disabledPoi}) {
         [18, 13],
       ],
       symbolSpacing: 400,
+      textFieldExpr: textFieldExpr,
     ));
 
     // 7C. 小路路名 (碰撞優先低於主幹道，minzoom 15)
@@ -132,6 +153,7 @@ Theme buildIgniRelayTheme({Logger? logger, Set<String>? disabledPoi}) {
         [18, 12],
       ],
       symbolSpacing: 600,
+      textFieldExpr: textFieldExpr,
     ));
   }
 
@@ -144,7 +166,7 @@ Theme buildIgniRelayTheme({Logger? logger, Set<String>? disabledPoi}) {
     'minzoom': 12,
     'filter': ['==', 'class', 'suburb'],
     'layout': {
-      'text-field': '{name}',
+      'text-field': textFieldExpr,
       'text-font': ['Roboto Condensed Italic'],
       'text-size': {
         'base': 1.2,
@@ -173,6 +195,7 @@ Map<String, dynamic> _roadLabelLayer({
   required int minzoom,
   required List<dynamic> filter,
   required List<List<num>> textSizeStops,
+  required List<dynamic> textFieldExpr,
   int symbolSpacing = 400,
 }) {
   return {
@@ -183,7 +206,7 @@ Map<String, dynamic> _roadLabelLayer({
     'minzoom': minzoom,
     'filter': filter,
     'layout': {
-      'text-field': '{name}',
+      'text-field': textFieldExpr,
       'text-font': ['Roboto Regular'],
       'text-size': {'base': 1, 'stops': textSizeStops},
       'symbol-placement': 'line',
@@ -201,3 +224,13 @@ Map<String, dynamic> _roadLabelLayer({
 // _poiIconLayer / _poiTextLayer 已不再使用：救災 POI 改由 Flutter Marker 渲染
 // （見 lib/ui/screens/map/widgets/poi_category.dart 與 map_screen 的 _refreshPoiMarkers）。
 // 此處原 vector tile symbol layer 保留於 git 史。
+
+/// 判斷字串型 text-field 是否為地名 token（`{name}` / `{name_en}` / `{name:xx}`）。
+/// 用於把 lightTheme 既有 symbol 層的地名 token 換成 locale-aware coalesce expression，
+/// 同時避免覆寫 `road_shield` 的 `{ref}` 等非地名 token。
+bool _isNameTextField(Object? textField) {
+  if (textField is! String) return false;
+  return textField == '{name}' ||
+      textField == '{name_en}' ||
+      textField.startsWith('{name:');
+}

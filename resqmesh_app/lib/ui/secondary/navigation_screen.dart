@@ -64,11 +64,16 @@ class _NavigationScreenState extends State<NavigationScreen> {
   // Negotiation 事件訂閱（取消/完成偵測）
   late final StreamSubscription _negotiationSub;
 
+  // Phase 4：MBTiles 初始化需要 UI locale 才能 build theme，因此延後到
+  // didChangeDependencies 第一次 fire 時觸發；用此旗標避免重入。
+  bool _mbtilesBootstrapped = false;
+  // Phase 4：當前 map theme 對應的 locale，用於 runtime locale 變更時重建 theme。
+  Locale? _mapLocale;
+
   @override
   void initState() {
     super.initState();
     _myLocation = _location.currentLocation;
-    _initMBTiles();
     _startBleScan();
     _loadPeerLocation();
     // 每 3 秒刷新位置 + 發送位置同步
@@ -162,7 +167,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
     } catch (_) {}
   }
 
-  Future<void> _initMBTiles() async {
+  Future<void> _initMBTiles(Locale locale) async {
     try {
       final available = await MBTilesLoader.isAvailable();
       if (!available) return;
@@ -171,12 +176,16 @@ class _NavigationScreenState extends State<NavigationScreen> {
       final mbTiles = MbTiles(mbtilesPath: path, gzip: true);
       final provider = MbTilesVectorTileProvider(mbtiles: mbTiles);
       // 不帶 POI → 傳入全部 disabled（空 set = 全部啟用，我們直接用無 POI 的 theme）
-      final theme = buildIgniRelayTheme(disabledPoi: _allPoiIds);
+      final theme = buildIgniRelayTheme(
+        locale: locale,
+        disabledPoi: _allPoiIds,
+      );
       if (mounted) {
         setState(() {
           _mbTiles = mbTiles;
           _tileProviders = TileProviders({'openmaptiles': provider});
           _mapTheme = theme;
+          _mapLocale = locale;
           _mapReady = true;
         });
       }
@@ -690,6 +699,30 @@ class _NavigationScreenState extends State<NavigationScreen> {
     if (maxDist < 2000) return 13;
     if (maxDist < 10000) return 11;
     return 9;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Phase 4：MBTiles 初始化需要 UI locale。Localizations.localeOf 在 initState
+    // 時可能不安全；統一在這裡觸發，並用旗標保證只跑一次。
+    final locale = Localizations.localeOf(context);
+    if (!_mbtilesBootstrapped) {
+      _mbtilesBootstrapped = true;
+      _initMBTiles(locale);
+      return;
+    }
+    // 已 bootstrap：runtime locale 變更時，只重建 theme，不重載 MBTiles。
+    if (_mapLocale == locale) return;
+    final mbTiles = _mbTiles;
+    if (mbTiles == null) return;
+    setState(() {
+      _mapTheme = buildIgniRelayTheme(
+        locale: locale,
+        disabledPoi: _allPoiIds,
+      );
+      _mapLocale = locale;
+    });
   }
 
   @override
