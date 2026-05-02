@@ -696,20 +696,88 @@ final brightness = Theme.of(context).brightness;
 
 ## 10. Phase 6：聊天室名稱多語
 
-### 10.1 修改檔案
+### 10.1 Sub-commit 拆分與檔案範圍
 
-| 檔案 | 修改內容 |
+Phase 6 涉及 asset binary、build tool、resolver 與多個 chat screen，作為單一 commit 過大且 review 風險高。實作 Agent 必須拆成以下 4 個獨立 commit，每個 commit 各自跑 `flutter analyze` / `flutter test`，baseline 對齊（既有 F1 test 失敗為已知 baseline，不要新增 fail）後才往下走。各 commit 詳細規格在 §10.2 之後分述。
+
+#### Commit 1：行政區名 JSON asset
+
+| 檔案 | 動作 |
 | --- | --- |
-| `lib/app/services/chat_service.dart` | 保留 `room_name` fallback，不讓它負責 i18n |
-| `lib/ui/screens/chat/chat_list_screen.dart` | 顯示名稱改由 resolver 產生 |
-| `lib/ui/screens/chat/chat_room_screen.dart` | title 改由 resolver 產生或處理 locale change |
-| `lib/ui/screens/chat/chat_join_screen.dart` | 搜尋與成功訊息使用 localized display name |
-| `lib/app/geo/village_geofence.dart` | 新增依 villcode 查單筆 village 的 API |
-| `assets/geodata/taiwan_admin_names.json` | 新增 county/town 英文對照 |
-| `lib/app/geo/admin_name_resolver.dart` | 新增行政區名稱 resolver |
-| `lib/app/services/room_display_name_resolver.dart` | 新增聊天室顯示名稱 resolver |
-| `lib/l10n/app_zh.arb` | 新增繁中聊天室名稱格式 |
-| `lib/l10n/app_en.arb` | 新增英文聊天室名稱格式 |
+| `tool/build_admin_names_json.dart` | 新增 deterministic build tool |
+| `assets/geodata/taiwan_admin_names.json` | 新增（由 build tool 產出後 commit） |
+| `pubspec.yaml` | 視需要新增 asset 註冊 |
+
+要求：
+
+1. JSON 必須由 `build_admin_names_json.dart` 從政府公開資料產生，不要手寫 22 縣市 + 368 鄉鎮市區。
+2. build tool 註解要寫清楚資料來源名稱、URL、資料日期，輸出 deterministic（key 排序固定）。
+3. `pubspec.yaml` 已包含 `assets/geodata/` 目錄時不要重複加單檔；目前未包含才新增。實作 Agent 必須先 grep `pubspec.yaml` 確認。
+4. commit 內容只有 tool + 產出 JSON + 必要 pubspec 一行，不動 runtime 程式碼。
+5. 詳見 §10.2。
+
+#### Commit 2：VillageGeofence.queryByCode() 與 asset DB index
+
+| 檔案 | 動作 |
+| --- | --- |
+| `lib/app/geo/village_geofence.dart` | 新增 `queryByCode(String villcode)` 與必要 `VillageInfo` 欄位 |
+| `assets/geodata/village_boundary.db` | build-time 加 `idx_villages_villcode` 索引後 commit 更新版本 |
+| `test/village_geofence_query_by_code_test.dart` | 新增單測 |
+
+要求：
+
+1. asset DB 索引必須在開發機以 sqlite3 CLI build-time 建立，commit 更新後的 `.db`。**禁止在 runtime 執行 `CREATE INDEX`**。`VillageGeofence` 仍以 `sql.OpenMode.readOnly` 開啟。
+2. 測試只驗：
+   - `queryByCode(<已知存在 villcode>)` 回傳 `villname` / `villeng` / `countyname` / `townname`。
+   - `queryByCode(<不存在 code>)` 回傳 `null`。
+3. 不要把大量行政區資料當測試 fixture，避免資料來源更新時測試脆弱。挑 1–2 個穩定 villcode 即可。
+4. commit 後須確認 apk size 沒爆、asset DB 仍可正常開啟。
+5. 詳見 §10.4。
+
+#### Commit 3：Resolver 與測試
+
+| 檔案 | 動作 |
+| --- | --- |
+| `lib/app/geo/admin_name_resolver.dart` | 新增 |
+| `lib/app/services/room_display_name_resolver.dart` | 新增 |
+| `test/admin_name_resolver_test.dart` | 新增 |
+| `test/room_display_name_resolver_test.dart` | 新增 |
+
+要求：
+
+1. **async / sync 分界**：
+   - `AdminNameResolver.ensureLoaded()` 是 async；cache ready 後 `county(code)` / `town(code)` 是 sync Map lookup。
+   - `RoomDisplayNameResolver.resolve(...)` 維持 async API（村里 code 需要查 `village_boundary.db`）。
+2. 測試必須覆蓋：
+   - nation / county / township / village / custom 五種 roomType。
+   - 中文 locale 與非中文 locale。
+   - 缺資料時 fallback 到 generic 字串（§10.9 的 `chatRoomName*Generic` keys）。
+3. 命名規則必須在 resolver 測試裡定死（特別是英文以空白分隔，中文不分隔）：
+   - 中文：`全國公告` / `{縣市} 公告` / `{縣市}{鄉鎮市區} 公告` / `{縣市}{鄉鎮市區}{村里} 聊天室`
+   - 英文：`National Announcements` / `{County} Announcements` / `{County} {Town} Announcements` / `{County} {Town} {Village} Chat`
+4. 不接 UI，只交付 resolver + tests。詳見 §10.3 / §10.5。
+
+#### Commit 4：Chat 三個 screen 接線與 l10n
+
+| 檔案 | 動作 |
+| --- | --- |
+| `lib/ui/screens/chat/chat_list_screen.dart` | 改用 resolver，批次 resolve 後一次 `setState` |
+| `lib/ui/screens/chat/chat_room_screen.dart` | AppBar title 改用 resolver，`didChangeDependencies()` 處理 locale change |
+| `lib/ui/screens/chat/chat_join_screen.dart` | 顯示與搜尋走 resolver；SQL 加 `OR villeng LIKE ?` |
+| `lib/app/services/chat_service.dart` | `room_name` 只當 fallback，不負責 i18n |
+| `lib/l10n/app_zh.arb` | 新增繁中字串（§10.9） |
+| `lib/l10n/app_en.arb` | 新增英文字串（§10.9） |
+
+要求：
+
+1. **`Chat_Rooms.room_name` 一律只作 fallback**；UI 顯示一律走 resolver。舊 DB 已 `ConflictAlgorithm.ignore` 保留中文 `room_name`，因此英文 UI 不能直接讀 DB 欄位。
+2. **`ChatListScreen` 不能列表閃爍**：載入流程必須是「先 `await Future.wait` resolve 完所有 room display name → 一次 `setState` 更新列表」。不要每列各自 `FutureBuilder`，也不要先 render fallback 再逐筆替換。
+3. **`ChatRoomScreen` 必須能在 locale change 後更新 title**：進房時可先用 `widget.roomName` 當 fallback；`didChangeDependencies()` 偵測 locale 變化後重新 resolve `_displayRoomName`，避免卡住舊語言。
+4. **`ChatJoinScreen` 英文搜尋必須真的命中 `villeng`**：不是只改 display，SQL `WHERE` 必須加 `OR villeng LIKE ?`。
+5. 每個 screen 在 `didChangeDependencies()` 偵測 locale 變化時重新 resolve（list 用批次、room 用單筆）。
+6. l10n 新增 key 必須與 §10.9 對齊；英文版以空白分隔縣市鄉鎮村里。
+
+完成 4 個 commit 後再執行 §11 Phase 7 整合驗收。
 
 ### 10.2 新增 admin names 資料
 
@@ -890,6 +958,19 @@ room_id 解析：
 | `township` | `TW_` + 8 碼 town code | 去掉 `TW_` |
 | `village` | 11 碼 villcode | 直接查 `villages` |
 
+villcode → countyCode / townCode 推導規則：
+
+`assets/geodata/village_boundary.db` 的 `villages` 表只有 `villcode`(11) / `towncode`(8) / `countyname` / `townname` / `villname` / `villeng`，**沒有 `countycode` 欄位**。Resolver 取得 county/town code 餵給 `AdminNameResolver` 的方式：
+
+```dart
+final countyCode = villcode.substring(0, 5);   // 例：6500001001 → '65000'
+final townCode   = villcode.substring(0, 8);   // 例：65000010001 → '65000010'
+```
+
+這是台灣內政部行政區代碼官方規則（villcode 11 碼 = county 5 + 鄉鎮 3 + 村里 3；towncode 8 碼 = villcode 前 8 碼）。`village_boundary.db` 回傳的 `towncode` 應與 `villcode.substring(0, 8)` 一致，可作 sanity assert，但顯示走 substring derivation 即可，避免 query 缺欄位時 resolver 失敗。
+
+`chat_service.dart` 既有實作（搜尋 `final countyCode = villageCode.substring(0, 5)`）已經是 production pattern，可引用為 reference。
+
 ### 10.6 ChatListScreen 修改
 
 目前 `_loadRooms()` 直接使用 DB `room_name`。改為：
@@ -949,7 +1030,10 @@ WHERE countyname LIKE ? OR townname LIKE ? OR villname LIKE ? OR villeng LIKE ?
 4. 舊 DB 的中文 `room_name` 不影響英文顯示。
 5. 自訂聊天室名稱保持原樣。
 6. 手動搜尋可搜中文村里與英文 `villeng`。
-7. `flutter analyze`、`flutter test` 通過。
+7. `ChatListScreen` 列表初次載入無 fallback → localized 名稱跳動。
+8. 切換 locale 後 `ChatRoomScreen` AppBar title 立即更新，不需要退出重進。
+9. 每個 sub-commit（§10.1 Commit 1–4）跑完 `flutter analyze` 與 `flutter test`，baseline 對齊（既有 F1 fail 為已知 baseline，不要新增 fail），然後才可進下一個 commit。
+10. Commit 4 完成後 `flutter build apk --debug` 通過。
 
 ## 11. Phase 7：整合驗收
 
@@ -1059,20 +1143,51 @@ lib/ui/screens/map/map_screen.dart
 
 ### Step 7：聊天室名稱 i18n
 
-修改範圍：
+本 step 拆 4 個獨立 commit，每個 commit 各自跑 `flutter analyze` / `flutter test` baseline 對齊後才進下一個 commit。詳細規格與 guardrails 見 §10.1。
+
+#### Step 7a — 行政區名 JSON asset（Commit 1）
 
 ```text
-assets/geodata/taiwan_admin_names.json
 tool/build_admin_names_json.dart
-lib/app/geo/admin_name_resolver.dart
+assets/geodata/taiwan_admin_names.json
+pubspec.yaml  (only if assets/geodata/ 尚未註冊)
+```
+
+JSON 必須由 build tool 從政府公開資料 deterministic 產生，不要手寫資料。
+
+#### Step 7b — Village queryByCode + asset DB index（Commit 2）
+
+```text
 lib/app/geo/village_geofence.dart
+assets/geodata/village_boundary.db   (build-time 加 idx_villages_villcode)
+test/village_geofence_query_by_code_test.dart
+```
+
+索引必須在開發機 sqlite3 CLI build-time 建立並 commit 更新後的 `.db`，禁止 runtime `CREATE INDEX`。
+
+#### Step 7c — Resolver 與測試（Commit 3）
+
+```text
+lib/app/geo/admin_name_resolver.dart
 lib/app/services/room_display_name_resolver.dart
+test/admin_name_resolver_test.dart
+test/room_display_name_resolver_test.dart
+```
+
+`AdminNameResolver.ensureLoaded()` 是唯一 async 入口，county/town lookup 是 sync。命名規則（中文不分隔、英文以空白分隔）必須由測試鎖定。
+
+#### Step 7d — Chat 三個 screen 接線 + l10n（Commit 4）
+
+```text
+lib/app/services/chat_service.dart
 lib/ui/screens/chat/chat_list_screen.dart
 lib/ui/screens/chat/chat_room_screen.dart
 lib/ui/screens/chat/chat_join_screen.dart
 lib/l10n/app_zh.arb
 lib/l10n/app_en.arb
 ```
+
+`ChatListScreen` 必須批次 resolve 後一次 `setState`；`ChatRoomScreen` `didChangeDependencies()` 處理 locale change；`ChatJoinScreen` SQL 必須 `OR villeng LIKE ?`。`Chat_Rooms.room_name` 一律只當 fallback。
 
 ### Step 8：整合驗收
 
