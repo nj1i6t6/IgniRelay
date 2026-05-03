@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:ignirelay_app/app/geo/admin_name_resolver.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
+import 'package:ignirelay_app/app/services/room_display_name_resolver.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
@@ -32,6 +34,7 @@ class ChatRoomScreen extends StatefulWidget {
 
 class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final ChatService _chatService = ChatService();
+  final RoomDisplayNameResolver _nameResolver = RoomDisplayNameResolver();
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   List<Map<String, dynamic>> _messages = [];
@@ -41,11 +44,38 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   String? _myPubKeyHex;
   String? _replyToEventId;
   StreamSubscription<MeshDataReceived>? _meshSub;
+  String? _displayRoomName;
+  Locale? _locale;
 
   @override
   void initState() {
     super.initState();
+    _displayRoomName = widget.roomName;
     _init();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final locale = Localizations.localeOf(context);
+    if (_locale != locale) {
+      _locale = locale;
+      _resolveDisplayName();
+    }
+  }
+
+  Future<void> _resolveDisplayName() async {
+    final locale = _locale ?? Localizations.localeOf(context);
+    await AdminNameResolver().ensureLoaded();
+    final name = await _nameResolver.resolve(
+      roomId: widget.roomId,
+      roomType: widget.roomType,
+      fallbackRoomName: widget.roomName,
+      locale: locale,
+    );
+    if (mounted && name != _displayRoomName) {
+      setState(() => _displayRoomName = name);
+    }
   }
 
   Future<void> _init() async {
@@ -174,7 +204,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.roomName, style: IgniTypography.titleMedium(p.text0)),
+            Text(_displayRoomName ?? widget.roomName,
+                style: IgniTypography.titleMedium(p.text0)),
             Text(
               context.l10n.chatRoomMessageCount(_messages.length),
               style: IgniTypography.monoSmall(p.text2),

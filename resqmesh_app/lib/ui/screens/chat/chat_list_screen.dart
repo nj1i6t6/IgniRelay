@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:ignirelay_app/app/geo/admin_name_resolver.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
+import 'package:ignirelay_app/app/services/room_display_name_resolver.dart';
 import 'package:ignirelay_app/ui/screens/chat/chat_join_screen.dart';
 import 'package:ignirelay_app/ui/screens/chat/chat_room_screen.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
@@ -25,37 +27,63 @@ class ChatListScreen extends StatefulWidget {
 class _ChatListScreenState extends State<ChatListScreen>
     with AutomaticKeepAliveClientMixin {
   final ChatService _chatService = ChatService();
+  final RoomDisplayNameResolver _nameResolver = RoomDisplayNameResolver();
 
   List<_RoomTile> _tiles = [];
   bool _loading = true;
+  Locale? _locale;
 
   @override
   bool get wantKeepAlive => true;
 
   @override
-  void initState() {
-    super.initState();
-    _loadRooms();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final locale = Localizations.localeOf(context);
+    if (_locale != locale) {
+      _locale = locale;
+      _loadRooms();
+    }
   }
 
   Future<void> _loadRooms() async {
     if (!_loading) setState(() => _loading = true);
     try {
+      final locale = _locale ?? Localizations.localeOf(context);
+      await AdminNameResolver().ensureLoaded();
       final rooms = await _chatService.getJoinedRooms();
+
+      // Batch resolve all display names before updating UI
+      final resolvedNames = await Future.wait(
+        rooms.map((room) => _nameResolver.resolve(
+          roomId: room['room_id'] as String,
+          roomType: room['room_type'] as String? ?? 'custom',
+          fallbackRoomName: room['room_name'] as String? ?? room['room_id'] as String,
+          locale: locale,
+        )),
+      );
+
       final tiles = <_RoomTile>[];
-      for (final room in rooms) {
-        final roomId = room['room_id'] as String;
-        final unread = await _chatService.getUnreadCount(roomId);
-        final last = await _chatService.getLastMessage(roomId);
+      final roomMeta = await Future.wait(
+        rooms.map((room) async {
+          final roomId = room['room_id'] as String;
+          final unread = await _chatService.getUnreadCount(roomId);
+          final last = await _chatService.getLastMessage(roomId);
+          return (unread: unread, last: last);
+        }),
+      );
+      for (var i = 0; i < rooms.length; i++) {
+        final room = rooms[i];
+        final meta = roomMeta[i];
         tiles.add(_RoomTile(
-          roomId: roomId,
-          roomName: room['room_name'] as String? ?? roomId,
+          roomId: room['room_id'] as String,
+          roomName: resolvedNames[i],
           roomType: room['room_type'] as String? ?? 'custom',
           adminOnly: (room['admin_only'] as int? ?? 0) == 1,
           rateLimitSeconds: room['rate_limit_seconds'] as int? ?? 180,
-          unread: unread,
-          lastContent: last?.content,
-          lastHlc: last?.hlcTimestamp,
+          unread: meta.unread,
+          lastContent: meta.last?.content,
+          lastHlc: meta.last?.hlcTimestamp,
         ));
       }
       // 排序：未讀優先 → 最新訊息優先 → 加入時間倒序（DB 本身已是 joined_at DESC）

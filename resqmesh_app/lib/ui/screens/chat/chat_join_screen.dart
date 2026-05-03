@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart' as crypto_lib;
+import 'package:ignirelay_app/app/geo/admin_name_resolver.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
+import 'package:ignirelay_app/app/services/room_display_name_resolver.dart';
 import 'package:ignirelay_app/app/geo/village_geofence.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
@@ -19,16 +21,15 @@ class ChatJoinScreen extends StatefulWidget {
 
 class _ChatJoinScreenState extends State<ChatJoinScreen> {
   final ChatService _chatService = ChatService();
+  final RoomDisplayNameResolver _nameResolver = RoomDisplayNameResolver();
   final TextEditingController _codeController = TextEditingController();
   bool _joining = false;
   String? _statusMessage;
 
-  // 手動選區
   List<VillageInfo> _searchResults = [];
   bool _searching = false;
   final TextEditingController _searchController = TextEditingController();
 
-  /// Bug 12 Fix: GPS 偵測加入 — 等待 GPS 初始化完成 + 重試機制
   Future<void> _autoJoinVillage() async {
     setState(() {
       _joining = true;
@@ -36,10 +37,8 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
     });
 
     try {
-      // 確保 LocationService 已初始化
       final locService = LocationService();
       if (!locService.hasLocation) {
-        // 等待 GPS 初始化（最多 10 秒）
         for (int i = 0; i < 20; i++) {
           await Future.delayed(const Duration(milliseconds: 500));
           if (locService.hasLocation) break;
@@ -84,14 +83,13 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
     }
   }
 
-  /// 手動搜尋村里
   Future<void> _searchVillage() async {
     final keyword = _searchController.text.trim();
     if (keyword.isEmpty) return;
 
     setState(() => _searching = true);
     try {
-      // 從 VillageGeofence 資料庫模糊搜尋
+      await AdminNameResolver().ensureLoaded();
       final results = await _queryVillagesByName(keyword);
       if (mounted) {
         setState(() => _searchResults = results);
@@ -106,19 +104,17 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
     }
   }
 
-  /// 從 SQLite 資料庫搜尋村里名稱
   Future<List<VillageInfo>> _queryVillagesByName(String keyword) async {
     try {
       await VillageGeofence.init();
-      // 使用 raw SQL 搜尋
       final db = VillageGeofence.getDb();
       if (db == null) return [];
       final rows = db.select(
         '''SELECT villcode, towncode, countyname, townname, villname, villeng
            FROM villages
-           WHERE countyname LIKE ? OR townname LIKE ? OR villname LIKE ?
+           WHERE countyname LIKE ? OR townname LIKE ? OR villname LIKE ? OR villeng LIKE ?
            LIMIT 50''',
-        ['%$keyword%', '%$keyword%', '%$keyword%'],
+        ['%$keyword%', '%$keyword%', '%$keyword%', '%$keyword%'],
       );
       return rows.map((row) => VillageInfo(
         villcode: row['villcode'] as String,
@@ -135,11 +131,9 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
     }
   }
 
-  /// 選擇村里並加入聊天室
   Future<void> _joinWithVillage(VillageInfo village) async {
     setState(() => _joining = true);
     try {
-      // 離開舊的地區頻道，加入新的
       await _chatService.changeVillageRoom(
         newVillageCode: village.villcode,
         countyName: village.countyName,
@@ -147,8 +141,16 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
         villName: village.villName,
       );
       if (mounted) {
+        final locale = Localizations.localeOf(context);
+        final displayName = await _nameResolver.resolve(
+          roomId: village.villcode,
+          roomType: 'village',
+          fallbackRoomName: village.fullName,
+          locale: locale,
+        );
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.l10n.chatJoinSuccess(village.fullName))),
+          SnackBar(content: Text(context.l10n.chatJoinSuccess(displayName))),
         );
         Navigator.pop(context, true);
       }
@@ -228,7 +230,6 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── GPS 自動加入 ──
             _Section(
               title: s.chatJoinAutoSection,
               desc: s.chatJoinAutoDesc,
@@ -266,7 +267,6 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
             ),
             const SizedBox(height: IgniSpacing.lg),
 
-            // ── 手動設定所在區域 ──
             _Section(
               title: s.chatJoinManualSection,
               desc: s.chatJoinManualDesc,
@@ -307,9 +307,14 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
                       itemCount: _searchResults.length,
                       itemBuilder: (ctx, i) {
                         final v = _searchResults[i];
+                        final locale = Localizations.localeOf(context);
+                        final useZh = locale.languageCode.toLowerCase() == 'zh';
+                        final displayName = useZh
+                            ? v.fullName
+                            : _formatVillageNameEnglish(v);
                         return ListTile(
                           dense: true,
-                          title: Text(v.fullName,
+                          title: Text(displayName,
                               style: IgniTypography.bodyMedium(p.text0)),
                           subtitle: Text(
                               s.chatJoinSearchVillcode(v.villcode),
@@ -326,7 +331,6 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
             ),
             const SizedBox(height: IgniSpacing.lg),
 
-            // ── 邀請碼 ──
             _Section(
               title: s.chatJoinInviteSection,
               desc: s.chatJoinInviteDesc,
@@ -351,7 +355,6 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
             ),
             const SizedBox(height: IgniSpacing.lg),
 
-            // ── 說明 ──
             Container(
               padding: const EdgeInsets.all(IgniSpacing.lg),
               decoration: BoxDecoration(
@@ -383,9 +386,27 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
       ),
     );
   }
+
+  /// English display for village search results.
+  /// Uses AdminNameResolver (already loaded by _searchVillage) for
+  /// county/town names, matching RoomDisplayNameResolver logic.
+  String _formatVillageNameEnglish(VillageInfo v) {
+    final countyCode = v.villcode.length >= 5 ? v.villcode.substring(0, 5) : null;
+    final townCode = v.villcode.length >= 8 ? v.villcode.substring(0, 8) : null;
+    final county = countyCode != null ? AdminNameResolver().county(countyCode)?.en : null;
+    final town = townCode != null ? AdminNameResolver().town(townCode)?.en : null;
+    final vill = v.villEng.replaceAll(RegExp(r'\s*Vil\.\s*$'), '').trim();
+    if (vill.isEmpty && county == null && town == null) return 'Village Chat';
+    if (vill.isEmpty) return 'Village Chat';
+    final parts = <String>[
+      if (county != null) county,
+      if (town != null) town,
+      vill,
+    ];
+    return parts.join(' ');
+  }
 }
 
-/// 加入頁的通用區段容器：標題 + 描述 + children。
 class _Section extends StatelessWidget {
   const _Section({
     required this.title,
