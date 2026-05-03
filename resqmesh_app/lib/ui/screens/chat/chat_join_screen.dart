@@ -388,22 +388,16 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
   }
 
   /// English display for village search results.
-  /// Uses AdminNameResolver (already loaded by _searchVillage) for
-  /// county/town names, matching RoomDisplayNameResolver logic.
+  /// Delegates to RoomDisplayNameResolver.formatVillageEnglish (sync)
+  /// to avoid duplicating formatting logic.
   String _formatVillageNameEnglish(VillageInfo v) {
     final countyCode = v.villcode.length >= 5 ? v.villcode.substring(0, 5) : null;
     final townCode = v.villcode.length >= 8 ? v.villcode.substring(0, 8) : null;
-    final county = countyCode != null ? AdminNameResolver().county(countyCode)?.en : null;
-    final town = townCode != null ? AdminNameResolver().town(townCode)?.en : null;
-    final vill = v.villEng.replaceAll(RegExp(r'\s*Vil\.\s*$'), '').trim();
-    if (vill.isEmpty && county == null && town == null) return 'Village Chat';
-    if (vill.isEmpty) return 'Village Chat';
-    final parts = <String>[
-      if (county != null) county,
-      if (town != null) town,
-      vill,
-    ];
-    return parts.join(' ');
+    return RoomDisplayNameResolver.formatVillageEnglish(
+      countyEn: countyCode != null ? AdminNameResolver().county(countyCode)?.en : null,
+      townEn: townCode != null ? AdminNameResolver().town(townCode)?.en : null,
+      villEng: v.villEng,
+    );
   }
 }
 

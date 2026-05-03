@@ -13,6 +13,21 @@
 //     https://gis.taiwan.net.tw/
 //     (用於戶政司資料缺漏時 cross-check)
 //
+// CSV provenance:
+//   admin_names_en.csv is a curated seed dataset. Initial version was derived
+//   from the 內政部戶政司 administrative area code tables cross-referenced with
+//   village_boundary.db Chinese names. It covers all 22 counties and 368
+//   townships/districts as of 2025-01.
+//
+//   To update from official sources:
+//   1. Download latest 行政區域代碼 CSV from https://www.ris.gov.tw/app/portal/346
+//   2. Cross-reference with village_boundary.db for code + zh name alignment
+//   3. Update tool/data/admin_names_en.csv
+//   4. Re-run: dart run tool/build_admin_names_json.dart
+//
+//   The build tool will fail-fast if county count != 22 or town count < 368,
+//   ensuring incomplete data never produces a partial JSON asset.
+//
 // CSV format:
 //   level,county_code,town_code,zh_name,en_name
 //   - level: "county" or "town"
@@ -128,6 +143,16 @@ void main() {
         continue;
       }
       towns[code] = {'countyCode': countyCode, 'zhHant': zhHant, 'en': en};
+    }
+
+    // ── Integrity check ──
+    if (counties.length != 22) {
+      stderr.writeln('FATAL: expected 22 counties, got ${counties.length}');
+      exit(2);
+    }
+    if (towns.length < 368) {
+      stderr.writeln('FATAL: expected >= 368 towns, got ${towns.length}');
+      exit(2);
     }
 
     // ── Output ──

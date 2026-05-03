@@ -115,16 +115,33 @@ class RoomDisplayNameResolver {
       if (county.isEmpty && town.isEmpty && vill.isEmpty) return '村里聊天室';
       return '$county$town$vill 聊天室';
     } else {
-      final county = countyInfo?.en ?? '';
-      final town = townInfo?.en ?? '';
-      final villEng = villageInfo?.villEng ?? '';
-      final vill = villEng.replaceAll(RegExp(r'\s*Vil\.\s*$'), '').trim();
-      if (vill.isEmpty && county.isEmpty && town.isEmpty) return 'Village Chat';
-      if (vill.isEmpty) return 'Village Chat';
-      if (county.isEmpty && town.isEmpty) return '$vill Chat';
-      if (county.isEmpty) return '$town $vill Chat';
-      if (town.isEmpty) return '$county $vill Chat';
-      return '$county $town $vill Chat';
+      return formatVillageEnglish(
+        countyEn: countyInfo?.en,
+        townEn: townInfo?.en,
+        villEng: villageInfo?.villEng,
+      );
     }
+  }
+
+  /// Sync English village display name formatter.
+  ///
+  /// Given already-resolved name components, produces the canonical English
+  /// display string. Used by both async [resolve] (after DB lookup) and
+  /// sync list rendering (e.g. ChatJoinScreen search results) to avoid
+  /// duplicating formatting logic.
+  static String formatVillageEnglish({
+    required String? countyEn,
+    required String? townEn,
+    required String? villEng,
+  }) {
+    final county = countyEn ?? '';
+    final town = townEn ?? '';
+    final rawVill = villEng ?? '';
+    final vill = rawVill.replaceAll(RegExp(r'\s*Vil\.\s*$'), '').trim();
+    if (vill.isEmpty) return 'Village Chat';
+    if (county.isEmpty && town.isEmpty) return '$vill Chat';
+    if (county.isEmpty) return '$town $vill Chat';
+    if (town.isEmpty) return '$county $vill Chat';
+    return '$county $town $vill Chat';
   }
 }
