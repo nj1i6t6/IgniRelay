@@ -155,6 +155,28 @@ class VillageGeofence {
     return scored.map((e) => e.v).toList();
   }
 
+  /// 依村里代碼查詢單筆資料。
+  /// 找不到時回傳 null。
+  static Future<VillageInfo?> queryByCode(String villcode) async {
+    assert(_db != null, 'VillageGeofence.init() 尚未呼叫');
+    final rows = _db!.select(
+      'SELECT villcode, towncode, countyname, townname, villname, villeng '
+      'FROM villages WHERE villcode = ? LIMIT 1',
+      [villcode],
+    );
+    if (rows.isEmpty) return null;
+    final row = rows.first;
+    return VillageInfo(
+      villcode: row['villcode'] as String,
+      towncode: row['towncode'] as String,
+      countyName: row['countyname'] as String,
+      townName: row['townname'] as String,
+      villName: row['villname'] as String,
+      villEng: row['villeng'] as String,
+      isOnBoundary: false,
+    );
+  }
+
   // ── 幾何算法 ─────────────────────────────────────────────────────────
   /// Ray casting point-in-polygon（座標以 1e5 整數儲存）
   static bool _pointInRing(double lat, double lng, List<List<int>> ring) {
