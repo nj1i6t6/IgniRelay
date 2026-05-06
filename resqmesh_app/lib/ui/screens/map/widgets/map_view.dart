@@ -259,55 +259,68 @@ class _MapViewState extends State<MapView> {
                   pois: pois,
                   onTap: widget.onPoiTap,
                 );
-                return MarkerLayer(markers: markers);
+                return RepaintBoundary(
+                  child: MarkerLayer(markers: markers),
+                );
               },
             ),
             if (accuracyCircles.isNotEmpty)
-              CircleLayer(circles: accuracyCircles),
+              RepaintBoundary(
+                child: CircleLayer(circles: accuracyCircles),
+              ),
             if (hazardPolygons.isNotEmpty)
-              PolygonLayer(polygons: hazardPolygons),
+              RepaintBoundary(
+                child: PolygonLayer(polygons: hazardPolygons),
+              ),
             if (previewPolygons.isNotEmpty)
               PolygonLayer(polygons: previewPolygons),
             if (hazardCenterMarkers.isNotEmpty)
-              MarkerLayer(markers: hazardCenterMarkers),
+              RepaintBoundary(
+                child: MarkerLayer(markers: hazardCenterMarkers),
+              ),
             if (previewMarkers.isNotEmpty)
               MarkerLayer(markers: previewMarkers),
             if (eventMarkers.isNotEmpty)
-              MarkerClusterLayerWidget(
-                options: MarkerClusterLayerOptions(
-                  maxClusterRadius: 60,
-                  size: const Size(44, 44),
-                  alignment: Alignment.center,
-                  spiderfyCluster: false,
-                  zoomToBoundsOnClick: true,
-                  padding: const EdgeInsets.all(32),
-                  markers: eventMarkers,
-                  polygonOptions: const PolygonOptions(
-                    color: Color(0x22E8803B),
-                    borderColor: Color(0x55E8803B),
-                    borderStrokeWidth: 1,
-                  ),
-                  builder: (ctx, markers) {
-                    PinCategory top = PinCategory.life;
-                    int topPri = PinPalette.clusterPriority(top);
-                    for (final m in markers) {
-                      final idx = eventMarkers.indexOf(m);
-                      if (idx < 0 || idx >= eventCategories.length) continue;
-                      final cat = eventCategories[idx];
-                      final pri = PinPalette.clusterPriority(cat);
-                      if (pri < topPri) {
-                        topPri = pri;
-                        top = cat;
+              RepaintBoundary(
+                child: MarkerClusterLayerWidget(
+                  options: MarkerClusterLayerOptions(
+                    maxClusterRadius: 60,
+                    size: const Size(44, 44),
+                    alignment: Alignment.center,
+                    spiderfyCluster: false,
+                    zoomToBoundsOnClick: true,
+                    padding: const EdgeInsets.all(32),
+                    markers: eventMarkers,
+                    polygonOptions: const PolygonOptions(
+                      color: Color(0x22E8803B),
+                      borderColor: Color(0x55E8803B),
+                      borderStrokeWidth: 1,
+                    ),
+                    builder: (ctx, markers) {
+                      PinCategory top = PinCategory.life;
+                      int topPri = PinPalette.clusterPriority(top);
+                      for (final m in markers) {
+                        final idx = eventMarkers.indexOf(m);
+                        if (idx < 0 || idx >= eventCategories.length) continue;
+                        final cat = eventCategories[idx];
+                        final pri = PinPalette.clusterPriority(cat);
+                        if (pri < topPri) {
+                          topPri = pri;
+                          top = cat;
+                        }
                       }
-                    }
-                    return ClusterBubble(
-                      count: markers.length,
-                      highestPriority: top,
-                    );
-                  },
+                      return ClusterBubble(
+                        count: markers.length,
+                        highestPriority: top,
+                      );
+                    },
+                  ),
                 ),
               ),
-            if (selfMarkers.isNotEmpty) MarkerLayer(markers: selfMarkers),
+            if (selfMarkers.isNotEmpty)
+              RepaintBoundary(
+                child: MarkerLayer(markers: selfMarkers),
+              ),
           ],
         );
       },
