@@ -249,25 +249,11 @@ class _StartupRouterState extends State<_StartupRouter> {
         });
       }
 
-      // ── 階段 3：位置 & 聊天室（個別 try-catch 防止連鎖失敗）──
-      try {
-        final locService = LocationService();
-        locService.onFirstFix = () {
-          ChatService().autoJoinVillageRoom().then((code) {
-            if (code != null) {
-              debugPrint('[Init] GPS 就緒，自動加入聊天室: $code');
-            }
-          }).catchError((e) {
-            debugPrint('[Init] 自動加入聊天室失敗: $e');
-          });
-        };
-        await locService.init();
-        if (locService.hasLocation && locService.onFirstFix != null) {
-          locService.onFirstFix!();
-          locService.onFirstFix = null;
-        }
-      } catch (e) {
-        debugPrint('[Init] Location/Chat init failed: $e');
+      // ── 階段 3：位置服務（延後到 onboarding 完成 + 首幀後才啟動）──
+      // 已 onboarded 的舊使用者：MainShell 首幀畫完後才開始 GPS。
+      // 新使用者：等 _onOnboardingComplete() 觸發。
+      if (done) {
+        _deferLocationInit();
       }
 
       // ── 階段 4：Mesh 服務（失敗不影響 UI）──
@@ -396,8 +382,41 @@ class _StartupRouterState extends State<_StartupRouter> {
     return allGranted;
   }
 
+  /// 延後啟動 LocationService：等 MainShell 首幀畫完後才開始 GPS，
+  /// 避免 onboarding → map 切換時與 MapScreenController 並發操作平台層。
+  void _deferLocationInit() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _initLocationService();
+    });
+  }
+
+  Future<void> _initLocationService() async {
+    try {
+      final locService = LocationService();
+      locService.onFirstFix = () {
+        ChatService().autoJoinVillageRoom().then((code) {
+          if (code != null) {
+            debugPrint('[Init] GPS 就緒，自動加入聊天室: $code');
+          }
+        }).catchError((e) {
+          debugPrint('[Init] 自動加入聊天室失敗: $e');
+        });
+      };
+      await locService.init();
+      if (locService.hasLocation && locService.onFirstFix != null) {
+        locService.onFirstFix!();
+        locService.onFirstFix = null;
+      }
+    } catch (e) {
+      debugPrint('[Init] Location/Chat init failed: $e');
+    }
+  }
+
   void _onOnboardingComplete() {
     setState(() => _showOnboarding = false);
+    // GPS 延後到 onboarding 動畫結束 + MainShell 首幀畫完後才啟動
+    _deferLocationInit();
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
