@@ -63,7 +63,7 @@ void main() {
       final c = MapScreenController();
       addTearDown(c.dispose);
 
-      final hazard = HazardVm(
+      const hazard = HazardVm(
         id: 'hz-99',
         lat: 23.5,
         lng: 121.5,
@@ -74,7 +74,7 @@ void main() {
         reportedBy: 'hex-self',
         isMine: true,
         description: '河水暴漲',
-        raw: const {},
+        raw: {},
       );
 
       final desc = c.enterMarkingEdit(hazard);
