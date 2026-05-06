@@ -252,20 +252,22 @@ class _StartupRouterState extends State<_StartupRouter> {
       // ── 階段 3：位置服務（延後到 onboarding 完成 + 首幀後才啟動）──
       // 已 onboarded 的舊使用者：MainShell 首幀畫完後才開始 GPS。
       // 新使用者：等 _onOnboardingComplete() 觸發。
+
+      // ── 階段 4：權限（必須在 LocationService.init 之前完成）──
+      await _requestPermissions();
+
       if (done) {
         _deferLocationInit();
       }
 
-      // ── 階段 4：Mesh 服務（失敗不影響 UI）──
+      // ── 階段 5：Mesh 服務（失敗不影響 UI）──
       try {
         EventManager().expireStaleMatches().catchError((_) {});
       } catch (e) {
         debugPrint('[Init] EventManager init failed: $e');
       }
 
-      // ── 階段 5：權限 & BLE ──
-      await _requestPermissions();
-
+      // ── 階段 6：BLE ──
       bool btOn = false;
       try {
         btOn = await NativeBridge.isBluetoothEnabled();

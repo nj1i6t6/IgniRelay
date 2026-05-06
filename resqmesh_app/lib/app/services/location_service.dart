@@ -60,9 +60,6 @@ class LocationService {
       }
 
       var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
       if (perm == LocationPermission.deniedForever) {
         _permDeniedForever = true;
         _unavailableReason = 'GPS 權限已被永久拒絕，請前往系統設定 → 應用程式 → 授予定位權限';
@@ -71,7 +68,7 @@ class LocationService {
       }
       if (perm == LocationPermission.denied) {
         _unavailableReason = '請授予 GPS 定位權限以取得更準確的媒合結果';
-        debugPrint('[LocationService] GPS 權限被拒');
+        debugPrint('[LocationService] GPS 權限被拒（由 _requestPermissions 統一處理）');
         return;
       }
 
