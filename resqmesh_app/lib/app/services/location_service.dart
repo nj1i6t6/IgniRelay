@@ -15,11 +15,22 @@ class LocationService {
   StreamSubscription<Position>? _positionSub;
   bool _initialized = false;
 
+  final StreamController<LatLng> _locationController =
+      StreamController<LatLng>.broadcast();
+
   /// 目前已知位置 (可能為 null)
   LatLng? get currentLocation => _currentLocation;
 
   /// 位置是否可用
   bool get hasLocation => _currentLocation != null;
+
+  /// 是否已完成 init()
+  bool get isInitialized => _initialized;
+
+  /// 位置更新 stream（broadcast）。
+  /// 訂閱時立即可讀 currentLocation，後續每次 GPS 更新都會 push。
+  /// MapScreenController 應使用此 stream，而非自行呼叫 Geolocator。
+  Stream<LatLng> get locationStream => _locationController.stream;
 
   /// GPS 不可用原因 (null = 正常可用或尚未檢查)
   String? _unavailableReason;
@@ -82,6 +93,7 @@ class LocationService {
           desiredAccuracy: LocationAccuracy.high,
         ).timeout(const Duration(seconds: 20));
         _currentLocation = LatLng(pos.latitude, pos.longitude);
+        _locationController.add(_currentLocation!);
         if (wasNull && onFirstFix != null) {
           debugPrint('[LocationService] 首次精確定位就緒，觸發 onFirstFix');
           onFirstFix!();
@@ -107,7 +119,9 @@ class LocationService {
         ),
       ).listen((pos) {
         final wasNull = _currentLocation == null;
-        _currentLocation = LatLng(pos.latitude, pos.longitude);
+        final loc = LatLng(pos.latitude, pos.longitude);
+        _currentLocation = loc;
+        _locationController.add(loc);
         // GPS 恢復後清除不可用原因
         if (_unavailableReason != null) {
           _unavailableReason = null;
@@ -180,6 +194,7 @@ class LocationService {
   void dispose() {
     _positionSub?.cancel();
     _positionSub = null;
+    _locationController.close();
     _initialized = false;
   }
 }

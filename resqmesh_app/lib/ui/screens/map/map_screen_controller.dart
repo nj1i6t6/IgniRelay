@@ -40,7 +40,6 @@ import 'dart:ui' show Brightness, Locale;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart' show LatLngBounds;
-import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:mbtiles/mbtiles.dart';
 import 'package:path_provider/path_provider.dart';
@@ -54,6 +53,7 @@ import 'package:ignirelay_app/app/mesh/event_types.dart';
 import 'package:ignirelay_app/app/mesh/mbtiles_loader.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/app/mesh/poi_query.dart';
+import 'package:ignirelay_app/app/services/location_service.dart';
 
 import 'package:ignirelay_app/ui/screens/map/models/map_action_results.dart';
 import 'package:ignirelay_app/ui/screens/map/models/map_view_models.dart';
@@ -87,7 +87,7 @@ class MapScreenController extends ChangeNotifier {
   // ── GPS ──
   SelfLocationVm? _selfLocation;
   SelfLocationVm? get selfLocation => _selfLocation;
-  StreamSubscription<Position>? _positionStream;
+  StreamSubscription<LatLng>? _locationSub;
 
   /// 第一次 GPS 定位完成且落在台灣範圍時要求 MapView centerOn 一次。
   /// MapView 訂閱此 listenable，被 trigger 後執行 camera.move 並 reset。
@@ -338,53 +338,37 @@ class MapScreenController extends ChangeNotifier {
   }
 
   Future<void> _initGPS() async {
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (_disposed) return;
-      if (!serviceEnabled) {
-        debugPrint('[MapController] GPS service disabled');
-        return;
+    final locService = LocationService();
+    if (!locService.isInitialized) {
+      debugPrint('[MapController] LocationService not initialized, skipping GPS');
+      return;
+    }
+
+    // Use existing location if available
+    final existing = locService.currentLocation;
+    if (existing != null) {
+      _selfLocation = SelfLocationVm(
+        location: existing,
+        accuracyMeters: 0,
+      );
+      _safeNotify();
+      _scheduleDistrictRoadLookup(existing);
+      if (_isInTaiwanBounds(existing)) {
+        centerRequest.value = existing;
       }
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
+    }
+
+    // Subscribe to location updates from LocationService (single source)
+    _locationSub = locService.locationStream.listen((loc) {
       if (_disposed) return;
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        debugPrint('[MapController] GPS permission denied');
-        return;
-      }
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      ).timeout(const Duration(seconds: 10), onTimeout: () {
-        throw TimeoutException('GPS timeout');
-      });
-      if (_disposed) return;
-      final loc = LatLng(pos.latitude, pos.longitude);
-      _selfLocation =
-          SelfLocationVm(location: loc, accuracyMeters: pos.accuracy);
+      _selfLocation = SelfLocationVm(location: loc, accuracyMeters: 0);
       _safeNotify();
       _scheduleDistrictRoadLookup(loc);
-      if (_isInTaiwanBounds(loc)) {
-        // 請 MapView 把 camera 移到此位置（避開 controller 直接呼 camera API）
+      // First fix from stream: center if in Taiwan
+      if (centerRequest.value == null && _isInTaiwanBounds(loc)) {
         centerRequest.value = loc;
       }
-      _positionStream = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 10,
-        ),
-      ).listen((pos) {
-        if (_disposed) return;
-        final l = LatLng(pos.latitude, pos.longitude);
-        _selfLocation = SelfLocationVm(location: l, accuracyMeters: pos.accuracy);
-        _safeNotify();
-        _scheduleDistrictRoadLookup(l);
-      });
-    } catch (e) {
-      debugPrint('[MapController] GPS init error: $e');
-    }
+    });
   }
 
   /// widget 端 FAB「定位」按鈕呼叫；MapView 訂閱 `centerRequest` 完成 camera move。
@@ -966,7 +950,7 @@ class MapScreenController extends ChangeNotifier {
     _poiRefreshTimer?.cancel();
     _poiIdleTimer?.cancel();
     _lookupDebounce?.cancel();
-    _positionStream?.cancel();
+    _locationSub?.cancel();
     _layerSettings.removeListener(_onLayerSettingsChanged);
     _layerSettings.dispose();
     _poiQuery?.dispose();
