@@ -138,9 +138,12 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
             color: _step == 3 ? Colors.green : Colors.orangeAccent,
           ),
           const SizedBox(width: 8),
-          Text(
-            _step == 3 ? context.l10n.batteryDoneTitle : context.l10n.batteryGuideTitle,
-            style: const TextStyle(color: Colors.white, fontSize: 18),
+          Expanded(
+            child: Text(
+              _step == 3 ? context.l10n.batteryDoneTitle : context.l10n.batteryGuideTitle,
+              style: const TextStyle(color: Colors.white, fontSize: 18),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),
