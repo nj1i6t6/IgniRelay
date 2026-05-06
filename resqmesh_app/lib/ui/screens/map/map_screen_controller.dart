@@ -339,12 +339,22 @@ class MapScreenController extends ChangeNotifier {
 
   Future<void> _initGPS() async {
     final locService = LocationService();
-    if (!locService.isInitialized) {
-      debugPrint('[MapController] LocationService not initialized, skipping GPS');
-      return;
-    }
 
-    // Use existing location if available
+    // Subscribe first — broadcast stream delivers future events only,
+    // so an early subscribe catches the first add() even if init() hasn't
+    // completed yet. Without this, a race between MapScreen mount and
+    // LocationService.init() leaves the map permanently deaf to GPS.
+    _locationSub = locService.locationStream.listen((loc) {
+      if (_disposed) return;
+      _selfLocation = SelfLocationVm(location: loc, accuracyMeters: 0);
+      _safeNotify();
+      _scheduleDistrictRoadLookup(loc);
+      if (centerRequest.value == null && _isInTaiwanBounds(loc)) {
+        centerRequest.value = loc;
+      }
+    });
+
+    // Read existing location if init() already completed
     final existing = locService.currentLocation;
     if (existing != null) {
       _selfLocation = SelfLocationVm(
@@ -357,18 +367,6 @@ class MapScreenController extends ChangeNotifier {
         centerRequest.value = existing;
       }
     }
-
-    // Subscribe to location updates from LocationService (single source)
-    _locationSub = locService.locationStream.listen((loc) {
-      if (_disposed) return;
-      _selfLocation = SelfLocationVm(location: loc, accuracyMeters: 0);
-      _safeNotify();
-      _scheduleDistrictRoadLookup(loc);
-      // First fix from stream: center if in Taiwan
-      if (centerRequest.value == null && _isInTaiwanBounds(loc)) {
-        centerRequest.value = loc;
-      }
-    });
   }
 
   /// widget 端 FAB「定位」按鈕呼叫；MapView 訂閱 `centerRequest` 完成 camera move。
