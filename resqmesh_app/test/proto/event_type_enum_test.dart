@@ -29,16 +29,16 @@ void main() {
       expect(EventType.MATCH_GONE.value, equals(12));
     });
 
-    test('values list contains all 19 entries', () {
-      expect(EventType.values.length, equals(19));
+    test('values list contains all 15 entries', () {
+      expect(EventType.values.length, equals(15));
     });
 
     test('valueOf(14) returns LOCATION_UPDATE', () {
       expect(EventType.valueOf(14), equals(EventType.LOCATION_UPDATE));
     });
 
-    test('valueOf(19) returns null (out of range)', () {
-      expect(EventType.valueOf(19), isNull);
+    test('valueOf(15) returns null (out of range)', () {
+      expect(EventType.valueOf(15), isNull);
     });
   });
 }
