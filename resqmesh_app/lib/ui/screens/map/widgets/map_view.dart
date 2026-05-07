@@ -246,7 +246,7 @@ class _MapViewState extends State<MapView> {
                 tileProviders: c.tileProviders!,
                 theme: c.mapTheme!,
                 sprites: null,
-                layerMode: VectorTileLayerMode.vector,
+                layerMode: VectorTileLayerMode.raster,
               ),
             // Phase 2：POI layer 由獨立 notifier 驅動。POI 更新只 rebuild 本層，
             // 不會觸發外層 ListenableBuilder 重建 VectorTileLayer / hazard / event /
