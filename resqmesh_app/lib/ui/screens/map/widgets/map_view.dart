@@ -168,10 +168,10 @@ class _MapViewState extends State<MapView> {
         // Phase 2：POI 不再在外層 ListenableBuilder 內計算；下面 children 用
         // ValueListenableBuilder 訂閱 c.poiNotifier 各自重建。
         final eventMarkers = <Marker>[];
-        final eventCategories = <PinCategory>[];
+        final eventCategoryByMarker = <Marker, PinCategory>{};
         for (final e in c.events) {
           final style = widget.eventStyleFor(e);
-          eventMarkers.add(Marker(
+          final marker = Marker(
             point: e.latLng,
             width: style.size + 4,
             height: style.size + 4,
@@ -185,8 +185,9 @@ class _MapViewState extends State<MapView> {
                 isSOS: e.urgency >= 2,
               ),
             ),
-          ));
-          eventCategories.add(e.category);
+          );
+          eventMarkers.add(marker);
+          eventCategoryByMarker[marker] = e.category;
         }
 
         final marking = c.marking;
@@ -300,9 +301,8 @@ class _MapViewState extends State<MapView> {
                       PinCategory top = PinCategory.life;
                       int topPri = PinPalette.clusterPriority(top);
                       for (final m in markers) {
-                        final idx = eventMarkers.indexOf(m);
-                        if (idx < 0 || idx >= eventCategories.length) continue;
-                        final cat = eventCategories[idx];
+                        final cat = eventCategoryByMarker[m];
+                        if (cat == null) continue;
                         final pri = PinPalette.clusterPriority(cat);
                         if (pri < topPri) {
                           topPri = pri;
