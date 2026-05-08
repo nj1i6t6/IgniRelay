@@ -63,6 +63,18 @@ import 'package:ignirelay_app/ui/screens/map/widgets/poi_category.dart';
 import 'package:ignirelay_app/ui/sheets/map_layer_settings.dart';
 import 'package:ignirelay_app/ui/theme/ignirelay_theme.dart';
 
+class MapCenterRequest {
+  const MapCenterRequest({
+    required this.location,
+    this.zoom,
+    this.resetRotation = false,
+  });
+
+  final LatLng location;
+  final double? zoom;
+  final bool resetRotation;
+}
+
 class MapScreenController extends ChangeNotifier {
   MapScreenController() {
     _layerSettings.addListener(_onLayerSettingsChanged);
@@ -88,10 +100,12 @@ class MapScreenController extends ChangeNotifier {
   SelfLocationVm? _selfLocation;
   SelfLocationVm? get selfLocation => _selfLocation;
   StreamSubscription<LatLng>? _locationSub;
+  bool _initialFixCentered = false;
 
   /// 第一次 GPS 定位完成且落在台灣範圍時要求 MapView centerOn 一次。
   /// MapView 訂閱此 listenable，被 trigger 後執行 camera.move 並 reset。
-  final ValueNotifier<LatLng?> centerRequest = ValueNotifier<LatLng?>(null);
+  final ValueNotifier<MapCenterRequest?> centerRequest =
+      ValueNotifier<MapCenterRequest?>(null);
 
   // ── 行政區 / 道路反查 ──
   String? _district;
@@ -349,9 +363,7 @@ class MapScreenController extends ChangeNotifier {
       _selfLocation = SelfLocationVm(location: loc, accuracyMeters: 0);
       _safeNotify();
       _scheduleDistrictRoadLookup(loc);
-      if (centerRequest.value == null && _isInTaiwanBounds(loc)) {
-        centerRequest.value = loc;
-      }
+      _requestInitialCenter(loc);
     });
 
     // Read existing location if init() already completed
@@ -363,17 +375,25 @@ class MapScreenController extends ChangeNotifier {
       );
       _safeNotify();
       _scheduleDistrictRoadLookup(existing);
-      if (_isInTaiwanBounds(existing)) {
-        centerRequest.value = existing;
-      }
+      _requestInitialCenter(existing);
     }
+  }
+
+  void _requestInitialCenter(LatLng loc) {
+    if (_initialFixCentered || !_isInTaiwanBounds(loc)) return;
+    _initialFixCentered = true;
+    centerRequest.value = MapCenterRequest(
+      location: loc,
+      zoom: 15.0,
+      resetRotation: true,
+    );
   }
 
   /// widget 端 FAB「定位」按鈕呼叫；MapView 訂閱 `centerRequest` 完成 camera move。
   bool requestCenterOnUser() {
     final s = _selfLocation;
     if (s == null) return false;
-    centerRequest.value = s.location;
+    centerRequest.value = MapCenterRequest(location: s.location);
     return true;
   }
 
@@ -958,4 +978,3 @@ class MapScreenController extends ChangeNotifier {
     super.dispose();
   }
 }
-

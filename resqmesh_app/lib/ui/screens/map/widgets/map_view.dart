@@ -105,8 +105,8 @@ class _MapViewState extends State<MapView> {
   }
 
   void _onCenterRequest() {
-    final loc = widget.controller.centerRequest.value;
-    if (loc == null) return;
+    final request = widget.controller.centerRequest.value;
+    if (request == null) return;
     if (!_ready || !mounted) {
       // 還沒 ready，延後到 ready 後再取 value 跑 move。避免在 map 未掛載前
       // 操作 camera（已知 timing 風險）。
@@ -120,14 +120,19 @@ class _MapViewState extends State<MapView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_ready) return;
       try {
-        _flutterMapController.moveAndRotate(loc, 15.0, 0.0);
+        final zoom = request.zoom ?? _flutterMapController.camera.zoom;
+        if (request.resetRotation) {
+          _flutterMapController.moveAndRotate(request.location, zoom, 0.0);
+        } else {
+          _flutterMapController.move(request.location, zoom);
+        }
       } catch (e) {
         // 安全網：偶發在熱重啟 / 快速 dispose / 還沒首次 layout 完成。
         debugPrint('[MapView] moveAndRotate skipped: $e');
         return;
       }
       // 消費掉，避免重複觸發
-      if (widget.controller.centerRequest.value == loc) {
+      if (widget.controller.centerRequest.value == request) {
         widget.controller.centerRequest.value = null;
       }
     });
