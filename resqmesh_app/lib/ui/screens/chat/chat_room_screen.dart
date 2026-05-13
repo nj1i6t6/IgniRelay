@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:ignirelay_app/app/controllers/event_stream.dart';
 import 'package:ignirelay_app/app/geo/admin_name_resolver.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
 import 'package:ignirelay_app/app/services/room_display_name_resolver.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
-import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
@@ -33,7 +34,6 @@ class ChatRoomScreen extends StatefulWidget {
 }
 
 class _ChatRoomScreenState extends State<ChatRoomScreen> {
-  final ChatService _chatService = ChatService();
   final RoomDisplayNameResolver _nameResolver = RoomDisplayNameResolver();
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -43,7 +43,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   int _cooldownRemaining = 0;
   String? _myPubKeyHex;
   String? _replyToEventId;
-  StreamSubscription<MeshDataReceived>? _meshSub;
+  StreamSubscription? _meshSub;
   String? _displayRoomName;
   Locale? _locale;
 
@@ -61,6 +61,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     if (_locale != locale) {
       _locale = locale;
       _resolveDisplayName();
+    }
+    if (_meshSub == null) {
+      _listenForNewMessages();
     }
   }
 
@@ -81,13 +84,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   Future<void> _init() async {
     _myPubKeyHex = await IdentityManager().getPublicKeyHex();
     await _loadMessages();
-    await _chatService.markAsRead(widget.roomId);
+    await context.read<ChatService>().markAsRead(widget.roomId);
     _startCooldownTimer();
-    _listenForNewMessages();
   }
 
   void _listenForNewMessages() {
-    _meshSub = MeshEventHandler().events.listen((_) {
+    _meshSub = context.read<EventStream>().rawEvents.listen((_) {
       _loadMessages();
     });
   }
@@ -96,7 +98,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     _cooldownTimer?.cancel();
     _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      final remaining = _chatService.getRemainingCooldown(
+      final remaining = context.read<ChatService>().getRemainingCooldown(
         widget.roomId,
         rateLimitSeconds: widget.rateLimitSeconds,
       );
@@ -108,7 +110,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
 
   Future<void> _loadMessages() async {
     try {
-      final msgs = await _chatService.getMessages(widget.roomId);
+      final msgs = await context.read<ChatService>().getMessages(widget.roomId);
       if (mounted) {
         setState(() {
           _messages = msgs.reversed.toList(); // oldest first for display
@@ -124,7 +126,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     final text = _inputController.text.trim();
     if (text.isEmpty) return;
 
-    final success = await _chatService.sendMessage(
+    final success = await context.read<ChatService>().sendMessage(
       roomId: widget.roomId,
       roomType: widget.roomType,
       content: text,
@@ -186,7 +188,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   @override
   void dispose() {
     // 離開聊天室時標記已讀，避免自己發的訊息產生紅點
-    _chatService.markAsRead(widget.roomId);
+    context.read<ChatService>().markAsRead(widget.roomId);
     _cooldownTimer?.cancel();
     _meshSub?.cancel();
     _inputController.dispose();

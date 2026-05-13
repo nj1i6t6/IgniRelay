@@ -4,8 +4,9 @@ import 'dart:math';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ignirelay_app/app/db/database_helper.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:provider/provider.dart';
+import 'package:ignirelay_app/app/controllers/event_publisher.dart';
+import 'package:ignirelay_app/app/services/negotiation_repo.dart';
 import 'package:ignirelay_app/app/controllers/handoff_controller.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
@@ -42,7 +43,6 @@ class PhysicalHandoffScreen extends StatefulWidget {
 }
 
 class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
-  final _eventManager = EventManager();
   final _pinCtrl = TextEditingController();
 
   late final String _pin;
@@ -82,21 +82,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     List<int> requesterPubKey = const [];
     double deliveredQty = 0;
     try {
-      final db = await DatabaseHelper().database;
-      final rows = await db.query(
-        'Match_Negotiations',
-        where: 'negotiation_id = ?',
-        whereArgs: [widget.negotiationId],
-        limit: 1,
-      );
-      if (rows.isNotEmpty) {
-        final row = rows.first;
+      final row = await NegotiationRepo().getById(widget.negotiationId);
+      if (row != null) {
         final pBlob = row['provider_pub_key'];
         if (pBlob is Uint8List) providerPubKey = pBlob.toList();
         final rBlob = row['requester_pub_key'];
         if (rBlob is Uint8List) requesterPubKey = rBlob.toList();
-        // actual_delivered_qty 可能是 null（剛進交接）→ 用 agreed_qty 退回；
-        // 兩者皆 null → offered_qty。
         deliveredQty =
             (row['actual_delivered_qty'] as num?)?.toDouble() ??
                 (row['agreed_qty'] as num?)?.toDouble() ??
@@ -106,7 +97,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     } catch (e) {
       debugPrint('[Handoff] negotiation lookup failed: $e — fallback to empties');
     }
-    await _eventManager.publishHandshakeComplete(
+    await context.read<EventPublisher>().publishHandshakeComplete(
       negotiationId: widget.negotiationId,
       resourceId: widget.resourceId,
       requestId: widget.requestId ?? '',
@@ -134,12 +125,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
   /// Provider 端：在 GATT Server 上開啟交接廣播
   Future<void> _startBleHandoffAdvertising() async {
     try {
-      await HandoffController.instance.startAdvertising(
+      await context.read<HandoffController>().startAdvertising(
         resourceId: widget.resourceId,
         pinHash: _pinHash,
       );
       // 監聽來自 Requester 的 BLE 驗證結果
-      _handoffSub = HandoffController.instance.events.listen((event) {
+      _handoffSub = context.read<HandoffController>().events.listen((event) {
         if (event['resourceId'] == widget.resourceId &&
             event['success'] == true) {
           _onBleVerificationSuccess();
@@ -157,13 +148,13 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     setState(() => _handoffComplete = true);
     _autoRevertTimer?.cancel();
     _handoffSub?.cancel();
-    HandoffController.instance.stopAdvertising();
+    context.read<HandoffController>().stopAdvertising();
   }
 
   void _startAutoRevertTimer() {
     _autoRevertTimer = Timer(_pendingTimeout, () async {
       if (!_handoffComplete && mounted) {
-        await _eventManager.publishMatchCancel(
+        await context.read<EventPublisher>().publishMatchCancel(
           negotiationId: widget.negotiationId,
           resourceId: widget.resourceId,
           requestId: widget.requestId ?? '',
@@ -183,7 +174,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
         widget.providerDeviceId!.isNotEmpty) {
       setState(() => _waitingForBle = true);
       try {
-        final success = await HandoffController.instance.sendPin(
+        final success = await context.read<HandoffController>().sendPin(
           deviceId: widget.providerDeviceId!,
           resourceId: widget.resourceId,
           pin: entered,
@@ -229,7 +220,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     _totalWrongAttempts++;
 
     if (_totalWrongAttempts >= 6) {
-      _eventManager.publishMatchCancel(
+      context.read<EventPublisher>().publishMatchCancel(
         negotiationId: widget.negotiationId,
         resourceId: widget.resourceId,
         requestId: widget.requestId ?? '',
@@ -462,21 +453,12 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
   /// DROP_OFF 完成時呼叫 publishHandshakeComplete
   Future<void> _completeDropOff() async {
     HapticFeedback.heavyImpact();
-    // Stage 6：DROP_OFF 也走同一條 negotiation lookup，但 method 強制 DROP_OFF。
-    // 為避免 helper 內鎖死 widget.method，這裡先讀資料，再 override method。
     List<int> providerPubKey = const [];
     List<int> requesterPubKey = const [];
     double deliveredQty = 0;
     try {
-      final db = await DatabaseHelper().database;
-      final rows = await db.query(
-        'Match_Negotiations',
-        where: 'negotiation_id = ?',
-        whereArgs: [widget.negotiationId],
-        limit: 1,
-      );
-      if (rows.isNotEmpty) {
-        final row = rows.first;
+      final row = await NegotiationRepo().getById(widget.negotiationId);
+      if (row != null) {
         final pBlob = row['provider_pub_key'];
         if (pBlob is Uint8List) providerPubKey = pBlob.toList();
         final rBlob = row['requester_pub_key'];
@@ -490,7 +472,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     } catch (e) {
       debugPrint('[Handoff] DROP_OFF negotiation lookup failed: $e');
     }
-    await _eventManager.publishHandshakeComplete(
+    await context.read<EventPublisher>().publishHandshakeComplete(
       negotiationId: widget.negotiationId,
       resourceId: widget.resourceId,
       requestId: widget.requestId ?? '',
@@ -771,7 +753,7 @@ class _PhysicalHandoffScreenState extends State<PhysicalHandoffScreen> {
     _handoffSub?.cancel();
     _pinCtrl.dispose();
     if (widget.role == HandoffRole.provider && widget.method != 'DROP_OFF') {
-      HandoffController.instance.stopAdvertising();
+      context.read<HandoffController>().stopAdvertising();
     }
     super.dispose();
   }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
-import 'package:ignirelay_app/app/mesh/poi_query.dart';
+import 'package:ignirelay_app/app/map/poi_query.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 

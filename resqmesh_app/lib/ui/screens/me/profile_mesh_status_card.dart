@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
@@ -41,7 +42,7 @@ class _ProfileMeshStatusCardState extends State<ProfileMeshStatusCard> {
 
   Future<void> _refresh() async {
     try {
-      final b = await DeviceInfoController.instance.batteryLevel();
+      final b = await context.read<DeviceInfoController>().batteryLevel();
       if (!mounted) return;
       setState(() => _battery = b);
     } catch (_) {}

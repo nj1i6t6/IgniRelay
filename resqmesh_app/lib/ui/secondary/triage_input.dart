@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
-import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/services/profile_repo.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/widgets/igni_button.dart';
@@ -32,16 +33,20 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
   bool _isHolding = false;
   bool _attachMedicalCard = true;
   bool _hasMedicalCard = false;
+  bool _medicalCardChecked = false;
 
   @override
-  void initState() {
-    super.initState();
-    _checkMedicalCard();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_medicalCardChecked) {
+      _medicalCardChecked = true;
+      _checkMedicalCard();
+    }
   }
 
   Future<void> _checkMedicalCard() async {
     final pubKey = await IdentityManager().getPublicKeyBytes();
-    final json = await DatabaseHelper().getMedicalCard(pubKey);
+    final json = await context.read<ProfileRepo>().getMedicalCard(pubKey);
     if (mounted) {
       setState(() {
         _hasMedicalCard = json != null && json.isNotEmpty;

@@ -10,10 +10,11 @@ import 'package:mbtiles/mbtiles.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_mbtiles/vector_map_tiles_mbtiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
-import 'package:ignirelay_app/app/mesh/mbtiles_loader.dart';
-import 'package:ignirelay_app/app/db/database_helper.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart';
-import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
+import 'package:ignirelay_app/app/map/mbtiles_loader.dart';
+import 'package:provider/provider.dart';
+import 'package:ignirelay_app/app/controllers/event_publisher.dart';
+import 'package:ignirelay_app/app/controllers/event_stream.dart';
+import 'package:ignirelay_app/app/services/negotiation_repo.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/services/match_service.dart';
 import 'package:ignirelay_app/ui/secondary/physical_handoff.dart';
@@ -34,9 +35,9 @@ class NavigationScreen extends StatefulWidget {
 }
 
 class _NavigationScreenState extends State<NavigationScreen> {
-  final _location = LocationService();
   final _mapController = MapController();
-  final _eventManager = EventManager();
+  bool _eventStreamSubscribed = false;
+  bool _locationInitialized = false;
 
   // MBTiles 離線地圖
   MbTiles? _mbTiles;
@@ -75,28 +76,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
   @override
   void initState() {
     super.initState();
-    _myLocation = _location.currentLocation;
     _startBleScan();
     _loadPeerLocation();
-    // 每 3 秒刷新位置 + 發送位置同步
-    _locationRefresh = Timer.periodic(const Duration(seconds: 3), (_) {
-      final loc = _location.currentLocation;
-      if (loc != null && mounted) {
-        setState(() => _myLocation = loc);
-        // 背景發送位置更新（內部有 30s 節流）
-        _eventManager.publishLocationUpdate(
-          negotiationId: widget.negotiationId,
-          lat: loc.latitude,
-          lng: loc.longitude,
-        );
-      }
-      // 讀取對方最新位置
-      _loadPeerLocation();
-    });
-    // 監聽 Mesh 事件，即時更新對方位置
-    _meshEventSub = MeshEventHandler().events.listen((_) {
-      _loadPeerLocation();
-    });
     // 監聽 Negotiation 事件（取消 / 完成）
     _negotiationSub = NegotiationManager().events.listen((event) {
       if (event is NegotiationCancelled && event.negotiationId == widget.negotiationId) {
@@ -133,14 +114,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   Future<void> _loadPeerLocation() async {
     try {
-      final db = await DatabaseHelper().database;
-      final rows = await db.query('Match_Negotiations',
-          where: "negotiation_id = ? AND status IN ('ACCEPTED', 'NAVIGATING')",
-          whereArgs: [widget.negotiationId],
-          limit: 1);
-      if (rows.isEmpty || !mounted) return;
-
-      final session = rows.first;
+      final session = await NegotiationRepo().getById(widget.negotiationId);
+      if (session == null || !mounted) return;
+      final status = session['status'] as String?;
+      if (status != 'ACCEPTED' && status != 'NAVIGATING') return;
       // 判斷自己是 provider 還是 requester，讀對方的位置
       // （myLoc 目前未用於 peer 推算；保留 deliveryMode 判斷即可）
       final providerLat = (session['provider_lat'] as num?)?.toDouble();
@@ -245,7 +222,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   Future<void> _startBleScan() async {
     try {
-      final btOn = await BleScanController.instance.isBluetoothEnabled();
+      final btOn = await context.read<BleScanController>().isBluetoothEnabled();
       if (!btOn) {
         debugPrint('[Navigation] BLE 未開啟');
         return;
@@ -265,10 +242,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   Future<void> _performScan() async {
     try {
-      await BleScanController.instance.startScan();
+      await context.read<BleScanController>().startScan();
 
       _bleScanSub?.cancel();
-      _bleScanSub = BleScanController.instance.rawEventStream.listen((event) {
+      _bleScanSub = context.read<BleScanController>().rawEventStream.listen((event) {
         if (event is Map && event['type'] == 'nordic_found' && mounted) {
           final rssi = event['rssi'] as int? ?? -100;
           // Stage 6-fix：把 peer 的 deviceId 留下，等到使用者按「開始交接」時
@@ -288,7 +265,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
       // 8 秒後停止本輪掃描
       Future.delayed(const Duration(seconds: 8), () {
-        if (_scanning) BleScanController.instance.stopScan();
+        if (_scanning) context.read<BleScanController>().stopScan();
       });
     } catch (e) {
       debugPrint('[Navigation] BLE scan error: $e');
@@ -300,7 +277,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _scanTimer?.cancel();
     _bleScanSub?.cancel();
     try {
-      BleScanController.instance.stopScan();
+      context.read<BleScanController>().stopScan();
     } catch (_) {}
   }
 
@@ -708,6 +685,29 @@ class _NavigationScreenState extends State<NavigationScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (!_locationInitialized) {
+      _locationInitialized = true;
+      _myLocation = context.read<LocationService>().currentLocation;
+      // 每 3 秒刷新位置 + 發送位置同步
+      _locationRefresh = Timer.periodic(const Duration(seconds: 3), (_) {
+        final loc = context.read<LocationService>().currentLocation;
+        if (loc != null && mounted) {
+          setState(() => _myLocation = loc);
+          context.read<EventPublisher>().publishLocationUpdate(
+            negotiationId: widget.negotiationId,
+            lat: loc.latitude,
+            lng: loc.longitude,
+          );
+        }
+        _loadPeerLocation();
+      });
+    }
+    if (!_eventStreamSubscribed) {
+      _eventStreamSubscribed = true;
+      _meshEventSub = context.read<EventStream>().rawEvents.listen((_) {
+        _loadPeerLocation();
+      });
+    }
     // Phase 4/5：MBTiles 初始化需要 UI locale + brightness。Localizations.localeOf
     // 與 Theme.of(context).brightness 在 initState 時可能不安全；統一在這裡觸發，
     // 並用旗標保證只跑一次。

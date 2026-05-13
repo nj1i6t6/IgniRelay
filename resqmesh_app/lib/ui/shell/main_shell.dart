@@ -4,11 +4,11 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
-import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:provider/provider.dart';
+import 'package:ignirelay_app/app/controllers/event_stream.dart';
+import 'package:ignirelay_app/app/services/event_decoder.dart';
+import 'package:ignirelay_app/app/services/event_store.dart';
 import 'package:ignirelay_app/app/emergency/emergency_mode_controller.dart';
-import 'package:ignirelay_app/app/mesh/event_types.dart';
-import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
-import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 import 'package:ignirelay_app/ui/screens/chat/chat_list_screen.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
@@ -43,6 +43,7 @@ class _MainShellState extends State<MainShell> {
   final Set<String> _alertedEventIds = <String>{};
   static const int _kAlertedIdsCap = 256;
   Timer? _nearbyRedClear;
+  bool _eventStreamSubscribed = false;
 
   /// 記錄一個 event id 已 alert 過；若超過上限則丟掉最早的，避免無界成長。
   void _markAlerted(String id) {
@@ -63,7 +64,15 @@ class _MainShellState extends State<MainShell> {
       MatchScreen(),
       IgniProfileScreen(),
     ];
-    _listenForSosAlerts();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_eventStreamSubscribed) {
+      _eventStreamSubscribed = true;
+      _listenForSosAlerts();
+    }
   }
 
   @override
@@ -74,7 +83,7 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _listenForSosAlerts() {
-    _bleSub = MeshEventHandler().events.listen((event) {
+    _bleSub = context.read<EventStream>().rawEvents.listen((event) {
       if (!mounted) return;
       _checkAndAlertSos(event.data, event.sourceNodeId);
       _checkAndAlertMatch();
@@ -82,18 +91,10 @@ class _MainShellState extends State<MainShell> {
   }
 
   Future<void> _checkAndAlertSos(List<int> data, String deviceId) async {
-    final db = await DatabaseHelper().database;
-    final cutoff = DateTime.now().millisecondsSinceEpoch - 60000;
-    // SOS 警示只看 requestBroadcast：urgency=2/3 也會被 matchCancel 用到
-    // （見 EventManager.publishMatchCancel: urgency=2），那種 payload 是
-    // MatchCancelData 不該觸發 user-facing SOS 警告。改以 event_type 收緊。
-    final recentSos = await db.query(
-      'Event_Logs',
-      where: 'event_type = ? AND urgency >= 2 AND hlc_timestamp > ?',
-      whereArgs: [EventType.requestBroadcast, cutoff],
-      orderBy: 'hlc_timestamp DESC',
-      limit: 5,
-    );
+    final eventStore = context.read<EventStore>();
+    final decoder = context.read<EventDecoder>();
+    final recentSos = await eventStore.queryRecentSos(
+        window: const Duration(seconds: 60), minUrgency: 2);
 
     for (final evt in recentSos) {
       final eventId = evt['event_id'] as String? ?? '';
@@ -103,16 +104,13 @@ class _MainShellState extends State<MainShell> {
       final urgency = (evt['urgency'] as int?) ?? 0;
       final payload = evt['payload'] as Uint8List?;
       String desc = '';
-      // requestBroadcast 的 payload 一定是 RequestData（見 publishEvent
-      // L171），這裡可以直接 .fromBuffer。解析失敗代表 payload 損毀或
-      // schema 不一致 — 用 debugPrint 留紀錄，但不擋 SOS UI。
       if (payload != null && payload.isNotEmpty) {
         try {
-          final rd = pb.RequestData.fromBuffer(payload);
-          desc = rd.description;
+          final rd = decoder.decodeRequestData(payload);
+          desc = rd?.note ?? '';
           if (desc.length > 80) desc = '${desc.substring(0, 80)}...';
         } catch (e) {
-          debugPrint('[SOS] RequestData.fromBuffer failed for $eventId: $e');
+          debugPrint('[SOS] RequestData decode failed for $eventId: $e');
         }
       }
 
@@ -128,15 +126,16 @@ class _MainShellState extends State<MainShell> {
   }
 
   Future<void> _checkAndAlertMatch() async {
-    final db = await DatabaseHelper().database;
+    final eventStore = context.read<EventStore>();
+    final decoder = context.read<EventDecoder>();
     final cutoff = DateTime.now().millisecondsSinceEpoch - 60000;
-    final recentMatch = await db.query(
-      'Event_Logs',
-      where: '(event_type = 2 OR event_type = 15) AND hlc_timestamp > ?',
-      whereArgs: [cutoff],
-      orderBy: 'hlc_timestamp DESC',
-      limit: 5,
-    );
+    final offers = await eventStore.queryByType(2, limit: 5);
+    final requests = await eventStore.queryByType(15, limit: 5);
+    final recentMatch = [...offers, ...requests]
+        .where((e) => (e['hlc_timestamp'] as int? ?? 0) > cutoff)
+        .toList()
+      ..sort((a, b) => (b['hlc_timestamp'] as int? ?? 0).compareTo(a['hlc_timestamp'] as int? ?? 0));
+    if (recentMatch.length > 5) recentMatch.length = 5;
 
     final myPubKey = await IdentityManager().getPublicKeyBytes();
 
@@ -151,11 +150,11 @@ class _MainShellState extends State<MainShell> {
       try {
         List<int> targetPubKey = [];
         if (eventType == 2) {
-          final data = pb.MatchOfferData.fromBuffer(payload);
-          targetPubKey = data.requesterPubKey;
+          final data = decoder.decodeMatchOfferData(payload);
+          targetPubKey = data?.requesterPubKey ?? [];
         } else if (eventType == 15) {
-          final data = pb.MatchRequestData.fromBuffer(payload);
-          targetPubKey = data.providerPubKey;
+          final data = decoder.decodeMatchRequestData(payload);
+          targetPubKey = data?.providerPubKey ?? [];
         }
         if (targetPubKey.isEmpty) continue;
         bool isMe = targetPubKey.length == myPubKey.length;
@@ -179,10 +178,10 @@ class _MainShellState extends State<MainShell> {
 
   /// 觸發附近紅色事件的急難模式；2 分鐘後自動解除。
   void _triggerNearbyRed() {
-    EmergencyModeController.instance.set(EmergencyTrigger.nearbyRed, true);
+    context.read<EmergencyModeController>().set(EmergencyTrigger.nearbyRed, true);
     _nearbyRedClear?.cancel();
     _nearbyRedClear = Timer(const Duration(minutes: 2), () {
-      EmergencyModeController.instance
+      context.read<EmergencyModeController>()
           .set(EmergencyTrigger.nearbyRed, false);
     });
   }

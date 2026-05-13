@@ -2,10 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
-import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/services/profile_repo.dart';
 import 'package:ignirelay_app/l10n/generated/app_localizations.dart';
 import 'package:ignirelay_app/main.dart';
 import 'package:ignirelay_app/ui/secondary/battery_optimization_guide.dart';
@@ -39,15 +40,14 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
   bool get wantKeepAlive => true;
 
   final _identity = IdentityManager();
-  final _db = DatabaseHelper();
   int _level = 0;
   String _pubKeyHex = '';
   String _nickname = '';
   bool _hasMedicalCard = false;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     _load();
   }
 
@@ -56,7 +56,7 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
     final hex =
         pubKey.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     final prefs = await SharedPreferences.getInstance();
-    final mcJson = await _db.getMedicalCard(pubKey);
+    final mcJson = await context.read<ProfileRepo>().getMedicalCard(pubKey);
     if (!mounted) return;
     setState(() {
       _level = _identity.getIdentityLevel();

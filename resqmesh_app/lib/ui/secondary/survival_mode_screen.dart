@@ -3,16 +3,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
+import 'package:provider/provider.dart';
 import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
 import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
-// Stage 4a-fix：透過 controller 取用 transport，UI 層不直接依賴
-// platform 層；TransportState / TransportStats 由 mesh_runtime_controller
-// 重新導出。
 import 'package:ignirelay_app/app/controllers/mesh_runtime_controller.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/app/controllers/event_stream.dart';
+import 'package:ignirelay_app/app/services/event_store.dart';
+import 'package:ignirelay_app/app/services/profile_repo.dart';
 import 'package:ignirelay_app/app/mesh/tier_manager.dart';
-import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 class SurvivalModeScreen extends StatefulWidget {
@@ -44,27 +42,37 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   final List<String> _gattServerLogs = [];
   StreamSubscription? _gattSub;
 
-  final MeshRuntimeController _mesh = MeshRuntimeController.instance;
+  MeshRuntimeController get _mesh => context.read<MeshRuntimeController>();
   StreamSubscription? _bleSub;
   StreamSubscription<TransportState>? _transportStateSub;
   Timer? _statsTimer;
 
+  bool _initialized = false;
+
   @override
   void initState() {
     super.initState();
-    _checkCapabilities();
-    _loadStats();
-    DatabaseHelper().purgeDebugLogs(); // 清理 24h 前的日誌
-    _startMeshListening();
-    _startGattListener();
     _statsTimer =
         Timer.periodic(const Duration(seconds: 3), (_) => _refreshDebug());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      _initialized = true;
+      _checkCapabilities();
+      _loadStats();
+      context.read<ProfileRepo>().purgeDebugLogs();
+      _startMeshListening();
+      _startGattListener();
+    }
   }
 
   Future<void> _checkCapabilities() async {
     int battery = -1;
     try {
-      battery = await DeviceInfoController.instance.batteryLevel();
+      battery = await context.read<DeviceInfoController>().batteryLevel();
     } catch (_) {
       battery = -1;
     }
@@ -79,7 +87,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   }
 
   Future<void> _loadStats() async {
-    final events = await EventManager().getRecentEvents(limit: 50);
+    final events = await context.read<EventStore>().queryRecent(limit: 50);
     final recentLabels = events.take(5).map((e) {
       final urgency = e['urgency'] as int? ?? 0;
       final labels = ['INFO', 'RESOURCE', 'SOS_YELLOW', 'SOS_RED'];
@@ -108,7 +116,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       });
     });
 
-    _bleSub = MeshEventHandler().events.listen((event) {
+    _bleSub = context.read<EventStream>().rawEvents.listen((event) {
       if (!mounted) return;
       setState(() {
         _bleConnectedCount++;
@@ -121,7 +129,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   void _startGattListener() {
     // 監聽 Kotlin GATT Server 透過 EventChannel 送來的原始資料
     // 使用 NativeBridge 共享 stream，避免重複 receiveBroadcastStream() 衝突
-    _gattSub = BleScanController.instance.rawEventStream.listen((event) {
+    _gattSub = context.read<BleScanController>().rawEventStream.listen((event) {
       if (!mounted) return;
       if (event is Map) {
         final type = event['type'];
@@ -140,7 +148,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
           _gattServerLogs.add(log);
           if (_gattServerLogs.length > 30) _gattServerLogs.removeAt(0);
         });
-        DatabaseHelper().writeDebugLog('GATT', log);
+        context.read<ProfileRepo>().writeDebugLog('GATT', log);
       }
     }, onError: (e) {
       debugPrint('[GATT EventChannel] error: $e');
@@ -155,20 +163,20 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   Future<void> _toggleDataMule() async {
     if (_isDataMule) {
       try {
-        await MeshRuntimeController.instance.stopAllServices();
+        await _mesh.stopAllServices();
       } catch (_) {}
       setState(() => _isDataMule = false);
     } else {
       // 確保前景服務先啟動，避免 race condition 導致閃退
       try {
-        await MeshRuntimeController.instance.startForegroundService();
+        await _mesh.startForegroundService();
       } catch (_) {}
 
       // 帶重試機制（首次安裝後服務可能需要時間綁定）
       bool success = false;
       for (int attempt = 0; attempt < 3; attempt++) {
         try {
-          success = await MeshRuntimeController.instance.startDataMuleMode();
+          success = await _mesh.startDataMuleMode();
           if (success) break;
         } catch (_) {
           success = false;
@@ -254,7 +262,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       // 裝置資訊（方便跨設備比對日誌）
       String manufacturer = 'unknown';
       try {
-        manufacturer = await DeviceInfoController.instance.manufacturer();
+        manufacturer = await context.read<DeviceInfoController>().manufacturer();
       } catch (_) {}
 
       buf.writeln('--- Device Info ---');
@@ -289,7 +297,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       buf.writeln('');
 
       // 從 DB 匯出全量持久化日誌（不受記憶體 buffer 80 筆限制）
-      final dbLogs = await DatabaseHelper().exportDebugLogs();
+      final dbLogs = await context.read<ProfileRepo>().exportDebugLogs();
       buf.writeln('--- Persistent DB Logs (${dbLogs.length}) ---');
       for (final row in dbLogs) {
         final ts = row['timestamp'] as int? ?? 0;
@@ -308,8 +316,8 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       }
       buf.writeln('');
 
-      buf.writeln('--- In-Memory MeshEventHandler Logs (${MeshEventHandler().debugLogs.length}) ---');
-      for (final l in MeshEventHandler().debugLogs) {
+      buf.writeln('--- In-Memory EventStream Logs (${context.read<EventStream>().debugLogs.length}) ---');
+      for (final l in context.read<EventStream>().debugLogs) {
         buf.writeln(l);
       }
 

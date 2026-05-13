@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:provider/provider.dart';
+import 'package:ignirelay_app/app/controllers/event_publisher.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 
@@ -32,7 +33,7 @@ class _HazardDialogState extends State<HazardDialog> {
   Future<void> _publish() async {
     setState(() => _publishing = true);
     try {
-      await EventManager().publishHazard(
+      await context.read<EventPublisher>().publishHazard(
         type: _selectedType,
         severity: _severity.round(),
         lat: widget.lat,

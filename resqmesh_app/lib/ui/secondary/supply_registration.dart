@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart';
-import 'package:ignirelay_app/app/mesh/geo_context_resolver.dart';
+import 'package:provider/provider.dart';
+import 'package:ignirelay_app/app/controllers/event_publisher.dart';
+import 'package:ignirelay_app/app/mesh/event_manager.dart' show RateLimitException;
+import 'package:ignirelay_app/app/geo/geo_context_resolver.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
@@ -21,7 +23,6 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _quantityCtrl = TextEditingController(text: '1');
   final _descCtrl = TextEditingController();
-  final _eventManager = EventManager();
   final _geoResolver = GeoContextResolver();
 
   // ── 多層級物資分類 ──
@@ -71,7 +72,7 @@ class _SupplyRegistrationScreenState extends State<SupplyRegistrationScreen> {
     setState(() => _publishing = true);
 
     try {
-      await _eventManager.publishSupply(
+      await context.read<EventPublisher>().publishSupply(
         resourceType: _fullResourceType,
         quantity: int.parse(_quantityCtrl.text),
         maxRangeMeters: _maxRange,

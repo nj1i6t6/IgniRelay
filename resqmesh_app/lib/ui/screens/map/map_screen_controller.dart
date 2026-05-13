@@ -47,12 +47,13 @@ import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_mbtiles/vector_map_tiles_mbtiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
-import 'package:ignirelay_app/app/db/database_helper.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/app/controllers/event_publisher.dart';
+import 'package:ignirelay_app/app/controllers/event_stream.dart';
+import 'package:ignirelay_app/app/services/event_store.dart';
+import 'package:ignirelay_app/app/mesh/event_manager.dart' show RateLimitException;
 import 'package:ignirelay_app/app/mesh/event_types.dart';
-import 'package:ignirelay_app/app/mesh/mbtiles_loader.dart';
-import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
-import 'package:ignirelay_app/app/mesh/poi_query.dart';
+import 'package:ignirelay_app/app/map/mbtiles_loader.dart';
+import 'package:ignirelay_app/app/map/poi_query.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 
 import 'package:ignirelay_app/ui/screens/map/models/map_action_results.dart';
@@ -76,12 +77,22 @@ class MapCenterRequest {
 }
 
 class MapScreenController extends ChangeNotifier {
-  MapScreenController() {
+  MapScreenController({
+    required EventPublisher eventPublisher,
+    required EventStream eventStream,
+    required EventStore eventStore,
+    required LocationService locationService,
+  })  : _eventPublisher = eventPublisher,
+        _eventStream = eventStream,
+        _eventStore = eventStore,
+        _locationService = locationService {
     _layerSettings.addListener(_onLayerSettingsChanged);
   }
 
-  // ── 服務依賴（測試時可注入；目前直接拿 singleton/實例）──
-  final EventManager _eventManager = EventManager();
+  final EventPublisher _eventPublisher;
+  final EventStream _eventStream;
+  final EventStore _eventStore;
+  final LocationService _locationService;
 
   // ── MBTiles / 渲染 ──
   MbTilesStateVm _mbTilesState = MbTilesStateVm.initial;
@@ -192,7 +203,7 @@ class MapScreenController extends ChangeNotifier {
       const Duration(seconds: 15),
       (_) => loadOverlays(),
     );
-    _meshEventSub = MeshEventHandler().events.listen((_) {
+    _meshEventSub = _eventStream.rawEvents.listen((_) {
       _meshDebounce?.cancel();
       _meshDebounce = Timer(const Duration(seconds: 2), () {
         if (_disposed) return;
@@ -203,7 +214,7 @@ class MapScreenController extends ChangeNotifier {
 
   Future<void> _initReporterHex() async {
     try {
-      final hex = await _eventManager.getReporterHex();
+      final hex = await _eventPublisher.getReporterHex();
       if (_disposed) return;
       _myReporterHex = hex;
       // 不 notify：reporterHex 只影響 hazard isMine 計算，下次 loadHazards
@@ -352,7 +363,7 @@ class MapScreenController extends ChangeNotifier {
   }
 
   Future<void> _initGPS() async {
-    final locService = LocationService();
+    final locService = _locationService;
 
     // Subscribe first — broadcast stream delivers future events only,
     // so an early subscribe catches the first add() even if init() hasn't
@@ -489,7 +500,7 @@ class MapScreenController extends ChangeNotifier {
       }
       return;
     }
-    final raw = await _eventManager.getActiveHazards();
+    final raw = await _eventPublisher.getActiveHazards();
     if (_disposed || gen != _overlayGen) return;
     final list = <HazardVm>[];
     for (final h in raw) {
@@ -521,16 +532,9 @@ class MapScreenController extends ChangeNotifier {
   }
 
   Future<void> _loadEventMarkers(int gen) async {
-    final db = await DatabaseHelper().database;
-    if (_disposed || gen != _overlayGen) return;
-    final cutoff = DateTime.now().millisecondsSinceEpoch - (24 * 3600 * 1000);
-    final rows = await db.query(
-      'Event_Logs',
-      where:
-          'hlc_timestamp > ? AND received_lat IS NOT NULL AND received_lng IS NOT NULL AND event_type != ?',
-      whereArgs: [cutoff, EventType.hazardMarker],
-      orderBy: 'urgency DESC, hlc_timestamp DESC',
+    final rows = await _eventStore.queryMarkersWithLocation(
       limit: 100,
+      excludeEventType: EventType.hazardMarker,
     );
     if (_disposed || gen != _overlayGen) return;
     final list = <EventVm>[];
@@ -787,7 +791,7 @@ class MapScreenController extends ChangeNotifier {
     try {
       // 確認既有 hazard 路徑（NearbyConflict 後 widget 二次呼叫）
       if (confirmExistingId != null) {
-        await _eventManager.confirmHazard(confirmExistingId);
+        await _eventPublisher.confirmHazard(confirmExistingId);
         exitMarking();
         unawaited(loadOverlays());
         return PublishHazardConfirmedExisting(typeKey: m.type);
@@ -795,7 +799,7 @@ class MapScreenController extends ChangeNotifier {
 
       // 編輯模式
       if (m.isEditing) {
-        await _eventManager.updateHazard(
+        await _eventPublisher.updateHazard(
           m.editingHazardId!,
           type: m.type,
           severity: m.severity.round(),
@@ -811,7 +815,7 @@ class MapScreenController extends ChangeNotifier {
 
       // 新建：先 nearby 檢查（widget 可選擇再呼叫一次帶 confirmExistingId）
       if (!skipNearbyCheck) {
-        final nearby = await _eventManager.findNearbyHazard(
+        final nearby = await _eventPublisher.findNearbyHazard(
           m.center!.latitude,
           m.center!.longitude,
           m.type,
@@ -831,7 +835,7 @@ class MapScreenController extends ChangeNotifier {
       }
 
       // 新建直接發布
-      await _eventManager.publishHazard(
+      await _eventPublisher.publishHazard(
         type: m.type,
         severity: m.severity.round(),
         lat: m.center!.latitude,
@@ -863,7 +867,7 @@ class MapScreenController extends ChangeNotifier {
 
   Future<ConfirmHazardOutcome> confirmHazard(HazardVm h) async {
     try {
-      await _eventManager.confirmHazard(h.id);
+      await _eventPublisher.confirmHazard(h.id);
       unawaited(loadOverlays());
       return ConfirmHazardSucceeded(
         newCount: h.confirmCount + 1,
@@ -876,7 +880,7 @@ class MapScreenController extends ChangeNotifier {
 
   Future<DeleteHazardOutcome> deleteHazard(String hazardId) async {
     try {
-      await _eventManager.deleteHazard(hazardId);
+      await _eventPublisher.deleteHazard(hazardId);
       unawaited(loadOverlays());
       return const DeleteHazardSucceeded();
     } catch (e) {
@@ -893,7 +897,7 @@ class MapScreenController extends ChangeNotifier {
   }) async {
     try {
       final loc = _selfLocation?.location;
-      final eventId = await _eventManager.publishEvent(
+      final eventId = await _eventPublisher.publishEvent(
         urgency: urgency,
         description: description,
         lat: loc?.latitude,
@@ -936,7 +940,7 @@ class MapScreenController extends ChangeNotifier {
     try {
       final desc = _sos.description;
       final loc = _selfLocation?.location;
-      await _eventManager.publishEvent(
+      await _eventPublisher.publishEvent(
         urgency: 0,
         description: '$descriptionPrefix$desc',
         lat: loc?.latitude,

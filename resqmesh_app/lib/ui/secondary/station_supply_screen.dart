@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
-import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:provider/provider.dart';
+import 'package:ignirelay_app/app/controllers/event_publisher.dart';
+import 'package:ignirelay_app/app/services/event_decoder.dart';
+import 'package:ignirelay_app/app/services/event_store.dart';
+import 'package:ignirelay_app/app/services/station_supply_repo.dart';
 import 'package:ignirelay_app/app/geo/village_geofence.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/app/mesh/event_manager.dart' show RateLimitException;
 import 'package:ignirelay_app/app/mesh/event_types.dart';
-import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
@@ -34,7 +37,6 @@ class StationSupplyScreen extends StatefulWidget {
 class _StationSupplyScreenState extends State<StationSupplyScreen>
     with SingleTickerProviderStateMixin {
   final _identity = IdentityManager();
-  final _dbHelper = DatabaseHelper();
 
   late TabController _tabController;
   bool _authorized = false;
@@ -62,39 +64,38 @@ class _StationSupplyScreenState extends State<StationSupplyScreen>
   }
 
   Future<void> _loadStationItems() async {
-    final db = await _dbHelper.database;
     final pubKeyBytes = await _identity.getPublicKeyBytes();
+    final eventStore = context.read<EventStore>();
+    final decoder = context.read<EventDecoder>();
+    final supplyRepo = context.read<StationSupplyRepo>();
 
-    // 查詢自己發布的 resourceRegister 事件
-    final rows = await db.query(
-      'Event_Logs',
-      where: 'sender_pub_key = ? AND event_type = ?',
-      whereArgs: [Uint8List.fromList(pubKeyBytes), EventType.resourceRegister],
-      orderBy: 'hlc_timestamp DESC',
-    );
+    final allRegisters = await eventStore.queryByType(EventType.resourceRegister);
+    final rows = allRegisters.where((row) {
+      final senderKey = row['sender_pub_key'] as Uint8List?;
+      if (senderKey == null || senderKey.length != pubKeyBytes.length) return false;
+      for (int i = 0; i < pubKeyBytes.length; i++) {
+        if (senderKey[i] != pubKeyBytes[i]) return false;
+      }
+      return true;
+    }).toList();
 
     final items = <_StationItem>[];
     for (final row in rows) {
       final payload = row['payload'] as Uint8List?;
       if (payload == null) continue;
       try {
-        final rd = pb.ResourceData.fromBuffer(payload);
-        // 用 description 欄位存放 JSON 元資料，判斷是否為據點物資
-        final meta = _StationMeta.tryParse(rd.description);
+        final rd = decoder.decodeResourceData(payload);
+        if (rd == null) continue;
+        final meta = _StationMeta.tryParse(rd.deliveryMode);
         if (meta == null || !meta.isStation) continue;
 
-        // 查詢此物資的額度使用統計
-        final quotas = await db.query(
-          'Station_Quotas',
-          where: 'station_resource_id = ?',
-          whereArgs: [rd.resourceId],
-        );
+        final quotas = await supplyRepo.queryStationQuotas(stationId: rd.resourceType);
 
         items.add(_StationItem(
           eventId: row['event_id'] as String,
-          resourceId: rd.resourceId,
+          resourceId: rd.resourceType,
           resourceType: rd.resourceType,
-          quantity: rd.quantity,
+          quantity: rd.quantity.toDouble(),
           meta: meta,
           quotaRows: quotas,
           hlcTimestamp: row['hlc_timestamp'] as int,
@@ -215,7 +216,6 @@ class _RegisterTabState extends State<_RegisterTab> {
   final _quantityCtrl = TextEditingController(text: '100');
   final _catLimitCtrl = TextEditingController(text: '5');
   final _totalLimitCtrl = TextEditingController(text: '10');
-  final _eventManager = EventManager();
 
   SupplyCategory? _selectedCategory;
   SupplySubCategory? _selectedSubCategory;
@@ -287,7 +287,7 @@ class _RegisterTabState extends State<_RegisterTab> {
             _visibilityMode == 'township' ? _selectedTowncode : null,
       );
 
-      await _eventManager.publishSupply(
+      await context.read<EventPublisher>().publishSupply(
         resourceType: _fullResourceType,
         quantity: int.parse(_quantityCtrl.text),
         maxRangeMeters: 50000, // 據點物資覆蓋範圍更大
@@ -1179,17 +1179,7 @@ class _StationItemCard extends StatelessWidget {
     if (!context.mounted) return;
 
     try {
-      final db = await DatabaseHelper().database;
-      final now = DateTime.now().millisecondsSinceEpoch;
-      await db.update(
-        'Station_Quotas',
-        {
-          'used_quantity': 0,
-          'last_reset_at': now,
-        },
-        where: 'station_resource_id = ?',
-        whereArgs: [item.resourceId],
-      );
+      await context.read<StationSupplyRepo>().resetStationUsage(item.resourceId);
       onRefresh();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1241,7 +1231,7 @@ class _StationItemCard extends StatelessWidget {
     if (!context.mounted) return;
 
     try {
-      await EventManager().cancelSupply(item.eventId);
+      await context.read<EventPublisher>().cancelSupply(item.eventId);
       onRefresh();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

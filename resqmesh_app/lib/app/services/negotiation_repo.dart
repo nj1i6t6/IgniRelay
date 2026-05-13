@@ -162,6 +162,36 @@ class NegotiationRepo {
     ''', [myPubKey, myPubKey]);
   }
 
+  Future<Map<String, dynamic>?> queryNegotiation(String negotiationId) async {
+    final db = await _database;
+    final rows = await db.query('Match_Negotiations',
+        where: 'negotiation_id = ?', whereArgs: [negotiationId]);
+    return rows.isNotEmpty ? rows.first : null;
+  }
+
+  Future<Map<String, dynamic>?> queryPeerLocationForNegotiation(
+      String negotiationId) async {
+    final db = await _database;
+    final rows = await db.query('Match_Negotiations',
+        columns: ['provider_lat', 'provider_lng', 'requester_lat', 'requester_lng'],
+        where: 'negotiation_id = ?',
+        whereArgs: [negotiationId]);
+    return rows.isNotEmpty ? rows.first : null;
+  }
+
+  Future<List<Map<String, dynamic>>> queryActiveNegotiations() async {
+    final db = await _database;
+    return db.query('Match_Negotiations',
+        where: "status IN ('PENDING', 'ACCEPTED', 'NAVIGATING')",
+        orderBy: 'updated_at DESC');
+  }
+
+  Future<List<Map<String, dynamic>>> queryByStatus(String status) async {
+    final db = await _database;
+    return db.query('Match_Negotiations',
+        where: 'status = ?', whereArgs: [status], orderBy: 'updated_at DESC');
+  }
+
   // ── Orphan_Events CRUD ──
 
   Future<void> insertOrphanEvent(

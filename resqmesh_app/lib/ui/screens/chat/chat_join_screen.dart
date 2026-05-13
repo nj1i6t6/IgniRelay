@@ -10,6 +10,7 @@ import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:provider/provider.dart';
 
 /// Screen for joining chat rooms via GPS auto-detect, manual location, or invite code.
 class ChatJoinScreen extends StatefulWidget {
@@ -20,7 +21,6 @@ class ChatJoinScreen extends StatefulWidget {
 }
 
 class _ChatJoinScreenState extends State<ChatJoinScreen> {
-  final ChatService _chatService = ChatService();
   final RoomDisplayNameResolver _nameResolver = RoomDisplayNameResolver();
   final TextEditingController _codeController = TextEditingController();
   bool _joining = false;
@@ -37,7 +37,8 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
     });
 
     try {
-      final locService = LocationService();
+      final chatService = context.read<ChatService>();
+      final locService = context.read<LocationService>();
       if (!locService.hasLocation) {
         for (int i = 0; i < 20; i++) {
           await Future.delayed(const Duration(milliseconds: 500));
@@ -62,7 +63,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
 
       setState(() => _statusMessage = context.l10n.chatJoinGpsQuerying);
 
-      final roomId = await _chatService.autoJoinVillageRoom();
+      final roomId = await chatService.autoJoinVillageRoom();
       if (roomId != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(context.l10n.chatJoinAutoSuccess)),
@@ -134,7 +135,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
   Future<void> _joinWithVillage(VillageInfo village) async {
     setState(() => _joining = true);
     try {
-      await _chatService.changeVillageRoom(
+      await context.read<ChatService>().changeVillageRoom(
         newVillageCode: village.villcode,
         countyName: village.countyName,
         townName: village.townName,
@@ -184,7 +185,7 @@ class _ChatJoinScreenState extends State<ChatJoinScreen> {
         roomId = code;
       }
 
-      await _chatService.joinRoom(
+      await context.read<ChatService>().joinRoom(
         roomId: roomId,
         roomName: roomId,
         roomType: 'custom',

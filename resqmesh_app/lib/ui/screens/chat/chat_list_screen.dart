@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import 'package:ignirelay_app/app/geo/admin_name_resolver.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
@@ -26,7 +27,6 @@ class ChatListScreen extends StatefulWidget {
 
 class _ChatListScreenState extends State<ChatListScreen>
     with AutomaticKeepAliveClientMixin {
-  final ChatService _chatService = ChatService();
   final RoomDisplayNameResolver _nameResolver = RoomDisplayNameResolver();
 
   List<_RoomTile> _tiles = [];
@@ -50,8 +50,9 @@ class _ChatListScreenState extends State<ChatListScreen>
     if (!_loading) setState(() => _loading = true);
     try {
       final locale = _locale ?? Localizations.localeOf(context);
+      final chatService = context.read<ChatService>();
       await AdminNameResolver().ensureLoaded();
-      final rooms = await _chatService.getJoinedRooms();
+      final rooms = await chatService.getJoinedRooms();
 
       // Batch resolve all display names before updating UI
       final resolvedNames = await Future.wait(
@@ -67,8 +68,8 @@ class _ChatListScreenState extends State<ChatListScreen>
       final roomMeta = await Future.wait(
         rooms.map((room) async {
           final roomId = room['room_id'] as String;
-          final unread = await _chatService.getUnreadCount(roomId);
-          final last = await _chatService.getLastMessage(roomId);
+          final unread = await chatService.getUnreadCount(roomId);
+          final last = await chatService.getLastMessage(roomId);
           return (unread: unread, last: last);
         }),
       );
@@ -104,7 +105,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   Future<void> _autoJoin() async {
-    final roomId = await _chatService.autoJoinVillageRoom();
+    final roomId = await context.read<ChatService>().autoJoinVillageRoom();
     if (!mounted) return;
     final s = context.l10n;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -157,7 +158,7 @@ class _ChatListScreenState extends State<ChatListScreen>
       ),
     );
     if (confirm == true) {
-      await _chatService.leaveRoom(t.roomId);
+      await context.read<ChatService>().leaveRoom(t.roomId);
       _loadRooms();
     }
   }

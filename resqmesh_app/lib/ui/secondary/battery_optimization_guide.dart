@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
@@ -23,7 +24,7 @@ class BatteryOptimizationGuide {
     if (alreadyDone) return true;
 
     // 檢查是否已經豁免
-    final exempt = await DeviceInfoController.instance.isBatteryOptimizationExempt();
+    final exempt = await context.read<DeviceInfoController>().isBatteryOptimizationExempt();
     if (exempt) {
       await prefs.setBool(_prefKey, true);
       return true;
@@ -89,7 +90,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
   }
 
   Future<void> _loadManufacturer() async {
-    final m = await DeviceInfoController.instance.manufacturer();
+    final m = await context.read<DeviceInfoController>().manufacturer();
     if (mounted) setState(() => _manufacturer = m);
   }
 
@@ -241,11 +242,11 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
             onPressed: _exemptDone
                 ? null
                 : () async {
-                    await DeviceInfoController.instance.requestBatteryOptimizationExemption();
+                    await context.read<DeviceInfoController>().requestBatteryOptimizationExemption();
                     // 等待用戶操作後回來
                     await Future.delayed(const Duration(seconds: 2));
                     final exempt =
-                        await DeviceInfoController.instance.isBatteryOptimizationExempt();
+                        await context.read<DeviceInfoController>().isBatteryOptimizationExempt();
                     if (mounted) {
                       setState(() => _exemptDone = exempt);
                     }
@@ -298,7 +299,7 @@ class _BatteryGuideDialogState extends State<_BatteryGuideDialog> {
             onPressed: _manufacturerDone
                 ? null
                 : () async {
-                    await DeviceInfoController.instance.openManufacturerPowerSettings();
+                    await context.read<DeviceInfoController>().openManufacturerPowerSettings();
                     if (mounted) {
                       setState(() => _manufacturerDone = true);
                     }

@@ -19,10 +19,21 @@ import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/geo/village_geofence.dart';
 import 'package:ignirelay_app/platform/mesh_transport.dart';
-import 'package:ignirelay_app/platform/transport_factory.dart';
+import 'package:ignirelay_app/app/mesh/transport_factory.dart';
 import 'package:ignirelay_app/platform/native_bridge.dart';
+import 'package:ignirelay_app/app/controllers/event_publisher.dart';
+import 'package:ignirelay_app/app/controllers/event_stream.dart';
+import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
+import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
+import 'package:ignirelay_app/app/controllers/handoff_controller.dart';
+import 'package:ignirelay_app/app/services/event_decoder.dart';
+import 'package:ignirelay_app/app/services/event_store.dart';
+import 'package:ignirelay_app/app/services/negotiation_repo.dart';
+import 'package:ignirelay_app/app/services/station_supply_repo.dart';
+import 'package:ignirelay_app/app/services/profile_repo.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
+import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
 import 'package:ignirelay_app/app/controllers/mesh_runtime_controller.dart';
 import 'package:ignirelay_app/app/crdt/hlc.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
@@ -154,8 +165,59 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
 
   @override
   Widget build(BuildContext context) {
-    return Provider<MeshTransport>.value(
-      value: widget.transport,
+    return MultiProvider(
+      providers: [
+        Provider<EventDecoder>(
+          create: (_) => EventDecoder(),
+        ),
+        Provider<EventPublisher>(
+          create: (_) => EventPublisher(eventManager: EventManager()),
+        ),
+        Provider<EventStore>(
+          create: (_) => EventStore(databaseHelper: DatabaseHelper()),
+        ),
+        Provider<StationSupplyRepo>(
+          create: (_) => StationSupplyRepo(databaseHelper: DatabaseHelper()),
+        ),
+        Provider<ProfileRepo>(
+          create: (_) => ProfileRepo(databaseHelper: DatabaseHelper()),
+        ),
+        Provider<NegotiationRepo>(
+          create: (_) => NegotiationRepo(),
+        ),
+        Provider<ChatService>(
+          create: (_) => ChatService(),
+        ),
+        Provider<LocationService>(
+          create: (_) => LocationService(),
+        ),
+        Provider<DeviceInfoController>(
+          create: (_) => DeviceInfoController.instance,
+        ),
+        Provider<BleScanController>(
+          create: (_) => BleScanController.instance,
+        ),
+        Provider<MeshRuntimeController>(
+          create: (_) => MeshRuntimeController.instance,
+        ),
+        Provider<EmergencyModeController>(
+          create: (_) => EmergencyModeController.instance,
+        ),
+        Provider<HandoffController>(
+          create: (_) => HandoffController.instance,
+        ),
+        Provider<EventStream>(
+          create: (context) => EventStream(
+            handler: MeshEventHandler(),
+            decoder: context.read<EventDecoder>(),
+            store: context.read<EventStore>(),
+          )..start(),
+          dispose: (_, stream) => stream.dispose(),
+        ),
+        Provider<MeshTransport>.value(
+          value: widget.transport,
+        ),
+      ],
       child: AnimatedBuilder(
         animation: EmergencyModeController.instance,
         builder: (context, _) {

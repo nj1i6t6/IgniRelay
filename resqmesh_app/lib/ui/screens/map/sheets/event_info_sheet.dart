@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
-import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
+import 'package:provider/provider.dart';
+import 'package:ignirelay_app/app/services/event_decoder.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
@@ -116,16 +117,20 @@ class _EventInfoSheetBody extends StatelessWidget {
     if (payload != null) {
       try {
         if (eventType == 0) {
-          final rd = pb.ResourceData.fromBuffer(payload);
-          payloadDesc = l.mapPayloadQtyUnit(
-              getLocalizedReadableName(rd.resourceType, context),
-              rd.quantity.toInt(),
-              rd.unit);
+          final rd = context.read<EventDecoder>().decodeResourceData(payload);
+          if (rd != null) {
+            payloadDesc = l.mapPayloadQtyUnit(
+                getLocalizedReadableName(rd.resourceType, context),
+                rd.quantity,
+                rd.unit);
+          }
         } else if (eventType == 1) {
-          final rd = pb.RequestData.fromBuffer(payload);
-          payloadDesc = l.mapPayloadQtyPcs(
-              getLocalizedReadableName(rd.resourceType, context),
-              rd.quantityNeeded.toInt());
+          final rd = context.read<EventDecoder>().decodeRequestData(payload);
+          if (rd != null) {
+            payloadDesc = l.mapPayloadQtyPcs(
+                getLocalizedReadableName(rd.resourceType, context),
+                rd.quantity);
+          }
         } else {
           payloadDesc = String.fromCharCodes(payload);
           if (payloadDesc.length > 100) {

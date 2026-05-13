@@ -20,7 +20,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' show TapPosition;
 import 'package:latlong2/latlong.dart';
+import 'package:provider/provider.dart';
 
+import 'package:ignirelay_app/app/controllers/event_publisher.dart';
+import 'package:ignirelay_app/app/controllers/event_stream.dart';
+import 'package:ignirelay_app/app/services/event_store.dart';
+import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
 import 'package:ignirelay_app/ui/screens/map/map_screen_controller.dart';
 import 'package:ignirelay_app/ui/screens/map/models/map_action_results.dart';
@@ -56,7 +61,8 @@ class _MapScreenState extends State<MapScreen>
   @override
   bool get wantKeepAlive => true;
 
-  late final MapScreenController _ctrl = MapScreenController();
+  late final MapScreenController _ctrl;
+  bool _ctrlInitialized = false;
   late final AnimationController _refreshSpinCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 800),
@@ -67,14 +73,18 @@ class _MapScreenState extends State<MapScreen>
       GlobalKey<HazardReportFlowState>();
 
   @override
-  void initState() {
-    super.initState();
-    _ctrl.bootstrap();
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (!_ctrlInitialized) {
+      _ctrl = MapScreenController(
+        eventPublisher: context.read<EventPublisher>(),
+        eventStream: context.read<EventStream>(),
+        eventStore: context.read<EventStore>(),
+        locationService: context.read<LocationService>(),
+      );
+      _ctrlInitialized = true;
+      _ctrl.bootstrap();
+    }
     // Phase 4：地圖 label 依 UI locale 渲染；同時 plumb brightness 給 Phase 5。
     // 此 callback 在 Localizations / Theme inherited widget 變動時自動 fire，
     // controller 內部會 dedupe 同值（避免每次 build 都 rebuild theme）。

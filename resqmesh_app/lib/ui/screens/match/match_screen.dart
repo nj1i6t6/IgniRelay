@@ -6,8 +6,9 @@ import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 import 'package:ignirelay_app/app/services/negotiation_events.dart';
 import 'package:ignirelay_app/app/services/match_repository.dart';
 import 'package:ignirelay_app/app/services/match_service.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart';
-import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
+import 'package:provider/provider.dart';
+import 'package:ignirelay_app/app/controllers/event_publisher.dart';
+import 'package:ignirelay_app/app/controllers/event_stream.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
@@ -46,9 +47,9 @@ class _MatchScreenState extends State<MatchScreen>
   late TabController _tabController;
   final _negotiationManager = NegotiationManager();
   final _repo = MatchRepository();
-  final _eventManager = EventManager();
-  final _locationService = LocationService();
   final _identity = IdentityManager();
+  bool _eventStreamSubscribed = false;
+  bool _initDone = false;
 
   StreamSubscription? _negotiationSub;
   StreamSubscription? _meshEventSub;
@@ -71,18 +72,11 @@ class _MatchScreenState extends State<MatchScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _initAndLoad();
 
     // Listen to NegotiationManager events for real-time updates
     _negotiationSub = _negotiationManager.events.listen(_onNegotiationEvent);
 
-    // Listen to MeshEventHandler for new supplies/requests (non-negotiation)
-    _meshEventSub = MeshEventHandler().events.listen((_) {
-      _meshDebounce?.cancel();
-      _meshDebounce = Timer(const Duration(seconds: 3), () {
-        if (mounted) _loadAll();
-      });
-    });
+    // MeshEventHandler subscription moved to didChangeDependencies
 
     // Countdown timer for active negotiations (updates every second)
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -90,6 +84,24 @@ class _MatchScreenState extends State<MatchScreen>
         setState(() {}); // Refresh countdown display
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initDone) {
+      _initDone = true;
+      _initAndLoad();
+    }
+    if (!_eventStreamSubscribed) {
+      _eventStreamSubscribed = true;
+      _meshEventSub = context.read<EventStream>().rawEvents.listen((_) {
+        _meshDebounce?.cancel();
+        _meshDebounce = Timer(const Duration(seconds: 3), () {
+          if (mounted) _loadAll();
+        });
+      });
+    }
   }
 
   @override
@@ -107,14 +119,15 @@ class _MatchScreenState extends State<MatchScreen>
   // ---------------------------------------------------------------------------
 
   Future<void> _initAndLoad() async {
-    final gpsFuture = _locationService.init();
+    final locService = context.read<LocationService>();
+    final gpsFuture = locService.init();
     final keyFuture = _identity.getPublicKeyBytes();
     final dataFuture = _loadAll();
     final results = await Future.wait([gpsFuture, keyFuture, dataFuture]);
 
     if (mounted) {
       setState(() {
-        _gpsWarning = _locationService.unavailableReason;
+        _gpsWarning = locService.unavailableReason;
         _myPubKey = Uint8List.fromList(results[1] as List<int>);
       });
     }
@@ -376,6 +389,7 @@ class _MatchScreenState extends State<MatchScreen>
 
   Widget _buildGpsWarningBanner() {
     final p = context.igni;
+    final locService = context.read<LocationService>();
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(
@@ -392,7 +406,7 @@ class _MatchScreenState extends State<MatchScreen>
             ),
           ),
           TextButton(
-            onPressed: _locationService.permDeniedForever
+            onPressed: locService.permDeniedForever
                 ? Geolocator.openAppSettings
                 : Geolocator.openLocationSettings,
             style: TextButton.styleFrom(
@@ -401,7 +415,7 @@ class _MatchScreenState extends State<MatchScreen>
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             child: Text(
-              _locationService.permDeniedForever
+              locService.permDeniedForever
                   ? context.l10n.matchGpsOpenSettings
                   : context.l10n.matchGpsEnableLocation,
               style: IgniTypography.labelSmall(p.warn),
@@ -445,7 +459,7 @@ class _MatchScreenState extends State<MatchScreen>
     if (pub == null || !mounted) return;
     final readableName = getLocalizedReadableName(supply.resourceType, context);
     try {
-      await _eventManager.cancelSupply(pub.eventId);
+      await context.read<EventPublisher>().cancelSupply(pub.eventId);
       if (!mounted) return;
       _showSnack(context.l10n.matchCancelSupplySnack(readableName), Colors.grey[700]!);
       _loadAll();
@@ -463,7 +477,7 @@ class _MatchScreenState extends State<MatchScreen>
         (neg['requested_qty'] as num?)?.toDouble() ?? 0;
 
     try {
-      await _eventManager.publishMatchAccept(
+      await context.read<EventPublisher>().publishMatchAccept(
         negotiationId: negId,
         resourceId: resourceId,
         requestId: requestId,
@@ -483,7 +497,7 @@ class _MatchScreenState extends State<MatchScreen>
     final requestId = neg['request_id'] as String? ?? '';
 
     try {
-      await _eventManager.publishMatchDecline(
+      await context.read<EventPublisher>().publishMatchDecline(
         negotiationId: negId,
         resourceId: resourceId,
         requestId: requestId,
@@ -501,7 +515,7 @@ class _MatchScreenState extends State<MatchScreen>
   Future<void> _handleCancelRequest(DecodedRequest request) async {
     final readableName = getLocalizedReadableName(request.resourceType, context);
     try {
-      await _eventManager.cancelRequest(request.eventId);
+      await context.read<EventPublisher>().cancelRequest(request.eventId);
       if (!mounted) return;
       _showSnack(context.l10n.matchCancelRequestSnack(readableName), Colors.grey[700]!);
       _loadAll();
@@ -517,7 +531,7 @@ class _MatchScreenState extends State<MatchScreen>
     final requestId = neg['request_id'] as String? ?? '';
 
     try {
-      await _eventManager.publishMatchCancel(
+      await context.read<EventPublisher>().publishMatchCancel(
         negotiationId: negId,
         resourceId: resourceId,
         requestId: requestId,
@@ -578,12 +592,12 @@ class _MatchScreenState extends State<MatchScreen>
   Future<void> _handleCommunityAction(CommunityItem item, int qty) async {
     final readableName = getLocalizedReadableName(item.resourceType, context);
     final isSupply = item.isSupply;
-    final loc = _locationService.currentLocation;
+    final loc = context.read<LocationService>().currentLocation;
 
     try {
       if (isSupply) {
         // They have supply -> I publish request
-        await _eventManager.publishRequest(
+        await context.read<EventPublisher>().publishRequest(
           resourceType: item.resourceType,
           quantity: qty,
           note: context.l10n.matchCommunityNote,
@@ -594,7 +608,7 @@ class _MatchScreenState extends State<MatchScreen>
         );
       } else {
         // They have request -> I register supply
-        await _eventManager.publishSupply(
+        await context.read<EventPublisher>().publishSupply(
           resourceType: item.resourceType,
           quantity: qty,
           maxRangeMeters: 5000,
