@@ -10,9 +10,7 @@ import 'package:ignirelay_app/app/mesh/mesh_constants.dart';
 ///
 /// 遲滯帶防止邊界震盪：升級需高於門檻 +10%
 class TierManager {
-  static final TierManager _instance = TierManager._internal();
-  factory TierManager() => _instance;
-  TierManager._internal();
+  TierManager();
 
   int _currentTier = 1;
   bool _forceFullSpeed = false;
