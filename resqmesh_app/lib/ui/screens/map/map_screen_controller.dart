@@ -50,8 +50,7 @@ import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 import 'package:ignirelay_app/app/controllers/event_publisher.dart';
 import 'package:ignirelay_app/app/controllers/event_stream.dart';
 import 'package:ignirelay_app/app/services/event_store.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart' show RateLimitException;
-import 'package:ignirelay_app/app/mesh/event_types.dart';
+import 'package:ignirelay_app/app/services/rate_limit_exception.dart';
 import 'package:ignirelay_app/app/map/mbtiles_loader.dart';
 import 'package:ignirelay_app/app/map/poi_query.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
@@ -144,7 +143,7 @@ class MapScreenController extends ChangeNotifier {
       ValueNotifier<List<PoiVm>>(const []);
 
   Timer? _refreshTimer;
-  StreamSubscription? _meshEventSub;
+  StreamSubscription<EventLogChanged>? _meshEventSub;
   Timer? _meshDebounce;
   Timer? _poiRefreshTimer;
   Timer? _poiIdleTimer;
@@ -203,7 +202,10 @@ class MapScreenController extends ChangeNotifier {
       const Duration(seconds: 15),
       (_) => loadOverlays(),
     );
-    _meshEventSub = _eventStream.rawEvents.listen((_) {
+    // 地圖 overlay 需要在 hazard / sos / supply 任一變動後重新讀 DB；改訂閱
+    // 通用 anyEventChanges 通知 stream，避免 production UI 直接接觸原始 BLE
+    // event 串流（後者 Stage 1 spec 僅允許 survival_mode_screen debug 用）。
+    _meshEventSub = _eventStream.anyEventChanges.listen((_) {
       _meshDebounce?.cancel();
       _meshDebounce = Timer(const Duration(seconds: 2), () {
         if (_disposed) return;
@@ -532,9 +534,8 @@ class MapScreenController extends ChangeNotifier {
   }
 
   Future<void> _loadEventMarkers(int gen) async {
-    final rows = await _eventStore.queryMarkersWithLocation(
+    final rows = await _eventStore.queryNonHazardMarkersWithLocation(
       limit: 100,
-      excludeEventType: EventType.hazardMarker,
     );
     if (_disposed || gen != _overlayGen) return;
     final list = <EventVm>[];

@@ -60,7 +60,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   // 對方位置（從 Match_Negotiations 讀取）
   LatLng? _peerLocation;
-  StreamSubscription? _meshEventSub;
+  StreamSubscription<MatchUpdate>? _meshEventSub;
 
   // Negotiation 事件訂閱（取消/完成偵測）
   late final StreamSubscription _negotiationSub;
@@ -704,7 +704,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
     }
     if (!_eventStreamSubscribed) {
       _eventStreamSubscribed = true;
-      _meshEventSub = context.read<EventStream>().rawEvents.listen((_) {
+      // 對方位置同步走 locationUpdate / matchAccept / matchCancel 等 negotiation
+      // 事件，已收進 matchUpdates 這條 typed stream。改用 typed 訂閱以符合
+      // production UI 不得直接消費原始 mesh event 的層級分界。
+      _meshEventSub = context.read<EventStream>().matchUpdates.listen((_) {
         _loadPeerLocation();
       });
     }

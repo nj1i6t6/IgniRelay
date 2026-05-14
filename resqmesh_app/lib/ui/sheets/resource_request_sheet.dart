@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:ignirelay_app/app/controllers/event_publisher.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart' show RateLimitException;
+import 'package:ignirelay_app/app/services/rate_limit_exception.dart';
 import 'package:ignirelay_app/app/geo/geo_context_resolver.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';

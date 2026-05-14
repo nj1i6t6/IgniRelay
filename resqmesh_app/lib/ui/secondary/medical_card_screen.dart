@@ -2,8 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:health/health.dart';
+import 'package:provider/provider.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
-import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/services/medical_card_repo.dart';
 import 'package:ignirelay_app/app/models/medical_card.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
@@ -17,7 +18,6 @@ class MedicalCardScreen extends StatefulWidget {
 class _MedicalCardScreenState extends State<MedicalCardScreen> {
   final _formKey = GlobalKey<FormState>();
   final _identity = IdentityManager();
-  final _db = DatabaseHelper();
   bool _loading = true;
   bool _saving = false;
 
@@ -72,7 +72,8 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
 
   Future<void> _load() async {
     final pubKey = await _identity.getPublicKeyBytes();
-    final json = await _db.getMedicalCard(pubKey);
+    if (!mounted) return;
+    final json = await context.read<MedicalCardRepo>().getMedicalCard(pubKey);
     if (json != null) {
       _card = MedicalCard.fromJsonString(json);
     } else {
@@ -119,7 +120,8 @@ class _MedicalCardScreenState extends State<MedicalCardScreen> {
     setState(() => _saving = true);
     try {
       final pubKey = await _identity.getPublicKeyBytes();
-      await _db.saveMedicalCard(pubKey, _card.toJsonString());
+      if (!mounted) return;
+      await context.read<MedicalCardRepo>().saveMedicalCard(pubKey, _card.toJsonString());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

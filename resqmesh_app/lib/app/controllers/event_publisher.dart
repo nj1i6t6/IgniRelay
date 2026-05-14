@@ -221,4 +221,8 @@ class EventPublisher {
     double searchRadius = 500.0,
   }) =>
       _em.findNearbyHazard(lat, lng, type, searchRadius: searchRadius);
+
+  /// 啟動時把過期的 match negotiation 標記為失效。對應 EventManager 同名 method，
+  /// 提供給 main.dart 取代直接呼叫 `EventManager().expireStaleMatches()` singleton。
+  Future<void> expireStaleMatches() => _em.expireStaleMatches();
 }

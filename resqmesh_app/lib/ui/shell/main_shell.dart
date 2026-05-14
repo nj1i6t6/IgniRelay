@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -7,7 +6,6 @@ import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:provider/provider.dart';
 import 'package:ignirelay_app/app/controllers/event_stream.dart';
 import 'package:ignirelay_app/app/services/event_decoder.dart';
-import 'package:ignirelay_app/app/services/event_store.dart';
 import 'package:ignirelay_app/app/emergency/emergency_mode_controller.dart';
 import 'package:ignirelay_app/ui/screens/chat/chat_list_screen.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
@@ -37,7 +35,8 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _index = 0;
-  StreamSubscription? _bleSub;
+  StreamSubscription<SosAlert>? _sosSub;
+  StreamSubscription<MatchUpdate>? _matchSub;
   // 已 alert 過的事件 ID（去重用）。Dart 的 default Set 是 LinkedHashSet，
   // 保留插入順序，所以超過上限時直接 remove first（最早插入）即可 FIFO。
   final Set<String> _alertedEventIds = <String>{};
@@ -77,103 +76,66 @@ class _MainShellState extends State<MainShell> {
 
   @override
   void dispose() {
-    _bleSub?.cancel();
+    _sosSub?.cancel();
+    _matchSub?.cancel();
     _nearbyRedClear?.cancel();
     super.dispose();
   }
 
   void _listenForSosAlerts() {
-    _bleSub = context.read<EventStream>().rawEvents.listen((event) {
-      if (!mounted) return;
-      _checkAndAlertSos(event.data, event.sourceNodeId);
-      _checkAndAlertMatch();
-    });
+    final stream = context.read<EventStream>();
+    _sosSub = stream.sosAlerts.listen(_onSosAlert);
+    _matchSub = stream.matchUpdates.listen(_onMatchUpdate);
   }
 
-  Future<void> _checkAndAlertSos(List<int> data, String deviceId) async {
-    final eventStore = context.read<EventStore>();
-    final decoder = context.read<EventDecoder>();
-    final recentSos = await eventStore.queryRecentSos(
-        window: const Duration(seconds: 60), minUrgency: 2);
+  void _onSosAlert(SosAlert alert) {
+    if (!mounted) return;
+    if (_alertedEventIds.contains(alert.eventId)) return;
+    _markAlerted(alert.eventId);
 
-    for (final evt in recentSos) {
-      final eventId = evt['event_id'] as String? ?? '';
-      if (_alertedEventIds.contains(eventId)) continue;
-      _markAlerted(eventId);
+    var desc = alert.description;
+    if (desc.length > 80) desc = '${desc.substring(0, 80)}...';
 
-      final urgency = (evt['urgency'] as int?) ?? 0;
-      final payload = evt['payload'] as Uint8List?;
-      String desc = '';
-      if (payload != null && payload.isNotEmpty) {
-        try {
-          final rd = decoder.decodeRequestData(payload);
-          desc = rd?.note ?? '';
-          if (desc.length > 80) desc = '${desc.substring(0, 80)}...';
-        } catch (e) {
-          debugPrint('[SOS] RequestData decode failed for $eventId: $e');
-        }
-      }
-
-      if (!mounted) return;
-
-      if (urgency >= 3) {
-        _triggerNearbyRed();
-        _showSosRedAlert(desc);
-      } else if (urgency >= 2) {
-        _showSosYellowSnack(desc);
-      }
+    if (alert.urgency >= 3) {
+      _triggerNearbyRed();
+      _showSosRedAlert(desc);
+    } else if (alert.urgency >= 2) {
+      _showSosYellowSnack(desc);
     }
   }
 
-  Future<void> _checkAndAlertMatch() async {
-    final eventStore = context.read<EventStore>();
-    final decoder = context.read<EventDecoder>();
-    final cutoff = DateTime.now().millisecondsSinceEpoch - 60000;
-    final offers = await eventStore.queryByType(2, limit: 5);
-    final requests = await eventStore.queryByType(15, limit: 5);
-    final recentMatch = [...offers, ...requests]
-        .where((e) => (e['hlc_timestamp'] as int? ?? 0) > cutoff)
-        .toList()
-      ..sort((a, b) => (b['hlc_timestamp'] as int? ?? 0).compareTo(a['hlc_timestamp'] as int? ?? 0));
-    if (recentMatch.length > 5) recentMatch.length = 5;
+  Future<void> _onMatchUpdate(MatchUpdate update) async {
+    if (!mounted) return;
+    if (_alertedEventIds.contains(update.eventId)) return;
+    // Only offer/request 是面向特定對象的 alert；其餘狀態變化由 match_screen
+    // 自己重整即可。
+    final isOffer = update.eventType == 2;
+    final isRequest = update.eventType == 15;
+    if (!isOffer && !isRequest) return;
 
     final myPubKey = await IdentityManager().getPublicKeyBytes();
-
-    for (final evt in recentMatch) {
-      final eventId = evt['event_id'] as String? ?? '';
-      if (_alertedEventIds.contains(eventId)) continue;
-
-      final payload = evt['payload'] as Uint8List?;
-      if (payload == null || payload.isEmpty) continue;
-      final eventType = (evt['event_type'] as int?) ?? 0;
-
-      try {
-        List<int> targetPubKey = [];
-        if (eventType == 2) {
-          final data = decoder.decodeMatchOfferData(payload);
-          targetPubKey = data?.requesterPubKey ?? [];
-        } else if (eventType == 15) {
-          final data = decoder.decodeMatchRequestData(payload);
-          targetPubKey = data?.providerPubKey ?? [];
-        }
-        if (targetPubKey.isEmpty) continue;
-        bool isMe = targetPubKey.length == myPubKey.length;
-        if (isMe) {
-          for (int i = 0; i < myPubKey.length; i++) {
-            if (targetPubKey[i] != myPubKey[i]) {
-              isMe = false;
-              break;
-            }
-          }
-        }
-        if (!isMe) continue;
-
-        _markAlerted(eventId);
-        if (!mounted) return;
-
-        _showMatchSnack(eventType);
-      } catch (_) {}
+    List<int> targetPubKey = const [];
+    final payload = update.decodedPayload;
+    if (isOffer && payload is MatchOfferData) {
+      targetPubKey = payload.requesterPubKey;
+    } else if (isRequest && payload is MatchRequestData) {
+      targetPubKey = payload.providerPubKey;
     }
+    if (targetPubKey.isEmpty) return;
+
+    bool isMe = targetPubKey.length == myPubKey.length;
+    if (isMe) {
+      for (int i = 0; i < myPubKey.length; i++) {
+        if (targetPubKey[i] != myPubKey[i]) {
+          isMe = false;
+          break;
+        }
+      }
+    }
+    if (!isMe) return;
+    _markAlerted(update.eventId);
+    if (!mounted) return;
+    _showMatchSnack(update.eventType);
   }
 
   /// 觸發附近紅色事件的急難模式；2 分鐘後自動解除。

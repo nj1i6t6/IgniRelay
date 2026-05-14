@@ -9,9 +9,8 @@ import 'package:ignirelay_app/app/controllers/event_publisher.dart';
 import 'package:ignirelay_app/app/services/event_decoder.dart';
 import 'package:ignirelay_app/app/services/event_store.dart';
 import 'package:ignirelay_app/app/services/station_supply_repo.dart';
+import 'package:ignirelay_app/app/services/rate_limit_exception.dart';
 import 'package:ignirelay_app/app/geo/village_geofence.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart' show RateLimitException;
-import 'package:ignirelay_app/app/mesh/event_types.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
@@ -69,7 +68,7 @@ class _StationSupplyScreenState extends State<StationSupplyScreen>
     final decoder = context.read<EventDecoder>();
     final supplyRepo = context.read<StationSupplyRepo>();
 
-    final allRegisters = await eventStore.queryByType(EventType.resourceRegister);
+    final allRegisters = await eventStore.queryResourceRegisters();
     final rows = allRegisters.where((row) {
       final senderKey = row['sender_pub_key'] as Uint8List?;
       if (senderKey == null || senderKey.length != pubKeyBytes.length) return false;

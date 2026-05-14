@@ -52,7 +52,7 @@ class _MatchScreenState extends State<MatchScreen>
   bool _initDone = false;
 
   StreamSubscription? _negotiationSub;
-  StreamSubscription? _meshEventSub;
+  StreamSubscription<EventLogChanged>? _meshEventSub;
   Timer? _meshDebounce;
   Timer? _countdownTimer;
 
@@ -95,7 +95,9 @@ class _MatchScreenState extends State<MatchScreen>
     }
     if (!_eventStreamSubscribed) {
       _eventStreamSubscribed = true;
-      _meshEventSub = context.read<EventStream>().rawEvents.listen((_) {
+      // match 畫面同時關心 supply / request / negotiation 三類事件；用 anyEventChanges
+      // 通用通知 stream 簡化訂閱（typed stream 過多會讓 debounce 變複雜）。
+      _meshEventSub = context.read<EventStream>().anyEventChanges.listen((_) {
         _meshDebounce?.cancel();
         _meshDebounce = Timer(const Duration(seconds: 3), () {
           if (mounted) _loadAll();

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import 'package:ignirelay_app/app/db/medical_card_repo.dart';
+import 'package:ignirelay_app/app/services/medical_card_repo.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();

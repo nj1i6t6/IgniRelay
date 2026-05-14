@@ -15,6 +15,11 @@ import 'package:ignirelay_app/app/mesh/hazard_manager.dart';
 import 'package:ignirelay_app/app/mesh/triage_queue.dart';
 import 'package:ignirelay_app/app/mesh/event_types.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
+import 'package:ignirelay_app/app/services/rate_limit_exception.dart';
+
+// Re-export so existing callers that `import event_manager.dart show RateLimitException`
+// still compile during transition. New callers should import the non-mesh path directly.
+export 'package:ignirelay_app/app/services/rate_limit_exception.dart' show RateLimitException;
 
 // 物資狀態常數
 class MaterialStatus {
@@ -22,14 +27,6 @@ class MaterialStatus {
   static const String depleted = 'DEPLETED';
   static const String consumed = 'CONSUMED';
   static const String cancelled = 'CANCELLED';
-}
-
-/// 速率限制例外
-class RateLimitException implements Exception {
-  final String message;
-  RateLimitException(this.message);
-  @override
-  String toString() => 'RateLimitException: $message';
 }
 
 /// 統一的 MeshEvent 建立、簽名、DB 儲存中心

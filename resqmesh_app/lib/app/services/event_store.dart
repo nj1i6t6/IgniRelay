@@ -86,4 +86,23 @@ class EventStore {
       limit: limit,
     );
   }
+
+  /// 查詢具備座標的「非 hazard」事件 marker（給地圖 overlay 用）。
+  ///
+  /// Stage 1 corrective：原本 UI 端要傳 `excludeEventType: EventType.hazardMarker`，
+  /// 但這會強迫 UI import `app/mesh/event_types.dart` 違反 `ui-cannot-import-mesh`。
+  /// 這裡把語意收進來，UI 不再需要懂 EventType 數值。
+  Future<List<Map<String, dynamic>>> queryNonHazardMarkersWithLocation({
+    int limit = 100,
+  }) {
+    return queryMarkersWithLocation(
+      limit: limit,
+      excludeEventType: EventType.hazardMarker,
+    );
+  }
+
+  /// 查詢「resourceRegister」型事件（給據點物資畫面列出我發布的據點）。
+  Future<List<Map<String, dynamic>>> queryResourceRegisters({int limit = 100}) {
+    return queryByType(EventType.resourceRegister, limit: limit);
+  }
 }

@@ -26,11 +26,13 @@ import 'package:ignirelay_app/app/controllers/event_stream.dart';
 import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
 import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
 import 'package:ignirelay_app/app/controllers/handoff_controller.dart';
+import 'package:ignirelay_app/app/controllers/tier_manager.dart';
 import 'package:ignirelay_app/app/services/event_decoder.dart';
 import 'package:ignirelay_app/app/services/event_store.dart';
 import 'package:ignirelay_app/app/services/negotiation_repo.dart';
 import 'package:ignirelay_app/app/services/station_supply_repo.dart';
 import 'package:ignirelay_app/app/services/profile_repo.dart';
+import 'package:ignirelay_app/app/services/medical_card_repo.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/services/chat_service.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
@@ -182,6 +184,9 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
         Provider<ProfileRepo>(
           create: (_) => ProfileRepo(databaseHelper: DatabaseHelper()),
         ),
+        Provider<MedicalCardRepo>(
+          create: (_) => MedicalCardRepo(DatabaseHelper()),
+        ),
         Provider<NegotiationRepo>(
           create: (_) => NegotiationRepo(),
         ),
@@ -200,11 +205,18 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
         Provider<MeshRuntimeController>(
           create: (_) => MeshRuntimeController.instance,
         ),
-        Provider<EmergencyModeController>(
+        // EmergencyModeController 是 ChangeNotifier，必須用 ListenableProvider
+        // 才不會被 Provider.debugCheckInvalidValueType 在 dev/test 攔下。
+        // 不能用 ChangeNotifierProvider — 它會在 provider 移除時呼叫 dispose()，
+        // 破壞 static singleton 生命週期。
+        ListenableProvider<EmergencyModeController>(
           create: (_) => EmergencyModeController.instance,
         ),
         Provider<HandoffController>(
           create: (_) => HandoffController.instance,
+        ),
+        Provider<TierManager>(
+          create: (_) => TierManager(),
         ),
         Provider<EventStream>(
           create: (context) => EventStream(
@@ -218,57 +230,66 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
           value: widget.transport,
         ),
       ],
-      child: AnimatedBuilder(
-        animation: EmergencyModeController.instance,
-        builder: (context, _) {
-          final inEmergency = EmergencyModeController.instance.isEmergency;
-          // 急難模式一律套用高對比主題，忽略 light/dark 偏好以保肌肉記憶。
-          final themeMode = inEmergency ? ThemeMode.dark : _themeMode;
-          return MaterialApp(
-            title: '烽傳 IgniRelay',
-            debugShowCheckedModeBanner: false,
-            locale: _locale,
-            supportedLocales: S.supportedLocales,
-            localizationsDelegates: const [
-              S.delegate,
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
-            localeResolutionCallback: (locale, supportedLocales) {
-              if (_locale != null) return _locale;
-              if (locale != null && locale.languageCode == 'zh') {
-                return const Locale('zh');
-              }
-              return const Locale('en');
+      child: Consumer<EmergencyModeController>(
+        builder: (context, emergencyController, _) {
+          // EmergencyModeController 仍是 ChangeNotifier，需要透過 AnimatedBuilder
+          // 訂閱才能在 isEmergency 變動時 rebuild MaterialApp 主題。Provider 在這
+          // 層只負責「把 controller 從 tree 拿出來」；不直接呼叫 `.instance`。
+          return AnimatedBuilder(
+            animation: emergencyController,
+            builder: (innerContext, _) {
+              final inEmergency = emergencyController.isEmergency;
+              // 急難模式一律套用高對比主題，忽略 light/dark 偏好以保肌肉記憶。
+              final themeMode = inEmergency ? ThemeMode.dark : _themeMode;
+              return _buildMaterialApp(innerContext, inEmergency, themeMode);
             },
-            theme: AppTheme.light(),
-            darkTheme: inEmergency
-                ? AppTheme.emergency()
-                : AppTheme.dark(),
-            themeMode: themeMode,
-            // Stage 7-r3：以 [MediaQuery] 包一層，把使用者設定的字體大小（取代
-            // 舊的「密度」）套到整個 widget 樹。系統字體偏好仍會被尊重——
-            // 我們是在系統 textScaler 之上再乘一個係數。
-            builder: (ctx, child) {
-              final base = MediaQuery.textScalerOf(ctx);
-              final scaled =
-                  TextScaler.linear(base.scale(1.0) * _textScale.factor);
-              return MediaQuery(
-                data: MediaQuery.of(ctx).copyWith(textScaler: scaled),
-                child: child ?? const SizedBox.shrink(),
-              );
-            },
-            routes: {
-              // 設計系統預覽頁：計畫 §Stage 2「Debug-only」要求，release build
-              // 不註冊此路由以免誤入。kDebugMode 與 kProfileMode 皆視為「非正式」環境。
-              if (kDebugMode || kProfileMode)
-                '/design-showcase': (_) => const DesignShowcaseScreen(),
-            },
-            home: const _StartupRouter(),
           );
         },
       ),
+    );
+  }
+
+  Widget _buildMaterialApp(
+      BuildContext context, bool inEmergency, ThemeMode themeMode) {
+    return MaterialApp(
+      title: '烽傳 IgniRelay',
+      debugShowCheckedModeBanner: false,
+      locale: _locale,
+      supportedLocales: S.supportedLocales,
+      localizationsDelegates: const [
+        S.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      localeResolutionCallback: (locale, supportedLocales) {
+        if (_locale != null) return _locale;
+        if (locale != null && locale.languageCode == 'zh') {
+          return const Locale('zh');
+        }
+        return const Locale('en');
+      },
+      theme: AppTheme.light(),
+      darkTheme: inEmergency ? AppTheme.emergency() : AppTheme.dark(),
+      themeMode: themeMode,
+      // Stage 7-r3：以 [MediaQuery] 包一層，把使用者設定的字體大小（取代
+      // 舊的「密度」）套到整個 widget 樹。系統字體偏好仍會被尊重——
+      // 我們是在系統 textScaler 之上再乘一個係數。
+      builder: (ctx, child) {
+        final base = MediaQuery.textScalerOf(ctx);
+        final scaled = TextScaler.linear(base.scale(1.0) * _textScale.factor);
+        return MediaQuery(
+          data: MediaQuery.of(ctx).copyWith(textScaler: scaled),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
+      routes: {
+        // 設計系統預覽頁：計畫 §Stage 2「Debug-only」要求，release build
+        // 不註冊此路由以免誤入。kDebugMode 與 kProfileMode 皆視為「非正式」環境。
+        if (kDebugMode || kProfileMode)
+          '/design-showcase': (_) => const DesignShowcaseScreen(),
+      },
+      home: const _StartupRouter(),
     );
   }
 }
@@ -324,9 +345,14 @@ class _StartupRouterState extends State<_StartupRouter> {
 
       // ── 階段 5：Mesh 服務（失敗不影響 UI）──
       try {
-        EventManager().expireStaleMatches().catchError((_) {});
+        if (mounted) {
+          context
+              .read<EventPublisher>()
+              .expireStaleMatches()
+              .catchError((_) {});
+        }
       } catch (e) {
-        debugPrint('[Init] EventManager init failed: $e');
+        debugPrint('[Init] EventPublisher expireStaleMatches failed: $e');
       }
 
       // ── 階段 6：BLE ──
@@ -456,10 +482,14 @@ class _StartupRouterState extends State<_StartupRouter> {
   }
 
   Future<void> _initLocationService() async {
+    if (!mounted) return;
     try {
-      final locService = LocationService();
+      // 從 Provider 取得 LocationService / ChatService，避免在這裡再次呼叫
+      // singleton constructor。registration 仍走 main.dart 的 MultiProvider。
+      final locService = context.read<LocationService>();
+      final chatService = context.read<ChatService>();
       locService.onFirstFix = () {
-        ChatService().autoJoinVillageRoom().then((code) {
+        chatService.autoJoinVillageRoom().then((code) {
           if (code != null) {
             debugPrint('[Init] GPS 就緒，自動加入聊天室: $code');
           }

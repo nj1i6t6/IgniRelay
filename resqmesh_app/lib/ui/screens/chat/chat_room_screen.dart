@@ -43,7 +43,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   int _cooldownRemaining = 0;
   String? _myPubKeyHex;
   String? _replyToEventId;
-  StreamSubscription? _meshSub;
+  StreamSubscription<ChatMessage>? _meshSub;
   String? _displayRoomName;
   Locale? _locale;
 
@@ -89,7 +89,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 
   void _listenForNewMessages() {
-    _meshSub = context.read<EventStream>().rawEvents.listen((_) {
+    _meshSub = context.read<EventStream>().chatMessages.listen((msg) {
+      // 其他房間的訊息對本畫面無意義，過濾掉避免不必要的 DB 重撈。
+      if (msg.roomId != widget.roomId) return;
       _loadMessages();
     });
   }

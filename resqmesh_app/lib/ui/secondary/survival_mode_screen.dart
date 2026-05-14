@@ -8,9 +8,9 @@ import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
 import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
 import 'package:ignirelay_app/app/controllers/mesh_runtime_controller.dart';
 import 'package:ignirelay_app/app/controllers/event_stream.dart';
+import 'package:ignirelay_app/app/controllers/tier_manager.dart';
 import 'package:ignirelay_app/app/services/event_store.dart';
 import 'package:ignirelay_app/app/services/profile_repo.dart';
-import 'package:ignirelay_app/app/mesh/tier_manager.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 class SurvivalModeScreen extends StatefulWidget {
@@ -77,7 +77,8 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
       battery = -1;
     }
     if (battery >= 0) {
-      TierManager().updateBattery(battery);
+      if (!mounted) return;
+      context.read<TierManager>().updateBattery(battery);
     }
     if (mounted) {
       setState(() {
@@ -383,7 +384,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
               ),
               const SizedBox(height: 12),
               Text(
-                TierManager().getTierLabel(context.l10n),
+                context.read<TierManager>().getTierLabel(context.l10n),
                 style: TextStyle(
                   color: muleColor,
                   fontSize: 20,
