@@ -1522,7 +1522,7 @@ Can overlap with Stage 2A end or v0.3 Stage 0. Must complete before v0.3 Stage 1
 
 **After Stage 1**: DatabaseHelper import replaced by MedicalCardRepo (extended).
 
-**Split plan**:
+**Split plan** (original):
 
 | New file | Contents | Target lines |
 |---|---|---|
@@ -1535,13 +1535,31 @@ Can overlap with Stage 2A end or v0.3 Stage 0. Must complete before v0.3 Stage 1
 | `ui/secondary/privacy_flags_section.dart` | `PrivacyFlagsSection` widget. | ~80 |
 | `ui/secondary/medical_card_screen.dart` | Thin shell: form scaffold, controller, section list. | ~150 |
 
+**APPROVED DEVIATION (2026-05-14)** — the original 6-section split assumed conditions /
+allergies / medications / privacy-flags were each their own screen section. The actual
+screen has **3 section headers** (基本生理 / 醫療背景 / 急救資訊); "privacy flags" are not
+a section but a per-field SOS toggle threaded through every field. The split follows the
+real 3-section structure plus a shared field-widgets file:
+
+| New file | Contents | Lines |
+|---|---|---|
+| `ui/secondary/medical_card_controller.dart` | `MedicalCardController` (ChangeNotifier): `MedicalCard` + 11 `TextEditingController`s, load/save, preset apply, SOS-flag toggle, allergy add/remove, Health Connect import. Sealed `MedicalSaveOutcome` / `HealthImportOutcome`. Uses `MedicalCardRepo` + `IdentityManager`. | 336 |
+| `ui/secondary/medical_card_fields.dart` | Shared `MedicalSectionHeader`, `MedicalSosToggle`, `MedicalTextField`, `MedicalNumberField`. | 216 |
+| `ui/secondary/medical_basic_section.dart` | `MedicalBasicSection` (name/age/height/weight/blood-type). | 120 |
+| `ui/secondary/medical_background_section.dart` | `MedicalBackgroundSection` (conditions / allergies multi-entry / medications). | 176 |
+| `ui/secondary/medical_emergency_section.dart` | `MedicalEmergencySection` (emergency contact / organ donor / language). | 169 |
+| `ui/secondary/medical_card_header.dart` | `MedicalCardHeader` (SOS info banner, preset chips, Health Connect import button). | 146 |
+| `ui/secondary/medical_card_screen.dart` | Thin shell: Scaffold + AnimatedBuilder + section list; save / preset / health-import snackbars & dialogs. | 207 |
+
+All files <=500 lines.
+
 ### 4.2 `profile_screen.dart` (866 lines -> target <=500 lines)
 
 **Current state**: 866 lines, imports DatabaseHelper.
 
 **After Stage 1**: DatabaseHelper import replaced by ProfileRepo.
 
-**Split plan**:
+**Split plan** (original):
 
 | New file | Contents | Target lines |
 |---|---|---|
@@ -1552,6 +1570,24 @@ Can overlap with Stage 2A end or v0.3 Stage 0. Must complete before v0.3 Stage 1
 | `ui/screens/me/profile_screen.dart` | Thin shell: section list. | ~200 |
 
 Note: `profile_mesh_status_card.dart` already exists and is separate. No changes needed.
+
+**APPROVED DEVIATION (2026-05-14)** — the screen has no standalone "debug section"
+(debug tools were already removed earlier; mesh detail is reached via the existing
+`ProfileMeshStatusCard`). The medical-card entry is a single `ProfileQuickAction` row,
+too small for its own file — it lives with the identity widgets. The trust/tier list
+(`_TierList` + detail rows, ~190 lines in the god file) was the real extraction
+candidate and got its own file. Actual split:
+
+| New file | Contents | Lines |
+|---|---|---|
+| `ui/screens/me/profile_identity_section.dart` | `ProfileIdentityCard` (avatar / nickname / badge / pubkey) + `ProfileQuickAction`. | 181 |
+| `ui/screens/me/profile_tier_section.dart` | `ProfileTierList` (collapsible) + tier detail rows + dots. | 206 |
+| `ui/screens/me/profile_settings_section.dart` | `ProfileSettingsCard` (theme / text-scale / language / battery / privacy rows). | 223 |
+| `ui/screens/me/profile_screen.dart` | Thin shell: `IgniProfileScreen` state (nickname / level / pubkey / has-medical-card) + `ListView` layout. | 289 |
+
+No controller extracted — the screen state is a handful of fields loaded once; the
+spec did not call for a `ProfileController` and one is not warranted. All files
+<=500 lines. `profile_mesh_status_card.dart` unchanged as noted.
 
 ### 4.3 Stage 2B Commit Plan
 

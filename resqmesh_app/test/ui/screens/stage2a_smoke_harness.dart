@@ -27,6 +27,7 @@ import 'package:ignirelay_app/app/services/event_decoder.dart';
 import 'package:ignirelay_app/app/services/event_store.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/services/match_repository.dart';
+import 'package:ignirelay_app/app/services/medical_card_repo.dart';
 import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 import 'package:ignirelay_app/app/services/negotiation_repo.dart';
 import 'package:ignirelay_app/app/services/profile_repo.dart';
@@ -84,6 +85,9 @@ Widget wrapStage2aScreen(Widget child) {
       ),
       Provider<ProfileRepo>(
         create: (_) => ProfileRepo(databaseHelper: DatabaseHelper()),
+      ),
+      Provider<MedicalCardRepo>(
+        create: (_) => MedicalCardRepo(DatabaseHelper()),
       ),
       Provider<NegotiationRepo>(create: (_) => NegotiationRepo()),
       Provider<NegotiationManager>(create: (_) => NegotiationManager()),

@@ -1,13 +1,18 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:health/health.dart';
 import 'package:provider/provider.dart';
+
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/services/medical_card_repo.dart';
-import 'package:ignirelay_app/app/models/medical_card.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/secondary/medical_background_section.dart';
+import 'package:ignirelay_app/ui/secondary/medical_basic_section.dart';
+import 'package:ignirelay_app/ui/secondary/medical_card_controller.dart';
+import 'package:ignirelay_app/ui/secondary/medical_card_header.dart';
+import 'package:ignirelay_app/ui/secondary/medical_emergency_section.dart';
 
+/// Stage 2B：本檔由 god file 拆出後改為 thin shell。
+/// 表單 state + load/save + Health Connect 匯入在 [MedicalCardController]；
+/// 區段 UI 在 medical_*_section / medical_card_header / medical_card_fields。
 class MedicalCardScreen extends StatefulWidget {
   const MedicalCardScreen({super.key});
 
@@ -16,1017 +21,186 @@ class MedicalCardScreen extends StatefulWidget {
 }
 
 class _MedicalCardScreenState extends State<MedicalCardScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _identity = IdentityManager();
-  bool _loading = true;
-  bool _saving = false;
-
-  late MedicalCard _card;
-
-  // 文字欄位控制器
-  final _nameCtrl = TextEditingController();
-  final _ageCtrl = TextEditingController();
-  final _heightCtrl = TextEditingController();
-  final _weightCtrl = TextEditingController();
-  final _conditionsCtrl = TextEditingController();
-  final _medicationsCtrl = TextEditingController();
-  final _allergenCtrl = TextEditingController();
-  final _reactionCtrl = TextEditingController();
-  final _ecPhoneCtrl = TextEditingController();
-  final _ecRelationCtrl = TextEditingController();
-  final _languageCtrl = TextEditingController();
-
-  static const _bloodTypes = [
-    '',
-    'A+',
-    'A-',
-    'B+',
-    'B-',
-    'AB+',
-    'AB-',
-    'O+',
-    'O-'
-  ];
+  MedicalCardController? _c;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _c ??= MedicalCardController(
+      repo: context.read<MedicalCardRepo>(),
+      identity: context.read<IdentityManager>(),
+    )..load();
   }
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
-    _ageCtrl.dispose();
-    _heightCtrl.dispose();
-    _weightCtrl.dispose();
-    _conditionsCtrl.dispose();
-    _medicationsCtrl.dispose();
-    _allergenCtrl.dispose();
-    _reactionCtrl.dispose();
-    _ecPhoneCtrl.dispose();
-    _ecRelationCtrl.dispose();
-    _languageCtrl.dispose();
+    _c?.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    final pubKey = await _identity.getPublicKeyBytes();
+  Future<void> _onSave() async {
+    final outcome = await _c!.save();
     if (!mounted) return;
-    final json = await context.read<MedicalCardRepo>().getMedicalCard(pubKey);
-    if (json != null) {
-      _card = MedicalCard.fromJsonString(json);
-    } else {
-      _card = MedicalCard();
-    }
-    _syncControllersFromCard();
-    if (mounted) setState(() => _loading = false);
-  }
-
-  void _syncControllersFromCard() {
-    _nameCtrl.text = _card.name;
-    _ageCtrl.text = _card.age?.toString() ?? '';
-    _heightCtrl.text = _card.heightCm?.toString() ?? '';
-    _weightCtrl.text = _card.weightKg?.toString() ?? '';
-    _conditionsCtrl.text = _card.conditions.join('、');
-    _medicationsCtrl.text = _card.medications.join('、');
-    _ecPhoneCtrl.text = _card.emergencyContact.phone;
-    _ecRelationCtrl.text = _card.emergencyContact.relation;
-    _languageCtrl.text = _card.primaryLanguage;
-  }
-
-  void _syncCardFromControllers() {
-    _card.name = _nameCtrl.text.trim();
-    _card.age = int.tryParse(_ageCtrl.text.trim());
-    _card.heightCm = int.tryParse(_heightCtrl.text.trim());
-    _card.weightKg = int.tryParse(_weightCtrl.text.trim());
-    _card.conditions = _conditionsCtrl.text
-        .split(RegExp(r'[、,，]'))
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    _card.medications = _medicationsCtrl.text
-        .split(RegExp(r'[、,，]'))
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    _card.emergencyContact.phone = _ecPhoneCtrl.text.trim();
-    _card.emergencyContact.relation = _ecRelationCtrl.text.trim();
-    _card.primaryLanguage = _languageCtrl.text.trim();
-  }
-
-  Future<void> _save() async {
-    _syncCardFromControllers();
-    setState(() => _saving = true);
-    try {
-      final pubKey = await _identity.getPublicKeyBytes();
-      if (!mounted) return;
-      await context.read<MedicalCardRepo>().saveMedicalCard(pubKey, _card.toJsonString());
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.l10n.medicalSavedSnack),
-            backgroundColor: Colors.green,
-          ),
-        );
+    switch (outcome) {
+      case MedicalSaveOk():
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(context.l10n.medicalSavedSnack),
+          backgroundColor: Colors.green,
+        ));
         Navigator.of(context).pop(true);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.l10n.medicalSaveFailSnack(e.toString())),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      case MedicalSaveFail(:final error):
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(context.l10n.medicalSaveFailSnack(error)),
+          backgroundColor: Colors.red,
+        ));
     }
   }
 
-  void _applyPreset(Set<String> preset, String presetName) {
-    setState(() => _card.applyPreset(preset));
+  void _onApplyPreset(Set<String> preset, String presetName) {
+    _c!.applyPreset(preset);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(context.l10n.medicalPresetApplied(presetName)),
+      backgroundColor: const Color(0xFF1a1a2e),
+      duration: const Duration(seconds: 1),
+    ));
+  }
+
+  Future<void> _onImportHealth() async {
+    final outcome = await _c!.importFromHealthConnect();
+    if (!mounted) return;
+    final s = context.l10n;
+    switch (outcome) {
+      case HealthImportSdkUnavailable():
+        showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(s.medicalHealthConnectRequired),
+            content: Text(s.medicalHealthConnectInstallGuide),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(s.medicalHealthConnectDismiss),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _c!.installHealthConnect();
+                },
+                child: Text(s.medicalHealthConnectInstall),
+              ),
+            ],
+          ),
+        );
+      case HealthImportAuthDenied():
+        showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(s.medicalHealthConnectAuthFail),
+            content: Text(s.medicalHealthConnectAuthGuide),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(s.medicalHealthConnectDismiss),
+              ),
+            ],
+          ),
+        );
+      case HealthImportNoData():
+        _snack(s.medicalHealthConnectNoData, Colors.orange);
+      case HealthImportImported(:final count):
+        _snack(s.medicalHealthConnectImported(count), Colors.green);
+      case HealthImportNoNewData():
+        _snack(s.medicalHealthConnectNoNewData, Colors.orange);
+      case HealthImportFailure(:final error):
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(s.medicalHealthConnectFailSnack(error)),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ));
+    }
+  }
+
+  void _snack(String msg, Color bg) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(context.l10n.medicalPresetApplied(presetName)),
-        backgroundColor: const Color(0xFF1a1a2e),
-        duration: const Duration(seconds: 1),
-      ),
+      SnackBar(content: Text(msg), backgroundColor: bg),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = _c!;
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d1a),
       appBar: AppBar(
-        title: Text(context.l10n.medicalTitle, style: const TextStyle(color: Colors.white)),
+        title: Text(context.l10n.medicalTitle,
+            style: const TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF1a1a2e),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: Colors.redAccent))
-          : Form(
-              key: _formKey,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                children: [
-                  // SOS 廣播說明
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: Colors.redAccent.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.info_outline,
-                            color: Colors.redAccent, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            context.l10n.medicalSosInfo,
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 快速預設
-                  _buildPresetRow(),
-                  const SizedBox(height: 12),
-
-                  // 從系統健康資料匯入
-                  _buildHealthImportButton(),
-                  const SizedBox(height: 20),
-
-                  // ── 基本生理 ──
-                  _buildSectionHeader(context.l10n.medicalSectionBasic, Icons.person_outline),
-                  _buildTextField(
-                    field: MedicalField.name,
-                    label: context.l10n.medicalFieldName,
-                    controller: _nameCtrl,
-                    hint: context.l10n.medicalHintName,
-                    icon: Icons.badge_outlined,
-                  ),
-                  _buildNumberField(
-                    field: MedicalField.age,
-                    label: context.l10n.medicalFieldAge,
-                    controller: _ageCtrl,
-                    hint: context.l10n.medicalHintAge,
-                    icon: Icons.cake_outlined,
-                    suffix: context.l10n.medicalSuffixAge,
-                  ),
-                  _buildNumberField(
-                    field: MedicalField.heightCm,
-                    label: context.l10n.medicalFieldHeight,
-                    controller: _heightCtrl,
-                    hint: context.l10n.medicalHintHeight,
-                    icon: Icons.height,
-                    suffix: context.l10n.medicalSuffixHeight,
-                  ),
-                  _buildNumberField(
-                    field: MedicalField.weightKg,
-                    label: context.l10n.medicalFieldWeight,
-                    controller: _weightCtrl,
-                    hint: context.l10n.medicalHintWeight,
-                    icon: Icons.monitor_weight_outlined,
-                    suffix: context.l10n.medicalSuffixWeight,
-                  ),
-                  _buildBloodTypeField(),
-                  const SizedBox(height: 20),
-
-                  // ── 醫療背景 ──
-                  _buildSectionHeader(context.l10n.medicalSectionBackground, Icons.medical_services_outlined),
-                  _buildTextField(
-                    field: MedicalField.conditions,
-                    label: context.l10n.medicalFieldConditions,
-                    controller: _conditionsCtrl,
-                    hint: context.l10n.medicalHintConditions,
-                    icon: Icons.healing_outlined,
-                    maxLines: 2,
-                  ),
-                  _buildAllergySection(),
-                  _buildTextField(
-                    field: MedicalField.medications,
-                    label: context.l10n.medicalFieldMedications,
-                    controller: _medicationsCtrl,
-                    hint: context.l10n.medicalHintMedications,
-                    icon: Icons.medication_outlined,
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 20),
-
-                  // ── 急救資訊 ──
-                  _buildSectionHeader(context.l10n.medicalSectionEmergency, Icons.emergency_outlined),
-                  _buildEmergencyContactSection(),
-                  _buildOrganDonorField(),
-                  _buildTextField(
-                    field: MedicalField.primaryLanguage,
-                    label: context.l10n.medicalFieldPrimaryLanguage,
-                    controller: _languageCtrl,
-                    hint: context.l10n.medicalHintLanguage,
-                    icon: Icons.language,
-                  ),
-                ],
+      body: AnimatedBuilder(
+        animation: c,
+        builder: (context, _) {
+          if (c.loading) {
+            return const Center(
+                child: CircularProgressIndicator(color: Colors.redAccent));
+          }
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+            children: [
+              MedicalCardHeader(
+                controller: c,
+                onApplyPreset: _onApplyPreset,
+                onImportHealth: _onImportHealth,
               ),
-            ),
-      bottomNavigationBar: _loading
-          ? null
-          : SafeArea(
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: _saving ? null : _save,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                    ),
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.save, size: 18),
-                    label: Text(_saving ? context.l10n.medicalSaving : context.l10n.medicalSaveButton,
-                        style: const TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ),
-            ),
-    );
-  }
-
-  // ── 快速預設列 ──
-  //
-  // 結構從「label + 三 chip 強塞同一 Row」改成「label 一行 + chips 用 Wrap」。
-  // 原寫法在英文（Minimal / Recommended / Full）下單行就會超出螢幕寬度，
-  // chip 被推到視窗外點不到。改 Wrap 之後：
-  //   - 中文短標籤照樣一排
-  //   - 英文 / 大字模式自動折行
-  //   - 不依賴隱藏式水平捲動
-  Widget _buildPresetRow() {
-    final s = context.l10n;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(s.medicalPresetLabel,
-            style: const TextStyle(color: Colors.white54, fontSize: 12)),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: [
-            _presetChip(s.medicalPresetMinimal, MedicalField.presetMinimal),
-            _presetChip(
-                s.medicalPresetRecommended, MedicalField.presetRecommended),
-            _presetChip(s.medicalPresetFull, MedicalField.presetFull),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // ── 從系統健康資料匯入按鈕 ──
-  Widget _buildHealthImportButton() {
-    if (!Platform.isAndroid) return const SizedBox.shrink();
-    return OutlinedButton.icon(
-      style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.cyanAccent,
-        side: const BorderSide(color: Colors.cyanAccent),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      ),
-      onPressed: _importFromHealthConnect,
-      icon: const Icon(Icons.download, size: 18),
-      label: Text(context.l10n.medicalHealthImportButton, style: const TextStyle(fontSize: 13)),
-    );
-  }
-
-  Future<void> _importFromHealthConnect() async {
-    final health = Health();
-
-    // Bug 13 Fix: 必須先呼叫 configure()，否則 Health Connect API 不會初始化
-    await health.configure();
-
-    // 要讀取的資料類型
-    final types = <HealthDataType>[
-      HealthDataType.HEIGHT,
-      HealthDataType.WEIGHT,
-      HealthDataType.BLOOD_TYPE,
-    ];
-
-    try {
-      // ── 1. 檢查 Health Connect 是否可用 ──
-      final status = await health.getHealthConnectSdkStatus();
-      if (status != HealthConnectSdkStatus.sdkAvailable) {
-        if (!mounted) return;
-        // Health Connect 未安裝或不支援 → 引導用戶安裝
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text(context.l10n.medicalHealthConnectRequired),
-            content: Text(context.l10n.medicalHealthConnectInstallGuide),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(context.l10n.medicalHealthConnectDismiss),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  health.installHealthConnect();
-                },
-                child: Text(context.l10n.medicalHealthConnectInstall),
-              ),
+              const SizedBox(height: 20),
+              MedicalBasicSection(controller: c),
+              const SizedBox(height: 20),
+              MedicalBackgroundSection(controller: c),
+              const SizedBox(height: 20),
+              MedicalEmergencySection(controller: c),
             ],
-          ),
-        );
-        return;
-      }
-
-      // ── 2. 請求授權 ──
-      final hasPermissions = await health.hasPermissions(types,
-          permissions: types.map((_) => HealthDataAccess.READ).toList());
-      if (hasPermissions != true) {
-        final granted = await health.requestAuthorization(types,
-            permissions: types.map((_) => HealthDataAccess.READ).toList());
-        if (!granted) {
-          if (!mounted) return;
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: Text(context.l10n.medicalHealthConnectAuthFail),
-              content: Text(context.l10n.medicalHealthConnectAuthGuide),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(context.l10n.medicalHealthConnectDismiss),
-                ),
-              ],
-            ),
           );
-          return;
-        }
-      }
-
-      // ── 3. 讀取最近 365 天的資料 ──
-      final now = DateTime.now();
-      final oneYearAgo = now.subtract(const Duration(days: 365));
-      final healthData = await health.getHealthDataFromTypes(
-        types: types,
-        startTime: oneYearAgo,
-        endTime: now,
-      );
-
-      if (healthData.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(context.l10n.medicalHealthConnectNoData),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-
-      // ── 4. 取最新的各類型數據 ──
-      int imported = 0;
-      for (final dp in healthData.reversed) {
-        switch (dp.type) {
-          case HealthDataType.HEIGHT:
-            final cm = (dp.value as NumericHealthValue).numericValue.toInt();
-            if (cm > 0 && _card.heightCm == null) {
-              _heightCtrl.text = cm.toString();
-              _card.heightCm = cm;
-              imported++;
-            }
-            break;
-          case HealthDataType.WEIGHT:
-            final kg = (dp.value as NumericHealthValue).numericValue.toInt();
-            if (kg > 0 && _card.weightKg == null) {
-              _weightCtrl.text = kg.toString();
-              _card.weightKg = kg;
-              imported++;
-            }
-            break;
-          case HealthDataType.BLOOD_TYPE:
-            final val = dp.value.toString();
-            if (val.isNotEmpty && _card.bloodType.isEmpty) {
-              final mapped = _mapBloodType(val);
-              if (mapped != null) {
-                _card.bloodType = mapped;
-                imported++;
-              }
-            }
-            break;
-          default:
-            break;
-        }
-      }
-
-      if (mounted) {
-        setState(() {}); // 刷新 UI
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(imported > 0
-                ? context.l10n.medicalHealthConnectImported(imported)
-                : context.l10n.medicalHealthConnectNoNewData),
-            backgroundColor: imported > 0 ? Colors.green : Colors.orange,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.l10n.medicalHealthConnectFailSnack(e.toString())),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
-    }
-  }
-
-  String? _mapBloodType(String healthConnectValue) {
-    final v = healthConnectValue.toUpperCase();
-    const map = {
-      'A_POSITIVE': 'A+',
-      'A_NEGATIVE': 'A-',
-      'B_POSITIVE': 'B+',
-      'B_NEGATIVE': 'B-',
-      'AB_POSITIVE': 'AB+',
-      'AB_NEGATIVE': 'AB-',
-      'O_POSITIVE': 'O+',
-      'O_NEGATIVE': 'O-',
-    };
-    return map[v];
-  }
-
-  Widget _presetChip(String label, Set<String> preset) {
-    // 檢查當前是否匹配此預設
-    bool isActive = true;
-    for (final f in MedicalField.allFields) {
-      if ((_card.sosFlags[f] ?? false) != preset.contains(f)) {
-        isActive = false;
-        break;
-      }
-    }
-
-    return GestureDetector(
-      onTap: () => _applyPreset(preset, label),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: isActive
-              ? Colors.redAccent.withValues(alpha: 0.2)
-              : Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isActive ? Colors.redAccent : Colors.white24,
-            width: isActive ? 1.5 : 1,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isActive ? Colors.redAccent : Colors.white54,
-            fontSize: 11,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
+        },
       ),
-    );
-  }
-
-  // ── 區段標題 ──
-  Widget _buildSectionHeader(String title, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white54, size: 18),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const Expanded(
+      bottomNavigationBar: AnimatedBuilder(
+        animation: c,
+        builder: (context, _) {
+          if (c.loading) return const SizedBox.shrink();
+          return SafeArea(
             child: Padding(
-              padding: EdgeInsets.only(left: 12),
-              child: Divider(color: Colors.white12),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── SOS 廣播 toggle ──
-  Widget _buildSosToggle(String field) {
-    final isOn = _card.sosFlags[field] ?? false;
-    return GestureDetector(
-      onTap: () => setState(() => _card.sosFlags[field] = !isOn),
-      child: Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: isOn
-              ? Colors.redAccent.withValues(alpha: 0.15)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isOn ? Icons.cell_tower : Icons.cell_tower,
-              color: isOn ? Colors.redAccent : Colors.white24,
-              size: 16,
-            ),
-            const SizedBox(width: 2),
-            Text(
-              isOn ? 'ON' : 'OFF',
-              style: TextStyle(
-                color: isOn ? Colors.redAccent : Colors.white24,
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: c.saving ? null : _onSave,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                  icon: c.saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.save, size: 18),
+                  label: Text(
+                    c.saving
+                        ? context.l10n.medicalSaving
+                        : context.l10n.medicalSaveButton,
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── 通用文字欄位 ──
-  Widget _buildTextField({
-    required String field,
-    String? label,
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    int maxLines = 1,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: TextField(
-              controller: controller,
-              maxLines: maxLines,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-              decoration: InputDecoration(
-                labelText: label ?? MedicalField.label(field),
-                labelStyle:
-                    const TextStyle(color: Colors.white38, fontSize: 13),
-                hintText: hint,
-                hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
-                prefixIcon: Icon(icon, color: Colors.white38, size: 18),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Colors.white12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Colors.redAccent),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                filled: true,
-                fillColor: const Color(0xFF1a1a2e),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: _buildSosToggle(field),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── 數字欄位 ──
-  Widget _buildNumberField({
-    required String field,
-    String? label,
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    String? suffix,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-              decoration: InputDecoration(
-                labelText: label ?? MedicalField.label(field),
-                labelStyle:
-                    const TextStyle(color: Colors.white38, fontSize: 13),
-                hintText: hint,
-                hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
-                prefixIcon: Icon(icon, color: Colors.white38, size: 18),
-                suffixText: suffix,
-                suffixStyle:
-                    const TextStyle(color: Colors.white38, fontSize: 13),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Colors.white12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Colors.redAccent),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                filled: true,
-                fillColor: const Color(0xFF1a1a2e),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _buildSosToggle(field),
-        ],
-      ),
-    );
-  }
-
-  // ── 血型下拉選單 ──
-  Widget _buildBloodTypeField() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: DropdownButtonFormField<String>(
-              initialValue:
-                  _bloodTypes.contains(_card.bloodType) ? _card.bloodType : '',
-              dropdownColor: const Color(0xFF1a1a2e),
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-              decoration: InputDecoration(
-                labelText: context.l10n.medicalFieldBloodType,
-                labelStyle:
-                    const TextStyle(color: Colors.white38, fontSize: 13),
-                prefixIcon: const Icon(Icons.bloodtype_outlined,
-                    color: Colors.white38, size: 18),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Colors.white12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Colors.redAccent),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                filled: true,
-                fillColor: const Color(0xFF1a1a2e),
-              ),
-              items: _bloodTypes.map((bt) {
-                return DropdownMenuItem(
-                  value: bt,
-                  child: Text(bt.isEmpty ? context.l10n.medicalBloodTypeNone : bt),
-                );
-              }).toList(),
-              onChanged: (v) => setState(() => _card.bloodType = v ?? ''),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _buildSosToggle(MedicalField.bloodType),
-        ],
-      ),
-    );
-  }
-
-  // ── 過敏原區段（支援多筆）──
-  Widget _buildAllergySection() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.warning_amber_outlined,
-                  color: Colors.white38, size: 18),
-              const SizedBox(width: 8),
-              Text(context.l10n.medicalAllergenLabel,
-                  style: const TextStyle(color: Colors.white54, fontSize: 13)),
-              const Spacer(),
-              _buildSosToggle(MedicalField.allergies),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // 現有過敏條目
-          ..._card.allergies.asMap().entries.map((entry) {
-            final i = entry.key;
-            final a = entry.value;
-            return Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1a1a2e),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${a.allergen} → ${a.reaction}',
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => setState(() => _card.allergies.removeAt(i)),
-                    child: const Icon(Icons.close,
-                        color: Colors.white38, size: 16),
-                  ),
-                ],
-              ),
-            );
-          }),
-          // 新增過敏原輸入
-          Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  controller: _allergenCtrl,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: context.l10n.medicalAllergenHint,
-                    hintStyle:
-                        const TextStyle(color: Colors.white24, fontSize: 12),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(color: Colors.white12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(color: Colors.redAccent),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    filled: true,
-                    fillColor: const Color(0xFF1a1a2e),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  controller: _reactionCtrl,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: context.l10n.medicalReactionHint,
-                    hintStyle:
-                        const TextStyle(color: Colors.white24, fontSize: 12),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(color: Colors.white12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(color: Colors.redAccent),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    filled: true,
-                    fillColor: const Color(0xFF1a1a2e),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: () {
-                  final allergen = _allergenCtrl.text.trim();
-                  final reaction = _reactionCtrl.text.trim();
-                  if (allergen.isEmpty) return;
-                  setState(() {
-                    _card.allergies.add(AllergyEntry(
-                      allergen: allergen,
-                      reaction: reaction.isNotEmpty ? reaction : context.l10n.medicalReactionUnknown,
-                    ));
-                    _allergenCtrl.clear();
-                    _reactionCtrl.clear();
-                  });
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color: Colors.redAccent.withValues(alpha: 0.5)),
-                  ),
-                  child:
-                      const Icon(Icons.add, color: Colors.redAccent, size: 20),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── 緊急聯絡人 ──
-  Widget _buildEmergencyContactSection() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _ecPhoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  decoration: InputDecoration(
-                    labelText: context.l10n.medicalEcPhoneLabel,
-                    labelStyle:
-                        const TextStyle(color: Colors.white38, fontSize: 13),
-                    hintText: '0912-345-678',
-                    hintStyle:
-                        const TextStyle(color: Colors.white24, fontSize: 13),
-                    prefixIcon: const Icon(Icons.phone_outlined,
-                        color: Colors.white38, size: 18),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(color: Colors.white12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(color: Colors.redAccent),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
-                    filled: true,
-                    fillColor: const Color(0xFF1a1a2e),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              _buildSosToggle(MedicalField.emergencyContact),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _ecRelationCtrl,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  decoration: InputDecoration(
-                    labelText: context.l10n.medicalEcRelationLabel,
-                    labelStyle:
-                        const TextStyle(color: Colors.white38, fontSize: 13),
-                    hintText: context.l10n.medicalEcRelationHint,
-                    hintStyle:
-                        const TextStyle(color: Colors.white24, fontSize: 13),
-                    prefixIcon: const Icon(Icons.people_outline,
-                        color: Colors.white38, size: 18),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(color: Colors.white12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(color: Colors.redAccent),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
-                    filled: true,
-                    fillColor: const Color(0xFF1a1a2e),
-                  ),
-                ),
-              ),
-              // 佔位，與電話欄的 toggle 對齊
-              const SizedBox(width: 8),
-              const SizedBox(width: 52),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── 器官捐贈意願 ──
-  Widget _buildOrganDonorField() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1a1a2e),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.volunteer_activism_outlined,
-                      color: Colors.white38, size: 18),
-                  const SizedBox(width: 12),
-                  Text(context.l10n.medicalOrganDonorLabel,
-                      style: const TextStyle(color: Colors.white54, fontSize: 13)),
-                  const Spacer(),
-                  DropdownButton<bool?>(
-                    value: _card.organDonor,
-                    dropdownColor: const Color(0xFF1a1a2e),
-                    underline: const SizedBox(),
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                    items: [
-                      DropdownMenuItem(value: null, child: Text(context.l10n.medicalOrganDonorNone)),
-                      DropdownMenuItem(value: true, child: Text(context.l10n.medicalOrganDonorYes)),
-                      DropdownMenuItem(value: false, child: Text(context.l10n.medicalOrganDonorNo)),
-                    ],
-                    onChanged: (v) => setState(() => _card.organDonor = v),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _buildSosToggle(MedicalField.organDonor),
-        ],
+          );
+        },
       ),
     );
   }
