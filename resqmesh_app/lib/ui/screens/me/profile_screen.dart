@@ -40,7 +40,7 @@ class _IgniProfileScreenState extends State<IgniProfileScreen>
   @override
   bool get wantKeepAlive => true;
 
-  final _identity = IdentityManager();
+  late final IdentityManager _identity = context.read<IdentityManager>();
   int _level = 0;
   String _pubKeyHex = '';
   String _nickname = '';

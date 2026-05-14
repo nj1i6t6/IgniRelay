@@ -49,7 +49,7 @@ class _StationSupplyScreenState extends State<StationSupplyScreen>
         decoder: context.read<EventDecoder>(),
         repo: context.read<StationSupplyRepo>(),
         publisher: context.read<EventPublisher>(),
-        identity: IdentityManager(),
+        identity: context.read<IdentityManager>(),
       );
       _controller!.checkAccessAndLoad();
     }

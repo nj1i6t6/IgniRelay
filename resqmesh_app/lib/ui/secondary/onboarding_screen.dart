@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
@@ -12,7 +13,7 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  final _identity = IdentityManager();
+  late final IdentityManager _identity = context.read<IdentityManager>();
   final _nicknameCtrl = TextEditingController();
   int _level = 0;
   String _pubKeyHex = '...';

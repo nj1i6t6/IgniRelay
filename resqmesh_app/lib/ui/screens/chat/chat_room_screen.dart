@@ -46,6 +46,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   StreamSubscription<ChatMessage>? _meshSub;
   String? _displayRoomName;
   Locale? _locale;
+  late final IdentityManager _identity = context.read<IdentityManager>();
 
   @override
   void initState() {
@@ -82,7 +83,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 
   Future<void> _init() async {
-    _myPubKeyHex = await IdentityManager().getPublicKeyHex();
+    _myPubKeyHex = await _identity.getPublicKeyHex();
     await _loadMessages();
     await context.read<ChatService>().markAsRead(widget.roomId);
     _startCooldownTimer();

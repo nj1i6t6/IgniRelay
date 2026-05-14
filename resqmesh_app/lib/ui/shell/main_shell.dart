@@ -43,6 +43,7 @@ class _MainShellState extends State<MainShell> {
   static const int _kAlertedIdsCap = 256;
   Timer? _nearbyRedClear;
   bool _eventStreamSubscribed = false;
+  late final IdentityManager _identity = context.read<IdentityManager>();
 
   /// 記錄一個 event id 已 alert 過；若超過上限則丟掉最早的，避免無界成長。
   void _markAlerted(String id) {
@@ -113,7 +114,7 @@ class _MainShellState extends State<MainShell> {
     final isRequest = update.eventType == 15;
     if (!isOffer && !isRequest) return;
 
-    final myPubKey = await IdentityManager().getPublicKeyBytes();
+    final myPubKey = await _identity.getPublicKeyBytes();
     List<int> targetPubKey = const [];
     final payload = update.decodedPayload;
     if (isOffer && payload is MatchOfferData) {

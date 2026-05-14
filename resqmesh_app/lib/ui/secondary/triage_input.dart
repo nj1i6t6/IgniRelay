@@ -34,6 +34,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
   bool _attachMedicalCard = true;
   bool _hasMedicalCard = false;
   bool _medicalCardChecked = false;
+  late final IdentityManager _identity = context.read<IdentityManager>();
 
   @override
   void didChangeDependencies() {
@@ -45,7 +46,7 @@ class _TriageInputWidgetState extends State<TriageInputWidget> {
   }
 
   Future<void> _checkMedicalCard() async {
-    final pubKey = await IdentityManager().getPublicKeyBytes();
+    final pubKey = await _identity.getPublicKeyBytes();
     final json = await context.read<ProfileRepo>().getMedicalCard(pubKey);
     if (mounted) {
       setState(() {
