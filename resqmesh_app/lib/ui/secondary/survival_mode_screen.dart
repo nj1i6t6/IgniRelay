@@ -1,18 +1,21 @@
-import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+
 import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
 import 'package:ignirelay_app/app/controllers/device_info_controller.dart';
-import 'package:ignirelay_app/app/controllers/mesh_runtime_controller.dart';
 import 'package:ignirelay_app/app/controllers/event_stream.dart';
+import 'package:ignirelay_app/app/controllers/mesh_runtime_controller.dart';
 import 'package:ignirelay_app/app/controllers/tier_manager.dart';
 import 'package:ignirelay_app/app/services/event_store.dart';
 import 'package:ignirelay_app/app/services/profile_repo.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/secondary/debug_log_viewer.dart';
+import 'package:ignirelay_app/ui/secondary/survival_mode_controller.dart';
 
+/// Stage 2A：本檔由 god file 拆出來後改為 thin shell。
+/// 真正的 state + business logic 在 [SurvivalModeController]，
+/// debug panel 抽出為獨立 widget [DebugLogViewer]。
 class SurvivalModeScreen extends StatefulWidget {
   const SurvivalModeScreen({super.key});
 
@@ -25,344 +28,131 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
   @override
   bool get wantKeepAlive => true;
 
-  // 模式
-  bool _isDataMule = false;
-  bool _isBleActive = false;
-  int _batteryLevel = -1;
-
-  // 統計
-  int _totalEventCount = 0;
-  int _bleConnectedCount = 0;
-
-  // 最近 Mesh 事件
-  List<String> _recentEvents = [];
-
-  // Debug
+  SurvivalModeController? _controller;
   bool _showDebug = false;
-  final List<String> _gattServerLogs = [];
-  StreamSubscription? _gattSub;
-
-  MeshRuntimeController get _mesh => context.read<MeshRuntimeController>();
-  StreamSubscription? _bleSub;
-  StreamSubscription<TransportState>? _transportStateSub;
-  Timer? _statsTimer;
-
-  bool _initialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _statsTimer =
-        Timer.periodic(const Duration(seconds: 3), (_) => _refreshDebug());
-  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_initialized) {
-      _initialized = true;
-      _checkCapabilities();
-      _loadStats();
-      context.read<ProfileRepo>().purgeDebugLogs();
-      _startMeshListening();
-      _startGattListener();
+    _controller ??= SurvivalModeController(
+      mesh: context.read<MeshRuntimeController>(),
+      deviceInfo: context.read<DeviceInfoController>(),
+      tierManager: context.read<TierManager>(),
+      eventStream: context.read<EventStream>(),
+      bleScanController: context.read<BleScanController>(),
+      eventStore: context.read<EventStore>(),
+      profileRepo: context.read<ProfileRepo>(),
+      meshReceivedLabel: (n) => context.l10n.survivalMeshReceived(n),
+    )..init();
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onToggleDataMule() async {
+    final c = _controller!;
+    final wasMule = c.isDataMule;
+    final nowMule = await c.toggleDataMule();
+    if (!wasMule && !nowMule && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.survivalDataMuleFailSnack),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
   }
 
-  Future<void> _checkCapabilities() async {
-    int battery = -1;
-    try {
-      battery = await context.read<DeviceInfoController>().batteryLevel();
-    } catch (_) {
-      battery = -1;
-    }
-    if (battery >= 0) {
-      if (!mounted) return;
-      context.read<TierManager>().updateBattery(battery);
-    }
-    if (mounted) {
-      setState(() {
-        _batteryLevel = battery;
-      });
-    }
-  }
-
-  Future<void> _loadStats() async {
-    final events = await context.read<EventStore>().queryRecent(limit: 50);
-    final recentLabels = events.take(5).map((e) {
-      final urgency = e['urgency'] as int? ?? 0;
-      final labels = ['INFO', 'RESOURCE', 'SOS_YELLOW', 'SOS_RED'];
-      final ts = e['hlc_timestamp'] as int? ?? 0;
-      final time = DateTime.fromMillisecondsSinceEpoch(ts);
-      return '[${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}] ${labels[urgency]}';
-    }).toList();
-
-    if (mounted) {
-      setState(() {
-        _totalEventCount = events.length;
-        _recentEvents = recentLabels;
-      });
-    }
-  }
-
-  void _startMeshListening() {
-    // Transport 已在 main 啟動時自動開始，這裡同步 UI 狀態
-    _isBleActive = _mesh.transportActive;
-
-    // 監聽 transport 狀態變化，同步 BLE 按鈕顯示
-    _transportStateSub = _mesh.transportStateChanges.listen((state) {
-      if (!mounted) return;
-      setState(() {
-        _isBleActive = state == TransportState.running;
-      });
-    });
-
-    _bleSub = context.read<EventStream>().rawEvents.listen((event) {
-      if (!mounted) return;
-      setState(() {
-        _bleConnectedCount++;
-        _recentEvents.insert(0, context.l10n.survivalMeshReceived(event.data.length));
-        if (_recentEvents.length > 5) _recentEvents.removeLast();
-      });
-    });
-  }
-
-  void _startGattListener() {
-    // 監聽 Kotlin GATT Server 透過 EventChannel 送來的原始資料
-    // 使用 NativeBridge 共享 stream，避免重複 receiveBroadcastStream() 衝突
-    _gattSub = context.read<BleScanController>().rawEventStream.listen((event) {
-      if (!mounted) return;
-      if (event is Map) {
-        final type = event['type'];
-        final device = event['device'] ?? '?';
-        String log;
-        if (type == 'ble_data') {
-          final data = event['data'];
-          final len = data is List ? data.length : 0;
-          log = '[GATT-RX] $device: $len bytes';
-        } else if (type == 'ble_peer') {
-          log = '[GATT] $device ${event['state']}';
-        } else {
-          log = '[GATT] $type from $device';
-        }
-        setState(() {
-          _gattServerLogs.add(log);
-          if (_gattServerLogs.length > 30) _gattServerLogs.removeAt(0);
-        });
-        context.read<ProfileRepo>().writeDebugLog('GATT', log);
-      }
-    }, onError: (e) {
-      debugPrint('[GATT EventChannel] error: $e');
-    });
-  }
-
-  void _refreshDebug() {
-    _loadStats();
-    if (_showDebug && mounted) setState(() {});
-  }
-
-  Future<void> _toggleDataMule() async {
-    if (_isDataMule) {
-      try {
-        await _mesh.stopAllServices();
-      } catch (_) {}
-      setState(() => _isDataMule = false);
-    } else {
-      // 確保前景服務先啟動，避免 race condition 導致閃退
-      try {
-        await _mesh.startForegroundService();
-      } catch (_) {}
-
-      // 帶重試機制（首次安裝後服務可能需要時間綁定）
-      bool success = false;
-      for (int attempt = 0; attempt < 3; attempt++) {
-        try {
-          success = await _mesh.startDataMuleMode();
-          if (success) break;
-        } catch (_) {
-          success = false;
-        }
-        if (!success && attempt < 2) {
-          await Future.delayed(const Duration(seconds: 2));
-        }
-      }
-
-      if (success) {
-        setState(() => _isDataMule = true);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(context.l10n.survivalDataMuleFailSnack),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-      }
-    }
-  }
-
-  Future<void> _toggleBle() async {
-    if (_isBleActive) {
-      try {
-        await _mesh.stopTransport();
-      } catch (_) {}
-      setState(() => _isBleActive = false);
-    } else {
-      try {
-        // 確保 BLE 權限已授權，避免無權限啟動 crash
+  Future<void> _onToggleBle() async {
+    final outcome = await _controller!.toggleBle(
+      ensureBlePermissions: () async {
         final statuses = await [
           Permission.bluetoothScan,
           Permission.bluetoothConnect,
           Permission.bluetoothAdvertise,
           Permission.locationWhenInUse,
         ].request();
-        final allGranted = statuses.values.every(
-          (s) => s.isGranted || s.isLimited,
-        );
-        if (!allGranted && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(context.l10n.survivalBleFailSnack('Missing BLE permissions')),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-          return;
-        }
-        // 確保前景服務啟動，防止背景被系統殺掉
-        try {
-          await _mesh.startForegroundService();
-        } catch (_) {}
-        await _mesh.startTransport();
-        setState(() => _isBleActive = true);
-      } catch (e) {
-        debugPrint('[BLE Toggle] start failed: $e');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(context.l10n.survivalBleFailSnack(e.toString())),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 5),
-            ),
-          );
-        }
-      }
-    }
-  }
-
-  Future<void> _exportLogs() async {
-    try {
-      final s = _mesh.transportStats;
-      final buf = StringBuffer();
-      buf.writeln('=== IgniRelay Debug Log ===');
-      buf.writeln('Time: ${DateTime.now().toIso8601String()}');
-      buf.writeln('Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
-      buf.writeln('');
-
-      // 裝置資訊（方便跨設備比對日誌）
-      String manufacturer = 'unknown';
-      try {
-        manufacturer = await context.read<DeviceInfoController>().manufacturer();
-      } catch (_) {}
-
-      buf.writeln('--- Device Info ---');
-      buf.writeln('manufacturer: $manufacturer');
-      buf.writeln('platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
-      buf.writeln('');
-
-      buf.writeln('--- Transport State ---');
-      buf.writeln('syncProtocol: v2 (WriteBloom+NotifyDiff)');
-      buf.writeln('active: ${_mesh.transportActive}');
-      buf.writeln('connectedPeers: ${s.connectedPeers}');
-      buf.writeln('seenEvents: ${s.seenEventsCount}');
-      buf.writeln('sent: ${s.sentCount}');
-      buf.writeln('recv: ${s.receivedCount}');
-      buf.writeln('');
-
-      // 持久 GATT Server 狀態（不依賴 log buffer，確保不會被擠掉）
-      if (Platform.isAndroid) {
-        try {
-          final gattStatus = await _mesh.gattServerStatus();
-          buf.writeln('--- GATT Server Status ---');
-          buf.writeln('serviceReady: ${gattStatus['ready']}');
-          buf.writeln('serviceStatus: ${gattStatus['status']}');
-          buf.writeln('');
-        } catch (_) {}
-      }
-
-      buf.writeln('--- GATT Server Logs (${_gattServerLogs.length}) ---');
-      for (final l in _gattServerLogs) {
-        buf.writeln(l);
-      }
-      buf.writeln('');
-
-      // 從 DB 匯出全量持久化日誌（不受記憶體 buffer 80 筆限制）
-      final dbLogs = await context.read<ProfileRepo>().exportDebugLogs();
-      buf.writeln('--- Persistent DB Logs (${dbLogs.length}) ---');
-      for (final row in dbLogs) {
-        final ts = row['timestamp'] as int? ?? 0;
-        final src = row['source'] as String? ?? '?';
-        final msg = row['message'] as String? ?? '';
-        final dt = DateTime.fromMillisecondsSinceEpoch(ts);
-        final timeStr =
-            '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
-        buf.writeln('[$timeStr][$src] $msg');
-      }
-      buf.writeln('');
-
-      buf.writeln('--- In-Memory Transport Logs (${s.debugLogs.length}) ---');
-      for (final l in s.debugLogs) {
-        buf.writeln(l);
-      }
-      buf.writeln('');
-
-      buf.writeln('--- In-Memory EventStream Logs (${context.read<EventStream>().debugLogs.length}) ---');
-      for (final l in context.read<EventStream>().debugLogs) {
-        buf.writeln(l);
-      }
-
-      // 存到公開的「下載」資料夾，檔案管理員可直接看到
-      final downloadDir = Directory('/storage/emulated/0/Download');
-      final fallbackDir = await getApplicationDocumentsDirectory();
-      final dir = (Platform.isAndroid && await downloadDir.exists()) ? downloadDir : fallbackDir;
-      final ts = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
-      final file = File('${dir.path}/ignirelay_debug_$ts.txt');
-      await file.writeAsString(buf.toString());
-
-      if (mounted) {
+        return statuses.values.every((s) => s.isGranted || s.isLimited);
+      },
+    );
+    if (!mounted) return;
+    whenBleOutcome<void>(
+      outcome,
+      started: () {},
+      stopped: () {},
+      permissionDenied: () {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(context.l10n.survivalExportSuccess(file.path.split('/').last)),
-            backgroundColor: Colors.green,
+            content: Text(context.l10n.survivalBleFailSnack('Missing BLE permissions')),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      },
+      startFailed: (msg) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(context.l10n.survivalBleFailSnack(msg)),
+            backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),
         );
-      }
+      },
+    );
+  }
+
+  Future<void> _onExportLogs() async {
+    try {
+      final file = await _controller!.exportLogs();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.survivalExportSuccess(file.path.split('/').last)),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 5),
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.l10n.survivalExportFail(e.toString())),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.survivalExportFail(e.toString())),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    if (_controller == null) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return AnimatedBuilder(
+      animation: _controller!,
+      builder: (context, _) => _buildBody(context),
+    );
+  }
 
-    final muleColor = _isDataMule ? Colors.cyanAccent : Colors.white24;
-    final batteryColor = _batteryLevel < 0
+  Widget _buildBody(BuildContext context) {
+    final c = _controller!;
+    final muleColor = c.isDataMule ? Colors.cyanAccent : Colors.white24;
+    final batteryColor = c.batteryLevel < 0
         ? Colors.grey
-        : _batteryLevel < 20
+        : c.batteryLevel < 20
             ? Colors.red
-            : _batteryLevel < 40
+            : c.batteryLevel < 40
                 ? Colors.orange
                 : Colors.green;
+
+    final tierLabel = context.read<TierManager>().getTierLabel(context.l10n);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -371,20 +161,19 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
-              // 模式圖示
               const SizedBox(height: 20),
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 400),
                 child: Icon(
-                  _isDataMule ? Icons.router : Icons.bluetooth_audio,
-                  key: ValueKey(_isDataMule),
+                  c.isDataMule ? Icons.router : Icons.bluetooth_audio,
+                  key: ValueKey(c.isDataMule),
                   color: muleColor,
                   size: 80,
                 ),
               ),
               const SizedBox(height: 12),
               Text(
-                context.read<TierManager>().getTierLabel(context.l10n),
+                tierLabel,
                 style: TextStyle(
                   color: muleColor,
                   fontSize: 20,
@@ -392,15 +181,14 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                 ),
               ),
               const SizedBox(height: 8),
-              // 電量顯示
-              if (_batteryLevel >= 0)
+              if (c.batteryLevel >= 0)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      _batteryLevel > 80
+                      c.batteryLevel > 80
                           ? Icons.battery_full
-                          : _batteryLevel > 20
+                          : c.batteryLevel > 20
                               ? Icons.battery_4_bar
                               : Icons.battery_alert,
                       color: batteryColor,
@@ -409,21 +197,18 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
-                        context.l10n.survivalBattery(_batteryLevel),
+                        context.l10n.survivalBattery(c.batteryLevel),
                         style: TextStyle(color: batteryColor, fontSize: 13),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
                 ),
-
               const SizedBox(height: 24),
-
-              // 進度條
               LinearProgressIndicator(
                 backgroundColor: Colors.grey[900],
                 valueColor: AlwaysStoppedAnimation<Color>(
-                  _isDataMule ? Colors.cyan : Colors.white24,
+                  c.isDataMule ? Colors.cyan : Colors.white24,
                 ),
               ),
               const SizedBox(height: 8),
@@ -431,19 +216,16 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                 context.l10n.survivalListening,
                 style: const TextStyle(color: Colors.grey, fontSize: 13),
               ),
-
               const SizedBox(height: 24),
               const Divider(color: Colors.white12),
-
-              // 控制按鈕
               Row(
                 children: [
                   Expanded(
                     child: _ControlButton(
                       icon: Icons.router,
-                      label: _isDataMule ? context.l10n.survivalDataMuleDisable : context.l10n.survivalDataMuleEnable,
-                      color: _isDataMule ? Colors.cyan : Colors.white24,
-                      onTap: _toggleDataMule,
+                      label: c.isDataMule ? context.l10n.survivalDataMuleDisable : context.l10n.survivalDataMuleEnable,
+                      color: c.isDataMule ? Colors.cyan : Colors.white24,
+                      onTap: _onToggleDataMule,
                       onInfoTap: () => _showDataMuleExplanation(),
                     ),
                   ),
@@ -451,30 +233,24 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                   Expanded(
                     child: _ControlButton(
                       icon: Icons.bluetooth,
-                      label: _isBleActive ? context.l10n.survivalBlePause : context.l10n.survivalBleResume,
-                      color: _isBleActive ? Colors.blueAccent : Colors.white24,
-                      onTap: _toggleBle,
+                      label: c.isBleActive ? context.l10n.survivalBlePause : context.l10n.survivalBleResume,
+                      color: c.isBleActive ? Colors.blueAccent : Colors.white24,
+                      onTap: _onToggleBle,
                     ),
                   ),
                 ],
               ),
-
               const SizedBox(height: 20),
-
-              // 統計
               Row(
                 children: [
-                  _StatChip(label: context.l10n.survivalStatsLocalEvents, value: '$_totalEventCount'),
+                  _StatChip(label: context.l10n.survivalStatsLocalEvents, value: '${c.totalEventCount}'),
                   const SizedBox(width: 8),
-                  _StatChip(label: context.l10n.survivalStatsBleConnections, value: '$_bleConnectedCount'),
+                  _StatChip(label: context.l10n.survivalStatsBleConnections, value: '${c.bleConnectedCount}'),
                 ],
               ),
-
               const SizedBox(height: 16),
               const Divider(color: Colors.white12),
-
-              // 最近事件
-              if (_recentEvents.isNotEmpty) ...[
+              if (c.recentEvents.isNotEmpty) ...[
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -483,7 +259,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                   ),
                 ),
                 const SizedBox(height: 6),
-                ..._recentEvents.map((e) => Padding(
+                ...c.recentEvents.map((e) => Padding(
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Text(
                         e,
@@ -495,10 +271,7 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                       ),
                     )),
               ],
-
               const SizedBox(height: 12),
-
-              // ── Debug Panel Toggle ──
               GestureDetector(
                 onTap: () => setState(() => _showDebug = !_showDebug),
                 child: Container(
@@ -514,7 +287,8 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                     children: [
                       Icon(
                         _showDebug ? Icons.bug_report : Icons.bug_report_outlined,
-                        color: Colors.amber, size: 16,
+                        color: Colors.amber,
+                        size: 16,
                       ),
                       const SizedBox(width: 6),
                       Text(
@@ -525,142 +299,22 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
                   ),
                 ),
               ),
-
-              // ── Debug Panel Content ──
               if (_showDebug) ...[
                 const SizedBox(height: 8),
-                _buildDebugPanel(),
+                DebugLogViewer(
+                  transportActive: c.mesh.transportActive,
+                  connectedPeers: c.mesh.transportStats.connectedPeers,
+                  seenEventsCount: c.mesh.transportStats.seenEventsCount,
+                  sentCount: c.mesh.transportStats.sentCount,
+                  receivedCount: c.mesh.transportStats.receivedCount,
+                  gattLogs: c.gattServerLogs,
+                  transportLogs: c.mesh.transportStats.debugLogs,
+                  onExport: _onExportLogs,
+                ),
               ],
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildDebugPanel() {
-    final s = _mesh.transportStats;
-    final logs = s.debugLogs;
-    final gattLogs = _gattServerLogs;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.grey[900],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── 匯出日誌按鈕 ──
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.amber.withValues(alpha: 0.2),
-                foregroundColor: Colors.amber,
-                side: const BorderSide(color: Colors.amber),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-              ),
-              onPressed: _exportLogs,
-              icon: const Icon(Icons.download, size: 16),
-              label: Text(context.l10n.survivalExportButton, style: const TextStyle(fontSize: 12)),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Transport State
-          const Text('Transport State', style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          _debugRow('active', '${_mesh.transportActive}'),
-          _debugRow('connected peers', '${s.connectedPeers}'),
-          _debugRow('seenEvents (mem)', '${s.seenEventsCount}'),
-          _debugRow('sent total', '${s.sentCount}'),
-          _debugRow('recv total', '${s.receivedCount}'),
-
-          const SizedBox(height: 8),
-          const Divider(color: Colors.white12, height: 1),
-          const SizedBox(height: 8),
-
-          // GATT Server Logs
-          Row(
-            children: [
-              const Text('GATT Server', style: TextStyle(color: Colors.cyan, fontSize: 12, fontWeight: FontWeight.bold)),
-              const Spacer(),
-              Text('${gattLogs.length} events', style: const TextStyle(color: Colors.white38, fontSize: 10)),
-            ],
-          ),
-          const SizedBox(height: 4),
-          if (gattLogs.isEmpty)
-            const Text('(no GATT events yet)', style: TextStyle(color: Colors.white24, fontSize: 10, fontFamily: 'monospace'))
-          else
-            ...gattLogs.reversed.take(10).map((l) => Padding(
-              padding: const EdgeInsets.only(bottom: 1),
-              child: Text(l, style: const TextStyle(color: Colors.cyan, fontSize: 9, fontFamily: 'monospace'), maxLines: 1, overflow: TextOverflow.ellipsis),
-            )),
-
-          const SizedBox(height: 8),
-          const Divider(color: Colors.white12, height: 1),
-          const SizedBox(height: 8),
-
-          // Transport Debug Logs
-          Row(
-            children: [
-              const Text('Transport Logs', style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-              const Spacer(),
-              Text('${logs.length} entries', style: const TextStyle(color: Colors.white38, fontSize: 10)),
-            ],
-          ),
-          const SizedBox(height: 4),
-          if (logs.isEmpty)
-            const Text('(no logs yet)', style: TextStyle(color: Colors.white24, fontSize: 10, fontFamily: 'monospace'))
-          else
-            SizedBox(
-              height: 200,
-              child: ListView.builder(
-                reverse: true,
-                itemCount: logs.length,
-                itemBuilder: (_, i) {
-                  final log = logs[logs.length - 1 - i];
-                  Color c = Colors.greenAccent.withValues(alpha: 0.7);
-                  if (log.contains('ERROR')) {
-                    c = Colors.red;
-                  } else if (log.contains('SKIP')) {
-                    c = Colors.orange;
-                  } else if (log.contains('SENT')) {
-                    c = Colors.lightBlueAccent;
-                  } else if (log.contains('RECV')) {
-                    c = Colors.purpleAccent;
-                  } else if (log.contains('SCAN') || log.contains('BLOOM')) {
-                    c = Colors.yellow;
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 1),
-                    child: Text(log, style: TextStyle(color: c, fontSize: 9, fontFamily: 'monospace'), maxLines: 2, overflow: TextOverflow.ellipsis),
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _debugRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 130,
-            child: Text(label, style: const TextStyle(color: Colors.white38, fontSize: 10, fontFamily: 'monospace')),
-          ),
-          Expanded(
-            child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace', fontWeight: FontWeight.bold)),
-          ),
-        ],
       ),
     );
   }
@@ -675,8 +329,10 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
             const Icon(Icons.router, color: Colors.cyanAccent, size: 22),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(context.l10n.survivalDataMuleDialogTitle,
-                  style: const TextStyle(color: Colors.white, fontSize: 16)),
+              child: Text(
+                context.l10n.survivalDataMuleDialogTitle,
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+              ),
             ),
           ],
         ),
@@ -687,20 +343,14 @@ class _SurvivalModeScreenState extends State<SurvivalModeScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(context.l10n.survivalDataMuleDialogDismiss, style: const TextStyle(color: Colors.cyanAccent)),
+            child: Text(
+              context.l10n.survivalDataMuleDialogDismiss,
+              style: const TextStyle(color: Colors.cyanAccent),
+            ),
           ),
         ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _bleSub?.cancel();
-    _gattSub?.cancel();
-    _transportStateSub?.cancel();
-    _statsTimer?.cancel();
-    super.dispose();
   }
 }
 
@@ -769,13 +419,11 @@ class _StatChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label,
-              style: const TextStyle(color: Colors.white38, fontSize: 11)),
+          Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11)),
           const SizedBox(width: 6),
           Text(
             value,
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
           ),
         ],
       ),

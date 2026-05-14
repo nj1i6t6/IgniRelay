@@ -1,35 +1,38 @@
 import 'dart:async';
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:ignirelay_app/app/services/negotiation_manager.dart';
-import 'package:ignirelay_app/app/services/negotiation_events.dart';
-import 'package:ignirelay_app/app/services/match_repository.dart';
-import 'package:ignirelay_app/app/services/match_service.dart';
 import 'package:provider/provider.dart';
+
 import 'package:ignirelay_app/app/controllers/event_publisher.dart';
 import 'package:ignirelay_app/app/controllers/event_stream.dart';
-import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
+import 'package:ignirelay_app/app/data/supply_category_data.dart';
+import 'package:ignirelay_app/app/services/location_service.dart';
+import 'package:ignirelay_app/app/services/match_repository.dart';
+import 'package:ignirelay_app/app/services/match_service.dart';
+import 'package:ignirelay_app/app/services/negotiation_manager.dart';
+import 'package:ignirelay_app/l10n/l10n_ext.dart';
+import 'package:ignirelay_app/ui/screens/match/match_screen_controller.dart';
+import 'package:ignirelay_app/ui/screens/match/match_screen_widgets.dart';
+import 'package:ignirelay_app/ui/screens/match/match_tab_community.dart';
+import 'package:ignirelay_app/ui/screens/match/match_tab_negotiations.dart';
+import 'package:ignirelay_app/ui/screens/match/match_tab_requests.dart';
+import 'package:ignirelay_app/ui/screens/match/match_tab_supplies.dart';
+import 'package:ignirelay_app/ui/secondary/navigation_screen.dart';
+import 'package:ignirelay_app/ui/secondary/supply_registration.dart';
+import 'package:ignirelay_app/ui/sheets/resource_request_sheet.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
 import 'package:ignirelay_app/ui/theme/igni_typography.dart';
-import 'package:ignirelay_app/ui/secondary/supply_registration.dart';
-import 'package:ignirelay_app/ui/sheets/resource_request_sheet.dart';
-import 'package:ignirelay_app/ui/secondary/navigation_screen.dart';
-import 'package:ignirelay_app/app/data/supply_category_data.dart';
-import 'package:ignirelay_app/ui/screens/match/match_tab_supplies.dart';
-import 'package:ignirelay_app/ui/screens/match/match_tab_requests.dart';
-import 'package:ignirelay_app/ui/screens/match/match_tab_negotiations.dart';
-import 'package:ignirelay_app/ui/screens/match/match_tab_community.dart';
-import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
 // =============================================================================
 // MatchScreen — 4-tab layout following three-layer architecture
 //
+// Stage 2A：本檔由 god file 拆出來後改為 thin shell。data state + action handlers
+// 在 [MatchScreenController]；snackbar / navigation 留在 widget 端。
 // UI -> NegotiationManager (Application Layer) -> Database
-// UI does NOT import database_helper.dart
-// UI gets data via NegotiationManager.events Stream + MatchRepository queries
 // =============================================================================
 
 class MatchScreen extends StatefulWidget {
@@ -44,44 +47,19 @@ class _MatchScreenState extends State<MatchScreen>
   @override
   bool get wantKeepAlive => true;
 
-  late TabController _tabController;
-  final _negotiationManager = NegotiationManager();
-  final _repo = MatchRepository();
-  final _identity = IdentityManager();
-  bool _eventStreamSubscribed = false;
-  bool _initDone = false;
-
-  StreamSubscription? _negotiationSub;
-  StreamSubscription<EventLogChanged>? _meshEventSub;
-  Timer? _meshDebounce;
+  late final TabController _tabController;
+  MatchScreenController? _c;
+  StreamSubscription<MatchOutcome>? _outcomeSub;
   Timer? _countdownTimer;
-
-  // Data
-  List<DecodedSupply> _mySupplies = [];
-  List<DecodedRequest> _myRequests = [];
-  List<MyPublish> _mySupplyPublishes = [];
-  List<Map<String, dynamic>> _activeNegotiations = [];
-  List<CommunityItem> _communityItems = [];
-
-  bool _loading = true;
-  String? _error;
-  String? _gpsWarning;
-  Uint8List? _myPubKey;
+  bool _initDone = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-
-    // Listen to NegotiationManager events for real-time updates
-    _negotiationSub = _negotiationManager.events.listen(_onNegotiationEvent);
-
-    // MeshEventHandler subscription moved to didChangeDependencies
-
-    // Countdown timer for active negotiations (updates every second)
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && _tabController.index == 2) {
-        setState(() {}); // Refresh countdown display
+        setState(() {});
       }
     });
   }
@@ -91,126 +69,50 @@ class _MatchScreenState extends State<MatchScreen>
     super.didChangeDependencies();
     if (!_initDone) {
       _initDone = true;
-      _initAndLoad();
-    }
-    if (!_eventStreamSubscribed) {
-      _eventStreamSubscribed = true;
-      // match 畫面同時關心 supply / request / negotiation 三類事件；用 anyEventChanges
-      // 通用通知 stream 簡化訂閱（typed stream 過多會讓 debounce 變複雜）。
-      _meshEventSub = context.read<EventStream>().anyEventChanges.listen((_) {
-        _meshDebounce?.cancel();
-        _meshDebounce = Timer(const Duration(seconds: 3), () {
-          if (mounted) _loadAll();
-        });
-      });
+      _c = MatchScreenController(
+        eventPublisher: context.read<EventPublisher>(),
+        eventStream: context.read<EventStream>(),
+        negotiationManager: NegotiationManager(),
+        repository: MatchRepository(),
+        identity: IdentityManager(),
+        locationService: context.read<LocationService>(),
+      );
+      _c!.init();
+      _c!.attachEventStream();
+      _outcomeSub = _c!.outcomes.listen(_handleOutcome);
     }
   }
 
   @override
   void dispose() {
-    _negotiationSub?.cancel();
-    _meshEventSub?.cancel();
-    _meshDebounce?.cancel();
+    _outcomeSub?.cancel();
     _countdownTimer?.cancel();
     _tabController.dispose();
+    _c?.dispose();
     super.dispose();
   }
 
-  // ---------------------------------------------------------------------------
-  // Initialization & data loading
-  // ---------------------------------------------------------------------------
-
-  Future<void> _initAndLoad() async {
-    final locService = context.read<LocationService>();
-    final gpsFuture = locService.init();
-    final keyFuture = _identity.getPublicKeyBytes();
-    final dataFuture = _loadAll();
-    final results = await Future.wait([gpsFuture, keyFuture, dataFuture]);
-
-    if (mounted) {
-      setState(() {
-        _gpsWarning = locService.unavailableReason;
-        _myPubKey = Uint8List.fromList(results[1] as List<int>);
-      });
-    }
-  }
-
-  Future<void> _loadAll() async {
+  void _handleOutcome(MatchOutcome outcome) {
     if (!mounted) return;
-    setState(() {
-      _loading = _mySupplies.isEmpty && _myRequests.isEmpty;
-      _error = null;
-    });
-    try {
-      // Expire stale negotiations via Application Layer
-      await _negotiationManager.expireStaleNegotiations();
-
-      final results = await Future.wait([
-        _repo.getAvailableSupplies(), // 0: all available supplies
-        _repo.getMyRequests(), // 1: my requests
-        _repo.getCommunityItems(), // 2: community
-        _repo.getRequests(), // 3: all requests (for matching)
-        _repo.getOthersSupplies(), // 4: others' supplies (for matching)
-        _repo.getMyPublishes(), // 5: my publishes (supply + request with eventId)
-      ]);
-
-      final allMySupplies = results[0] as List<DecodedSupply>;
-      final myRequests = results[1] as List<DecodedRequest>;
-      final community = results[2] as List<CommunityItem>;
-      final myPublishes = results[5] as List<MyPublish>;
-      // results[3] allRequests / results[4] othersSupplies 目前 UI 未消費，
-      // 舊 _outboundMatches/_inboundMatches 欄位已移除；MatchEntry 保留在
-      // onOpenNavigation 透過單筆 neg 即時組裝（L530 左右）。
-
-      // Get active negotiations
-      List<Map<String, dynamic>> activeNeg = [];
-      if (_myPubKey != null) {
-        activeNeg = await _negotiationManager.getMyNegotiations(_myPubKey!);
-        // Filter to active statuses
-        activeNeg = activeNeg.where((n) {
-          final s = n['status'] as String;
-          return s == 'PENDING' || s == 'ACCEPTED' || s == 'NAVIGATING';
-        }).toList();
-      }
-
-      if (mounted) {
-        setState(() {
-          _mySupplies = allMySupplies;
-          _myRequests = myRequests;
-          _mySupplyPublishes = myPublishes.where((p) => p.isSupply).toList();
-          _communityItems = community;
-          _activeNegotiations = activeNeg;
-          _loading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('[MatchScreen] load failed: $e');
-      if (mounted) {
-        setState(() {
-          _error = '$e';
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  void _onNegotiationEvent(NegotiationEvent event) {
-    if (!mounted) return;
-    _loadAll();
-    // Show snackbar for key events
-    if (event is NegotiationAccepted) {
-      _showSnack(context.l10n.matchNegAcceptedSnack, Colors.green);
-    } else if (event is NegotiationDeclined) {
-      _showSnack(context.l10n.matchNegDeclinedSnack, Colors.orange);
-    } else if (event is NegotiationCancelled) {
-      _showSnack(context.l10n.matchNegCancelledSnack, Colors.grey);
-    } else if (event is NegotiationCompleted) {
-      _showSnack(context.l10n.matchHandoffCompleteSnack, Colors.green);
-    } else if (event is NegotiationExpired) {
-      _showSnack(context.l10n.matchNegExpiredSnack, Colors.orange);
-    } else if (event is OversoldDetected) {
-      _showSnack(context.l10n.matchOverQuantityWarning, Colors.red);
-    }
+    whenMatchOutcome<void>(
+      outcome,
+      negotiationAccepted: () => _showSnack(context.l10n.matchNegAcceptedSnack, Colors.green),
+      negotiationDeclined: () => _showSnack(context.l10n.matchNegDeclinedSnack, Colors.orange),
+      negotiationCancelled: () => _showSnack(context.l10n.matchNegCancelledSnack, Colors.grey),
+      handoffComplete: () => _showSnack(context.l10n.matchHandoffCompleteSnack, Colors.green),
+      negotiationExpired: () => _showSnack(context.l10n.matchNegExpiredSnack, Colors.orange),
+      oversoldDetected: () => _showSnack(context.l10n.matchOverQuantityWarning, Colors.red),
+      acceptOk: () => _showSnack(context.l10n.matchAcceptSnack, Colors.green),
+      declineOk: () => _showSnack(context.l10n.matchDeclineSnack, Colors.grey),
+      cancelSupplyOk: (n) => _showSnack(context.l10n.matchCancelSupplySnack(n), Colors.grey[700]!),
+      cancelRequestOk: (n) => _showSnack(context.l10n.matchCancelRequestSnack(n), Colors.grey[700]!),
+      acceptFail: (e) => _showSnack(context.l10n.matchAcceptFailSnack(e), Colors.red[700]!),
+      declineFail: (e) => _showSnack(context.l10n.matchDeclineFailSnack(e), Colors.red[700]!),
+      cancelFail: (e) => _showSnack(context.l10n.matchCancelFailSnack(e), Colors.red[700]!),
+      communityRequestOk: (q, n) => _showSnack(context.l10n.matchCommunityRequestSnack(q, n), Colors.green[700]!),
+      communitySupplyOk: (q, n) => _showSnack(context.l10n.matchCommunitySupplySnack(q, n), Colors.green[700]!),
+      communityFail: (e) => _showSnack(context.l10n.matchCommunityFailSnack(e), Colors.red[700]!),
+    );
   }
 
   void _showSnack(String msg, Color bg) {
@@ -220,339 +122,10 @@ class _MatchScreenState extends State<MatchScreen>
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Build
-  // ---------------------------------------------------------------------------
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    final p = context.igni;
-    final s = context.l10n;
-
-    return Stack(
-      children: [
-        Container(
-          color: p.bg0,
-          child: SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
-                // ── 頁首 ──
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    IgniSpacing.xl,
-                    IgniSpacing.xl2,
-                    IgniSpacing.xl,
-                    IgniSpacing.sm,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(s.matchTitle,
-                                style: IgniTypography.display(p.text0)),
-                            const SizedBox(height: 4),
-                            Text(
-                              s.matchHeaderItemsSubtitle(
-                                  _communityItems.length),
-                              style: IgniTypography.monoSmall(p.text2),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // ── Tabs ──
-                _MatchTabStrip(
-                  controller: _tabController,
-                  items: [
-                    _TabMeta(s.matchTabSupplies, Icons.inventory_2_outlined,
-                        _mySupplies.length),
-                    _TabMeta(s.matchTabRequests, Icons.campaign_outlined,
-                        _myRequests.length,
-                        highlight: _myRequests.isNotEmpty),
-                    _TabMeta(s.matchTabNegotiations, Icons.sync,
-                        _activeNegotiations.length),
-                    _TabMeta(s.matchTabCommunity, Icons.people_alt_outlined,
-                        _communityItems.length),
-                  ],
-                ),
-                if (_gpsWarning != null) _buildGpsWarningBanner(),
-                if (_error != null) _buildErrorBanner(),
-                Expanded(
-                  child: _loading && _mySupplies.isEmpty
-                      ? Center(
-                          child: CircularProgressIndicator(color: p.brand),
-                        )
-                      : TabBarView(
-                          controller: _tabController,
-                          children: [
-                            MatchTabSupplies(
-                              mySupplies: _mySupplies,
-                              mySupplyPublishes: _mySupplyPublishes,
-                              onRefresh: _loadAll,
-                              onShowSnack: _showSnack,
-                              onCancelSupply: _handleCancelSupply,
-                              buildEmptyState: _buildEmptyState,
-                            ),
-                            MatchTabRequests(
-                              myRequests: _myRequests,
-                              activeNegotiations: _activeNegotiations,
-                              onRefresh: _loadAll,
-                              onShowSnack: _showSnack,
-                              onAcceptNegotiation: _acceptNegotiation,
-                              onDeclineNegotiation: _declineNegotiation,
-                              onCancelRequest: _handleCancelRequest,
-                              buildEmptyState: _buildEmptyState,
-                              formatCountdown: _formatCountdown,
-                              isExpiringSoon: _isExpiringSoon,
-                              urgencyColor: _urgencyColor,
-                              urgencyLabel: _urgencyLabel,
-                              urgencyIcon: _urgencyIcon,
-                            ),
-                            MatchTabNegotiations(
-                              activeNegotiations: _activeNegotiations,
-                              myPubKey: _myPubKey,
-                              staleNegotiationIds:
-                                  _negotiationManager.staleNegotiationIds,
-                              onRefresh: _loadAll,
-                              onShowSnack: _showSnack,
-                              onAcceptNegotiation: _acceptNegotiation,
-                              onDeclineNegotiation: _declineNegotiation,
-                              onCancelNegotiation: _handleCancelNegotiation,
-                              onOpenNavigation: _openNavigationForNeg,
-                              buildEmptyState: _buildEmptyState,
-                              formatCountdown: _formatCountdown,
-                              isExpiringSoon: _isExpiringSoon,
-                            ),
-                            MatchTabCommunity(
-                              communityItems: _communityItems,
-                              onRefresh: _loadAll,
-                              onShowSnack: _showSnack,
-                              onCommunityAction: _handleCommunityAction,
-                              buildEmptyState: _buildEmptyState,
-                              urgencyColor: _urgencyColor,
-                              urgencyLabel: _urgencyLabel,
-                            ),
-                          ],
-                        ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        // ── Floating actions（雙按鈕：需求 outline / 供給 brand glow）──
-        Positioned(
-          right: IgniSpacing.xl,
-          bottom: IgniSpacing.bottomTabBarHeight + IgniSpacing.xl,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _OutlineFab(
-                color: p.sos,
-                bg: p.bg1,
-                icon: Icons.campaign_outlined,
-                label: s.matchFabPublishRequest,
-                onTap: () {
-                  Navigator.of(context)
-                      .push(MaterialPageRoute(
-                          builder: (_) => const ResourceRequestScreen()))
-                      .then((_) => _loadAll());
-                },
-              ),
-              const SizedBox(height: IgniSpacing.sm),
-              _BrandFab(
-                color: p.brand,
-                icon: Icons.add,
-                label: s.matchFabRegisterSupply,
-                onTap: () {
-                  Navigator.of(context)
-                      .push(MaterialPageRoute(
-                          builder: (_) => const SupplyRegistrationScreen()))
-                      .then((_) => _loadAll());
-                },
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // GPS Warning
-  // ---------------------------------------------------------------------------
-
-  Widget _buildGpsWarningBanner() {
-    final p = context.igni;
-    final locService = context.read<LocationService>();
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-          horizontal: IgniSpacing.lg, vertical: IgniSpacing.sm),
-      color: p.warnSoft,
-      child: Row(
-        children: [
-          Icon(Icons.location_off, color: p.warn, size: 18),
-          const SizedBox(width: IgniSpacing.sm),
-          Expanded(
-            child: Text(
-              _gpsWarning ?? '',
-              style: IgniTypography.bodySmall(p.text1),
-            ),
-          ),
-          TextButton(
-            onPressed: locService.permDeniedForever
-                ? Geolocator.openAppSettings
-                : Geolocator.openLocationSettings,
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: IgniSpacing.sm),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(
-              locService.permDeniedForever
-                  ? context.l10n.matchGpsOpenSettings
-                  : context.l10n.matchGpsEnableLocation,
-              style: IgniTypography.labelSmall(p.warn),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorBanner() {
-    final p = context.igni;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-          horizontal: IgniSpacing.lg, vertical: IgniSpacing.sm),
-      color: p.sosSoft,
-      child: Row(
-        children: [
-          Icon(Icons.error_outline, color: p.sos, size: 18),
-          const SizedBox(width: IgniSpacing.sm),
-          Expanded(
-            child: Text(context.l10n.matchLoadError(_error ?? ''),
-                style: IgniTypography.bodySmall(p.text1)),
-          ),
-          TextButton(
-            onPressed: _loadAll,
-            child: Text(context.l10n.matchRetry,
-                style: IgniTypography.labelSmall(p.sos)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Action handlers (delegated from tab widgets)
-  // ---------------------------------------------------------------------------
-
-  Future<void> _handleCancelSupply(DecodedSupply supply, MyPublish? pub) async {
-    if (pub == null || !mounted) return;
-    final readableName = getLocalizedReadableName(supply.resourceType, context);
-    try {
-      await context.read<EventPublisher>().cancelSupply(pub.eventId);
-      if (!mounted) return;
-      _showSnack(context.l10n.matchCancelSupplySnack(readableName), Colors.grey[700]!);
-      _loadAll();
-    } catch (e) {
-      if (!mounted) return;
-      _showSnack(context.l10n.matchCancelFailSnack(e.toString()), Colors.red[700]!);
-    }
-  }
-
-  Future<void> _acceptNegotiation(Map<String, dynamic> neg) async {
-    final negId = neg['negotiation_id'] as String? ?? '';
-    final resourceId = neg['resource_id'] as String? ?? '';
-    final requestId = neg['request_id'] as String? ?? '';
-    final agreedQty = (neg['offered_qty'] as num?)?.toDouble() ??
-        (neg['requested_qty'] as num?)?.toDouble() ?? 0;
-
-    try {
-      await context.read<EventPublisher>().publishMatchAccept(
-        negotiationId: negId,
-        resourceId: resourceId,
-        requestId: requestId,
-        agreedQty: agreedQty,
-      );
-      if (!mounted) return;
-      _showSnack(context.l10n.matchAcceptSnack, Colors.green);
-      _loadAll();
-    } catch (e) {
-      if (!mounted) return;
-      _showSnack(context.l10n.matchAcceptFailSnack(e.toString()), Colors.red[700]!);
-    }
-  }
-
-  Future<void> _declineNegotiation(String negId, Map<String, dynamic> neg) async {
-    final resourceId = neg['resource_id'] as String? ?? '';
-    final requestId = neg['request_id'] as String? ?? '';
-
-    try {
-      await context.read<EventPublisher>().publishMatchDecline(
-        negotiationId: negId,
-        resourceId: resourceId,
-        requestId: requestId,
-        reason: 'USER_DECLINED',
-      );
-      if (!mounted) return;
-      _showSnack(context.l10n.matchDeclineSnack, Colors.grey);
-      _loadAll();
-    } catch (e) {
-      if (!mounted) return;
-      _showSnack(context.l10n.matchDeclineFailSnack(e.toString()), Colors.red[700]!);
-    }
-  }
-
-  Future<void> _handleCancelRequest(DecodedRequest request) async {
-    final readableName = getLocalizedReadableName(request.resourceType, context);
-    try {
-      await context.read<EventPublisher>().cancelRequest(request.eventId);
-      if (!mounted) return;
-      _showSnack(context.l10n.matchCancelRequestSnack(readableName), Colors.grey[700]!);
-      _loadAll();
-    } catch (e) {
-      if (!mounted) return;
-      _showSnack(context.l10n.matchCancelFailSnack(e.toString()), Colors.red[700]!);
-    }
-  }
-
-  Future<void> _handleCancelNegotiation(Map<String, dynamic> neg) async {
-    final negId = neg['negotiation_id'] as String? ?? '';
-    final resourceId = neg['resource_id'] as String? ?? '';
-    final requestId = neg['request_id'] as String? ?? '';
-
-    try {
-      await context.read<EventPublisher>().publishMatchCancel(
-        negotiationId: negId,
-        resourceId: resourceId,
-        requestId: requestId,
-        reason: 'USER_CANCELLED',
-      );
-      if (!mounted) return;
-      _showSnack(context.l10n.matchNegCancelledSnack, Colors.grey);
-      _loadAll();
-    } catch (e) {
-      if (!mounted) return;
-      _showSnack(context.l10n.matchCancelFailSnack(e.toString()), Colors.red[700]!);
-    }
-  }
-
   void _openNavigationForNeg(Map<String, dynamic> neg) {
     final negId = neg['negotiation_id'] as String? ?? '';
     final resourceId = neg['resource_id'] as String? ?? '';
 
-    // Build a MatchEntry for NavigationScreen
     final entry = MatchEntry(
       resourceId: resourceId,
       resourceType: '',
@@ -578,70 +151,234 @@ class _MatchScreenState extends State<MatchScreen>
       providerPubKey: (neg['provider_pub_key'] as Uint8List?)?.toList(),
     );
 
-    // Start navigating if ACCEPTED
-    final status = neg['status'] as String? ?? '';
-    if (status == 'ACCEPTED') {
-      _negotiationManager.startNavigating(negId);
-    }
+    _c!.startNavigatingIfAccepted(neg);
 
     Navigator.of(context)
         .push(MaterialPageRoute(
           builder: (_) => NavigationScreen(match: entry, negotiationId: negId),
         ))
-        .then((_) => _loadAll());
+        .then((_) => _c!.loadAll());
   }
 
-  Future<void> _handleCommunityAction(CommunityItem item, int qty) async {
-    final readableName = getLocalizedReadableName(item.resourceType, context);
-    final isSupply = item.isSupply;
-    final loc = context.read<LocationService>().currentLocation;
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
 
-    try {
-      if (isSupply) {
-        // They have supply -> I publish request
-        await context.read<EventPublisher>().publishRequest(
-          resourceType: item.resourceType,
-          quantity: qty,
-          note: context.l10n.matchCommunityNote,
-          maxRangeMeters: 5000,
-          mobilityMode: 'CAN_GO',
-          lat: loc?.latitude,
-          lng: loc?.longitude,
-        );
-      } else {
-        // They have request -> I register supply
-        await context.read<EventPublisher>().publishSupply(
-          resourceType: item.resourceType,
-          quantity: qty,
-          maxRangeMeters: 5000,
-          deliveryMode: 'PICKUP',
-          lat: loc?.latitude,
-          lng: loc?.longitude,
-        );
-      }
-
-      if (mounted) {
-        _showSnack(
-          isSupply
-              ? context.l10n.matchCommunityRequestSnack(qty, readableName)
-              : context.l10n.matchCommunitySupplySnack(qty, readableName),
-          Colors.green[700]!,
-        );
-        _loadAll();
-      }
-    } catch (e) {
-      if (!mounted) return;
-      _showSnack(context.l10n.matchCommunityFailSnack(e.toString()), Colors.red[700]!);
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    if (_c == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    return AnimatedBuilder(
+      animation: _c!,
+      builder: (context, _) => _buildBody(context),
+    );
   }
 
-  // ===========================================================================
-  // Shared UI helpers
-  // ===========================================================================
+  Widget _buildBody(BuildContext context) {
+    final p = context.igni;
+    final s = context.l10n;
+    final c = _c!;
+
+    return Stack(
+      children: [
+        Container(
+          color: p.bg0,
+          child: SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(IgniSpacing.xl, IgniSpacing.xl2, IgniSpacing.xl, IgniSpacing.sm),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(s.matchTitle, style: IgniTypography.display(p.text0)),
+                            const SizedBox(height: 4),
+                            Text(
+                              s.matchHeaderItemsSubtitle(c.communityItems.length),
+                              style: IgniTypography.monoSmall(p.text2),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                MatchTabStrip(
+                  controller: _tabController,
+                  items: [
+                    MatchTabMeta(s.matchTabSupplies, Icons.inventory_2_outlined, c.mySupplies.length),
+                    MatchTabMeta(s.matchTabRequests, Icons.campaign_outlined, c.myRequests.length, highlight: c.myRequests.isNotEmpty),
+                    MatchTabMeta(s.matchTabNegotiations, Icons.sync, c.activeNegotiations.length),
+                    MatchTabMeta(s.matchTabCommunity, Icons.people_alt_outlined, c.communityItems.length),
+                  ],
+                ),
+                if (c.gpsWarning != null) _buildGpsWarningBanner(c.gpsWarning!),
+                if (c.error != null) _buildErrorBanner(c.error!),
+                Expanded(
+                  child: c.loading && c.mySupplies.isEmpty
+                      ? Center(child: CircularProgressIndicator(color: p.brand))
+                      : TabBarView(
+                          controller: _tabController,
+                          children: [
+                            MatchTabSupplies(
+                              mySupplies: c.mySupplies,
+                              mySupplyPublishes: c.mySupplyPublishes,
+                              onRefresh: c.loadAll,
+                              onShowSnack: _showSnack,
+                              onCancelSupply: (supply, pub) => c.cancelSupply(
+                                supply,
+                                pub,
+                                resourceName: getLocalizedReadableName(supply.resourceType, context),
+                              ),
+                              buildEmptyState: _buildEmptyState,
+                            ),
+                            MatchTabRequests(
+                              myRequests: c.myRequests,
+                              activeNegotiations: c.activeNegotiations,
+                              onRefresh: c.loadAll,
+                              onShowSnack: _showSnack,
+                              onAcceptNegotiation: c.acceptNegotiation,
+                              onDeclineNegotiation: c.declineNegotiation,
+                              onCancelRequest: (req) => c.cancelRequest(
+                                req,
+                                resourceName: getLocalizedReadableName(req.resourceType, context),
+                              ),
+                              buildEmptyState: _buildEmptyState,
+                              formatCountdown: _formatCountdown,
+                              isExpiringSoon: _isExpiringSoon,
+                              urgencyColor: _urgencyColor,
+                              urgencyLabel: _urgencyLabel,
+                              urgencyIcon: _urgencyIcon,
+                            ),
+                            MatchTabNegotiations(
+                              activeNegotiations: c.activeNegotiations,
+                              myPubKey: c.myPubKey,
+                              staleNegotiationIds: c.staleNegotiationIds,
+                              onRefresh: c.loadAll,
+                              onShowSnack: _showSnack,
+                              onAcceptNegotiation: c.acceptNegotiation,
+                              onDeclineNegotiation: c.declineNegotiation,
+                              onCancelNegotiation: c.cancelNegotiation,
+                              onOpenNavigation: _openNavigationForNeg,
+                              buildEmptyState: _buildEmptyState,
+                              formatCountdown: _formatCountdown,
+                              isExpiringSoon: _isExpiringSoon,
+                            ),
+                            MatchTabCommunity(
+                              communityItems: c.communityItems,
+                              onRefresh: c.loadAll,
+                              onShowSnack: _showSnack,
+                              onCommunityAction: (item, qty) => c.communityAction(
+                                item,
+                                qty,
+                                resourceName: getLocalizedReadableName(item.resourceType, context),
+                                communityNote: context.l10n.matchCommunityNote,
+                              ),
+                              buildEmptyState: _buildEmptyState,
+                              urgencyColor: _urgencyColor,
+                              urgencyLabel: _urgencyLabel,
+                            ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Positioned(
+          right: IgniSpacing.xl,
+          bottom: IgniSpacing.bottomTabBarHeight + IgniSpacing.xl,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              MatchOutlineFab(
+                color: p.sos,
+                bg: p.bg1,
+                icon: Icons.campaign_outlined,
+                label: s.matchFabPublishRequest,
+                onTap: () {
+                  Navigator.of(context)
+                      .push(MaterialPageRoute(builder: (_) => const ResourceRequestScreen()))
+                      .then((_) => c.loadAll());
+                },
+              ),
+              const SizedBox(height: IgniSpacing.sm),
+              MatchBrandFab(
+                color: p.brand,
+                icon: Icons.add,
+                label: s.matchFabRegisterSupply,
+                onTap: () {
+                  Navigator.of(context)
+                      .push(MaterialPageRoute(builder: (_) => const SupplyRegistrationScreen()))
+                      .then((_) => c.loadAll());
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGpsWarningBanner(String warning) {
+    final p = context.igni;
+    final locService = context.read<LocationService>();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: IgniSpacing.lg, vertical: IgniSpacing.sm),
+      color: p.warnSoft,
+      child: Row(
+        children: [
+          Icon(Icons.location_off, color: p.warn, size: 18),
+          const SizedBox(width: IgniSpacing.sm),
+          Expanded(child: Text(warning, style: IgniTypography.bodySmall(p.text1))),
+          TextButton(
+            onPressed: locService.permDeniedForever ? Geolocator.openAppSettings : Geolocator.openLocationSettings,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: IgniSpacing.sm),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              locService.permDeniedForever ? context.l10n.matchGpsOpenSettings : context.l10n.matchGpsEnableLocation,
+              style: IgniTypography.labelSmall(p.warn),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner(String error) {
+    final p = context.igni;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: IgniSpacing.lg, vertical: IgniSpacing.sm),
+      color: p.sosSoft,
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, color: p.sos, size: 18),
+          const SizedBox(width: IgniSpacing.sm),
+          Expanded(child: Text(context.l10n.matchLoadError(error), style: IgniTypography.bodySmall(p.text1))),
+          TextButton(
+            onPressed: _c!.loadAll,
+            child: Text(context.l10n.matchRetry, style: IgniTypography.labelSmall(p.sos)),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildEmptyState(IconData icon, String title, String subtitle) {
     final p = context.igni;
-    // Must use ListView/CustomScrollView for RefreshIndicator to work
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
@@ -664,13 +401,8 @@ class _MatchScreenState extends State<MatchScreen>
                 Text(title, style: IgniTypography.titleMedium(p.text1)),
                 const SizedBox(height: IgniSpacing.xs),
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: IgniSpacing.xl2),
-                  child: Text(
-                    subtitle,
-                    textAlign: TextAlign.center,
-                    style: IgniTypography.bodySmall(p.text2),
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: IgniSpacing.xl2),
+                  child: Text(subtitle, textAlign: TextAlign.center, style: IgniTypography.bodySmall(p.text2)),
                 ),
               ],
             ),
@@ -682,40 +414,28 @@ class _MatchScreenState extends State<MatchScreen>
 
   Color _urgencyColor(int urgency) {
     switch (urgency) {
-      case 3:
-        return Colors.red;
-      case 2:
-        return Colors.orange;
-      case 1:
-        return Colors.green;
-      default:
-        return Colors.blue;
+      case 3: return Colors.red;
+      case 2: return Colors.orange;
+      case 1: return Colors.green;
+      default: return Colors.blue;
     }
   }
 
   String _urgencyLabel(int urgency) {
     switch (urgency) {
-      case 3:
-        return context.l10n.matchUrgencyEmergency;
-      case 2:
-        return context.l10n.matchUrgencyHelp;
-      case 1:
-        return context.l10n.matchUrgencySupply;
-      default:
-        return context.l10n.matchUrgencyInfo;
+      case 3: return context.l10n.matchUrgencyEmergency;
+      case 2: return context.l10n.matchUrgencyHelp;
+      case 1: return context.l10n.matchUrgencySupply;
+      default: return context.l10n.matchUrgencyInfo;
     }
   }
 
   IconData _urgencyIcon(int urgency) {
     switch (urgency) {
-      case 3:
-        return Icons.emergency;
-      case 2:
-        return Icons.warning_amber;
-      case 1:
-        return Icons.campaign;
-      default:
-        return Icons.info_outline;
+      case 3: return Icons.emergency;
+      case 2: return Icons.warning_amber;
+      case 1: return Icons.campaign;
+      default: return Icons.info_outline;
     }
   }
 
@@ -736,253 +456,6 @@ class _MatchScreenState extends State<MatchScreen>
   bool _isExpiringSoon(int expiresAtMs) {
     final now = DateTime.now().millisecondsSinceEpoch;
     final diffMs = expiresAtMs - now;
-    return diffMs < 300000; // Less than 5 minutes
-  }
-}
-
-// ─────────────────────────── Tab strip ───────────────────────────
-
-class _TabMeta {
-  _TabMeta(this.label, this.icon, this.count, {this.highlight = false});
-  final String label;
-  final IconData icon;
-  final int count;
-  final bool highlight;
-}
-
-class _MatchTabStrip extends StatefulWidget {
-  const _MatchTabStrip({required this.controller, required this.items});
-  final TabController controller;
-  final List<_TabMeta> items;
-
-  @override
-  State<_MatchTabStrip> createState() => _MatchTabStripState();
-}
-
-class _MatchTabStripState extends State<_MatchTabStrip> {
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_onTabChange);
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_onTabChange);
-    super.dispose();
-  }
-
-  void _onTabChange() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.igni;
-    final idx = widget.controller.index;
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: p.border0)),
-      ),
-      padding: const EdgeInsets.symmetric(
-          horizontal: IgniSpacing.lg, vertical: 4),
-      child: Row(
-        children: List.generate(widget.items.length, (i) {
-          final t = widget.items[i];
-          final active = idx == i;
-          final pillBg = t.highlight
-              ? p.sos
-              : (active ? p.brandSoft : p.bg2);
-          final pillFg = t.highlight
-              ? Colors.white
-              : (active ? p.brand : p.text2);
-          // 選中態統一（Stage 4c 計畫條款）：
-          //   active → accent 外框（p.brandBorder）+ accent-soft 淺底
-          //   inactive → 無外框、無底色
-          // 原 underline 指示並存為輔助，使鍵盤導覽/弱視使用者仍有冗餘視覺線索。
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
-              child: InkWell(
-                onTap: () => widget.controller.animateTo(i),
-                borderRadius: const BorderRadius.all(IgniRadii.sm),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: active ? p.brandSoft : Colors.transparent,
-                    borderRadius: const BorderRadius.all(IgniRadii.sm),
-                    border: Border.all(
-                      color: active ? p.brandBorder : Colors.transparent,
-                      width: 1,
-                    ),
-                  ),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    alignment: Alignment.center,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Flexible(
-                              child: Text(
-                                t.label,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: active
-                                      ? FontWeight.w600
-                                      : FontWeight.w500,
-                                  color: active ? p.text0 : p.text2,
-                                ),
-                              ),
-                            ),
-                            if (t.count > 0) ...[
-                              const SizedBox(width: 5),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 5, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: pillBg,
-                                  borderRadius:
-                                      const BorderRadius.all(IgniRadii.xs),
-                                ),
-                                child: Text(
-                                  '${t.count}',
-                                  style: IgniTypography.monoSmall(pillFg)
-                                      .copyWith(fontSize: 10),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      if (active)
-                        Positioned(
-                          left: 14,
-                          right: 14,
-                          bottom: -5,
-                          child: Container(
-                            height: 2,
-                            decoration: BoxDecoration(
-                              color: p.brand,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────── Floating actions ───────────────────────────
-
-class _BrandFab extends StatelessWidget {
-  const _BrandFab({
-    required this.color,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-  final Color color;
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: Ink(
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: const BorderRadius.all(IgniRadii.pill),
-          boxShadow: IgniShadows.brandGlow(color),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: const BorderRadius.all(IgniRadii.pill),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 18, vertical: 14),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: Colors.white, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _OutlineFab extends StatelessWidget {
-  const _OutlineFab({
-    required this.color,
-    required this.bg,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-  final Color color;
-  final Color bg;
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: Ink(
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: const BorderRadius.all(IgniRadii.pill),
-          border: Border.all(color: color, width: 1.5),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: const BorderRadius.all(IgniRadii.pill),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 10),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: color, size: 16),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+    return diffMs < 300000;
   }
 }
