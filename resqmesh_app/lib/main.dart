@@ -30,6 +30,8 @@ import 'package:ignirelay_app/app/controllers/tier_manager.dart';
 import 'package:ignirelay_app/app/services/event_decoder.dart';
 import 'package:ignirelay_app/app/services/event_store.dart';
 import 'package:ignirelay_app/app/services/negotiation_repo.dart';
+import 'package:ignirelay_app/app/services/negotiation_manager.dart';
+import 'package:ignirelay_app/app/services/match_repository.dart';
 import 'package:ignirelay_app/app/services/station_supply_repo.dart';
 import 'package:ignirelay_app/app/services/profile_repo.dart';
 import 'package:ignirelay_app/app/services/medical_card_repo.dart';
@@ -189,6 +191,15 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
         ),
         Provider<NegotiationRepo>(
           create: (_) => NegotiationRepo(),
+        ),
+        Provider<NegotiationManager>(
+          create: (_) => NegotiationManager(),
+        ),
+        Provider<MatchRepository>(
+          create: (_) => MatchRepository(),
+        ),
+        Provider<IdentityManager>(
+          create: (_) => IdentityManager(),
         ),
         Provider<ChatService>(
           create: (_) => ChatService(),

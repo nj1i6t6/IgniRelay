@@ -72,9 +72,9 @@ class _MatchScreenState extends State<MatchScreen>
       _c = MatchScreenController(
         eventPublisher: context.read<EventPublisher>(),
         eventStream: context.read<EventStream>(),
-        negotiationManager: NegotiationManager(),
-        repository: MatchRepository(),
-        identity: IdentityManager(),
+        negotiationManager: context.read<NegotiationManager>(),
+        repository: context.read<MatchRepository>(),
+        identity: context.read<IdentityManager>(),
         locationService: context.read<LocationService>(),
       );
       _c!.init();

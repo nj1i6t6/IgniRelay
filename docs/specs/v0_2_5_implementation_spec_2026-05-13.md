@@ -1411,7 +1411,7 @@ If the shell is thin (<=300 lines of orchestration + shared actions), document a
 
 **After Stage 1**: Replaced by EventPublisher, NegotiationRepo.
 
-**Split plan**:
+**Split plan** (original):
 
 | New file | Contents | Target lines |
 |---|---|---|
@@ -1423,6 +1423,23 @@ If the shell is thin (<=300 lines of orchestration + shared actions), document a
 | `ui/secondary/physical_handoff.dart` | Thin shell: creates controller, switches on FSM state. | ~100 |
 
 **FSM states**: `PENDING` -> `CONFIRMING` (PIN entry) -> `COMPLETING` (BLE handshake) -> `DONE` / `FAILED`.
+
+**APPROVED DEVIATION (2026-05-14)** — the original prep/confirm/success/failure split
+assumed a single linear FSM. The actual screen has two orthogonal axes: **role**
+(provider vs. requester) and **method** (`PIN_4DIGIT`/`BLE` vs. `DROP_OFF`), which
+produce four distinct step views rather than a prep→confirm sequence. The view files
+were therefore split along those axes instead:
+
+| New file | Contents | Lines |
+|---|---|---|
+| `ui/secondary/physical_handoff_controller.dart` | `PhysicalHandoffController` (ChangeNotifier): PIN FSM (`idle`→`completing`→`done`/`failed`), lockout state machine, BLE/drop-off orchestration. | 285 |
+| `ui/secondary/handoff_pin_views.dart` | `HandoffProviderPinView` (PIN display + wait) and `HandoffRequesterPinView` (PIN entry + lockout UI). | ~235 |
+| `ui/secondary/handoff_dropoff_views.dart` | `HandoffDropOffProviderView` and `HandoffDropOffRequesterView`. | ~215 |
+| `ui/secondary/handoff_result_views.dart` | `HandoffSuccessView` and `HandoffCancelledView` (= original success/failure views). | 76 |
+| `ui/secondary/physical_handoff.dart` | Thin shell: creates controller, switches on role × method. | ~153 |
+
+All files are <=500 lines; the success/failure state views from the original plan
+are preserved as `handoff_result_views.dart`.
 
 ### 3.4 `survival_mode_screen.dart` (775 lines -> target <=500 lines)
 
