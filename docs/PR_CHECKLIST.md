@@ -17,6 +17,6 @@
 - [ ] No production UI uses `EventStream.rawEvents` (debug-only).
 
 ## Tests
-- [ ] `flutter analyze` passes.
+- [ ] `flutter analyze` introduces no new issues beyond the accepted baseline (currently 7 info-level `use_build_context_synchronously` findings in pre-existing files). No new errors or warnings.
 - [ ] `flutter test` passes.
 - [ ] New behavior has test coverage.
