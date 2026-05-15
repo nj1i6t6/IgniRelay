@@ -14,7 +14,7 @@
 - [ ] No raw `pb.X.fromBuffer(...)` outside `app/services/event_decoder.dart`.
 - [ ] No new EventType constant added without corresponding proto enum value.
 - [ ] Wire format golden tests still pass.
-- [ ] No production UI uses `EventStream.rawEvents` (debug-only).
+- [ ] No production UI uses `EventStream.rawEvents`. It is restricted to the survival-mode debug feature (`survival_mode_screen.dart` + `survival_mode_controller.dart`).
 
 ## Tests
 - [ ] `flutter analyze` introduces no new issues beyond the accepted baseline (currently 7 info-level `use_build_context_synchronously` findings in pre-existing files). No new errors or warnings.

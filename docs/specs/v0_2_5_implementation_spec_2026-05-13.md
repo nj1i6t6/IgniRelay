@@ -1384,6 +1384,22 @@ class StationSupplyController extends ChangeNotifier {
 }
 ```
 
+**APPROVED DEVIATION (2026-05-15)** — the original list/detail/edit split assumed
+a single browsing surface (list → detail sheet → edit dialog). The actual screen
+is a 2-tab `TabBarView` (register a new station vs. manage existing ones), so the
+view files were split along the tabs instead:
+
+| New file | Contents | Lines |
+|---|---|---|
+| `ui/secondary/station_supply_controller.dart` | `StationSupplyController` (ChangeNotifier): access check, station list state, load orchestration. Uses `StationSupplyRepo`, `EventStore`, `EventDecoder`, `EventPublisher`. No BuildContext. | 121 |
+| `ui/secondary/station_supply_register_tab.dart` | `StationSupplyRegisterTab` widget: register/publish form. | 419 |
+| `ui/secondary/station_supply_manage_tab.dart` | `StationSupplyManageTab` widget: browse/manage registered stations, quota reset. | 345 |
+| `ui/secondary/station_supply_models.dart` | Shared plain-data models for the two tabs. | 75 |
+| `ui/secondary/station_supply_screen.dart` | Thin shell: creates controller, wires the 2 tabs + access gate. | 160 |
+
+All files are <=500 lines. The register form and manage/detail behaviour from the
+original plan are preserved, just grouped by tab rather than by list/detail/edit.
+
 ### 3.2 `match_screen.dart` (972 lines -> audit first)
 
 **Current state**: 972 lines, imports EventManager, MeshEventHandler.
@@ -1850,6 +1866,16 @@ All v0.2.5 facades/repos/controllers are constructed via `MultiProvider` at the 
 - Do NOT use `EventStream.rawEvents` in production UI. It is restricted to `survival_mode_screen.dart` (debug page). Use typed streams (`sosAlerts`, `matchUpdates`, `hazardEvents`, `supplyChanges`) instead.
 - Reference pattern: `ui/screens/map/map_screen_controller.dart`
 ```
+
+**APPROVED DEVIATION (2026-05-15)** — the `rawEvents` rule above names
+`survival_mode_screen.dart` as the sole allowed site. The Stage 2A split (§3.4)
+extracted `survival_mode_controller.dart`, and the `rawEvents` subscription
+naturally moved into that controller. The controller is part of the same
+survival-mode debug feature, not general production UI, so the rule's intent is
+unchanged. The shipped `CLAUDE.md` and `docs/PR_CHECKLIST.md` therefore name
+both `survival_mode_screen.dart` and `survival_mode_controller.dart` as the
+allowed debug surface. Moving the subscription back into the screen file would
+re-violate the §3.4 god-file split, so it stays in the controller.
 
 ### 7.2 ADR-001: Layering Rules
 

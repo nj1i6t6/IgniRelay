@@ -39,5 +39,5 @@ All v0.2.5 facades/repos/controllers are constructed via `MultiProvider` at the 
 - New dependencies are wired at the app root and injected through constructors. Existing legacy singletons may be wrapped as dependencies, but must not leak into UI or new public APIs.
 - UI must not directly call legacy app-layer singleton entry points (`.instance`, `EventManager()`, `MeshEventHandler()`, `DatabaseHelper()`, `LocationService()`, `ChatService()`, etc.).
 - Do NOT let UI files exceed 500 lines if they touch facade. Use Controller / View / Repository pattern.
-- Do NOT use `EventStream.rawEvents` in production UI. It is restricted to `survival_mode_screen.dart` (debug page). Use typed streams (`sosAlerts`, `matchUpdates`, `hazardEvents`, `supplyChanges`) instead.
+- Do NOT use `EventStream.rawEvents` in production UI. It is restricted to the survival-mode debug feature — `survival_mode_screen.dart` and its controller `survival_mode_controller.dart` (the Stage 2A split moved the subscription into the controller; the controller is part of the same debug surface, not general production UI). Use typed streams (`sosAlerts`, `matchUpdates`, `hazardEvents`, `supplyChanges`) instead.
 - Reference pattern: `ui/screens/map/map_screen_controller.dart`

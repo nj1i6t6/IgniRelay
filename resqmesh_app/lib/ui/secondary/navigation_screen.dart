@@ -65,6 +65,11 @@ class _NavigationScreenState extends State<NavigationScreen> {
   // Negotiation 事件訂閱（取消/完成偵測）
   late final StreamSubscription _negotiationSub;
 
+  // app-layer 依賴一律從 root Provider 取，UI 不直接 new（見 CLAUDE.md 規則）。
+  late final NegotiationManager _negotiationManager =
+      context.read<NegotiationManager>();
+  late final NegotiationRepo _negotiationRepo = context.read<NegotiationRepo>();
+
   // Phase 4：MBTiles 初始化需要 UI locale 才能 build theme，因此延後到
   // didChangeDependencies 第一次 fire 時觸發；用此旗標避免重入。
   bool _mbtilesBootstrapped = false;
@@ -79,7 +84,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _startBleScan();
     _loadPeerLocation();
     // 監聽 Negotiation 事件（取消 / 完成）
-    _negotiationSub = NegotiationManager().events.listen((event) {
+    _negotiationSub = _negotiationManager.events.listen((event) {
       if (event is NegotiationCancelled && event.negotiationId == widget.negotiationId) {
         _locationRefresh?.cancel();
         if (mounted) {
@@ -114,7 +119,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   Future<void> _loadPeerLocation() async {
     try {
-      final session = await NegotiationRepo().getById(widget.negotiationId);
+      final session = await _negotiationRepo.getById(widget.negotiationId);
       if (session == null || !mounted) return;
       final status = session['status'] as String?;
       if (status != 'ACCEPTED' && status != 'NAVIGATING') return;

@@ -8,11 +8,14 @@
 //   - lib/ui/**       禁止 import lib/app/db/**
 //   - lib/platform/** 禁止 import lib/app/**
 //
-// 另外強制「UI 不得直觸 legacy singleton entry point」的符號規則：
-//   - lib/ui/**   禁止直接呼叫 `IdentityManager(` 建構式
-//                 （唯一允許的建構點是 main.dart 的 Provider wiring；
-//                  UI 一律 context.read<IdentityManager>() 或由 controller
-//                  建構式注入）
+// 另外強制「UI 不得直接建構 app-layer 依賴」的符號規則：
+//   - lib/ui/**   禁止直接呼叫 facade / repo / manager / legacy singleton
+//                 的建構式（IdentityManager / NegotiationManager /
+//                 NegotiationRepo / MatchRepository / EventManager /
+//                 MeshEventHandler / DatabaseHelper / LocationService /
+//                 ChatService）。唯一允許的建構點是 main.dart 的 Provider
+//                 wiring；UI 一律 context.read<T>() 或由 controller 建構式
+//                 注入。清單見 `_uiForbiddenConstructors`。
 //
 // 例外清單：`_exceptions`。若某條規則對某檔為「已知且有理由的」違規，
 // 在 `_exceptions` 加一筆（含 reason），掃描時會跳過。`--warn` 模式會列出
@@ -122,14 +125,31 @@ class _SymbolRule {
   });
 }
 
+/// UI 不得直接建構的 app-layer 型別：facade / repo / manager / legacy
+/// singleton entry point。一律由 main.dart 的 root Provider 建構，UI 透過
+/// `context.read<T>()` 取得，或由 controller 建構式注入。
+/// 對應 CLAUDE.md「Rules」一節列舉的 entry point 清單。
+const _uiForbiddenConstructors = <String>[
+  'IdentityManager',
+  'NegotiationManager',
+  'NegotiationRepo',
+  'MatchRepository',
+  'EventManager',
+  'MeshEventHandler',
+  'DatabaseHelper',
+  'LocationService',
+  'ChatService',
+];
+
 final _symbolRules = <_SymbolRule>[
   _SymbolRule(
-    name: 'ui-cannot-construct-identity-manager',
+    name: 'ui-cannot-construct-app-singleton',
     sourcePrefix: 'lib/ui/',
-    // `IdentityManager(` 但不含 `IdentityManager<` 或 `IdentityManager.`，
-    // 所以 context.read<IdentityManager>() / 型別標註 / 靜態存取都不會誤觸。
-    pattern: RegExp(r'\bIdentityManager\s*\('),
-    hint: '改用 context.read<IdentityManager>() 或由 controller 建構式注入',
+    // `Foo(` 但不含 `Foo<` 或 `Foo.`，所以 context.read<Foo>() / 型別標註 /
+    // 靜態存取都不會誤觸。
+    pattern: RegExp('\\b(${_uiForbiddenConstructors.join('|')})\\s*\\('),
+    hint: '改用 context.read<T>()（root Provider wiring）或由 controller '
+        '建構式注入',
   ),
 ];
 
