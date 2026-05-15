@@ -1,5 +1,5 @@
 # 烽傳 Ignirelay layer-boundary baseline
 # 由 `dart run tool/check_layers.dart --update-baseline` 產生
-# 格式：<rule>\t<file>\t<importUri>（行號刻意不記錄）
-# Stage 5 結束應清空，Stage 7 於 CI 加 --strict 鎖死
-# Stage 4d: navigation_screen / physical_handoff 已改走 controller，移出 baseline
+# 格式：<rule>\t<file>\t<detail>（detail 為 importUri 或符號片段；行號刻意不記錄）
+# v0.2.5 Stage 3 起應為空（僅註解），CI 以 --strict 鎖死
+

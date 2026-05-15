@@ -1,8 +1,12 @@
 // 烽傳 Ignirelay layer-boundary checker.
 //
-// 強制 platform / app / ui 三層的 import 規則：
-//   - lib/ui/**   禁止 import lib/platform/**
-//   - lib/app/**  禁止 import lib/ui/**
+// 強制 platform / app / ui 三層的 import 規則（v0.2.5 Stage 3 起共 6 條）：
+//   - lib/ui/**       禁止 import lib/platform/**
+//   - lib/app/**      禁止 import lib/ui/**
+//   - lib/ui/**       禁止 import lib/app/mesh/**
+//   - lib/ui/**       禁止 import lib/app/proto/**
+//   - lib/ui/**       禁止 import lib/app/db/**
+//   - lib/platform/** 禁止 import lib/app/**
 //
 // 另外強制「UI 不得直觸 legacy singleton entry point」的符號規則：
 //   - lib/ui/**   禁止直接呼叫 `IdentityManager(` 建構式
@@ -10,20 +14,24 @@
 //                  UI 一律 context.read<IdentityManager>() 或由 controller
 //                  建構式注入）
 //
+// 例外清單：`_exceptions`。若某條規則對某檔為「已知且有理由的」違規，
+// 在 `_exceptions` 加一筆（含 reason），掃描時會跳過。`--warn` 模式會列出
+// 被跳過的例外以供審視。v0.2.5 完成後此清單預期為空。
+//
 // 使用：
 //   dart run tool/check_layers.dart                   檢查並與 baseline 比對，
 //                                                    新增違規即 exit 1
-//   dart run tool/check_layers.dart --warn            僅印出，不 fail
+//   dart run tool/check_layers.dart --warn            僅印出，不 fail（含例外清單）
 //   dart run tool/check_layers.dart --strict          忽略 baseline，任何違規都 fail
 //   dart run tool/check_layers.dart --update-baseline 以當前狀態重寫 baseline
 //
 // Baseline 檔：tool/layer_violations_baseline.txt
-// 每行格式 `<rule>\t<file>\t<importUri>`（file 與 line 無關，避免搬檔即破壞 baseline）。
+// 每行格式 `<rule>\t<file>\t<detail>`（file 與 line 無關，避免搬檔即破壞 baseline）。
 //
 // 契約：計畫 Refactoring-0.2.0-plan.md L110「違反 → build fail」。
 // Stage 1 時既有 4 筆違規已寫入 baseline，Stage 4a/4d/5 清除時須同步移除 baseline 條目
-// （或跑 `--update-baseline` 重建）。Stage 5 結束後 baseline 應為空，Stage 7 之後可在
-// CI 加上 `--strict` 作為最終閘門。
+// （或跑 `--update-baseline` 重建）。v0.2.5 Stage 3 起 baseline 已清空，CI 以
+// `--strict` 作為最終閘門。
 
 import 'dart:io';
 
@@ -53,7 +61,51 @@ const _rules = <_Rule>[
     sourcePrefix: 'lib/app/',
     forbiddenPrefix: 'lib/ui/',
   ),
+  // v0.2.5 Stage 3：UI 與協定 / mesh / DB 解耦，跨層存取一律走 app/ 的 facade。
+  _Rule(
+    name: 'ui-cannot-import-mesh',
+    sourcePrefix: 'lib/ui/',
+    forbiddenPrefix: 'lib/app/mesh/',
+  ),
+  _Rule(
+    name: 'ui-cannot-import-proto',
+    sourcePrefix: 'lib/ui/',
+    forbiddenPrefix: 'lib/app/proto/',
+  ),
+  _Rule(
+    name: 'ui-cannot-import-db',
+    sourcePrefix: 'lib/ui/',
+    forbiddenPrefix: 'lib/app/db/',
+  ),
+  // platform/ 是純 native adapter，不得反向依賴 app/ 業務層。
+  _Rule(
+    name: 'platform-cannot-import-app',
+    sourcePrefix: 'lib/platform/',
+    forbiddenPrefix: 'lib/app/',
+  ),
 ];
+
+/// 已知且有理由的例外：掃描時命中即跳過。v0.2.5 完成後預期為空。
+class _Exception {
+  final String rule;
+  final String file;
+  final String reason;
+
+  const _Exception({
+    required this.rule,
+    required this.file,
+    required this.reason,
+  });
+}
+
+const _exceptions = <_Exception>{
+  // 範例（v0.2.5 後應為空）：
+  // _Exception(
+  //   rule: 'ui-cannot-import-mesh',
+  //   file: 'lib/ui/screens/map/widgets/map_view.dart',
+  //   reason: 'flutter_map TileLayer types',
+  // ),
+};
 
 /// 禁止在某層的原始碼直接出現某個符號（用來擋 legacy singleton 的直接建構）。
 class _SymbolRule {
@@ -199,11 +251,19 @@ void _writeBaseline(List<_Violation> violations) {
     '# 烽傳 Ignirelay layer-boundary baseline',
     '# 由 `dart run tool/check_layers.dart --update-baseline` 產生',
     '# 格式：<rule>\\t<file>\\t<detail>（detail 為 importUri 或符號片段；行號刻意不記錄）',
-    '# Stage 5 結束應清空，Stage 7 於 CI 加 --strict 鎖死',
+    '# v0.2.5 Stage 3 起應為空（僅註解），CI 以 --strict 鎖死',
     '',
     ...({for (final v in violations) v.fingerprint}.toList()..sort()),
   ];
   File(_baselinePath).writeAsStringSync('${lines.join('\n')}\n');
+}
+
+/// 找出命中 [v] 的例外條目（規則名 + 檔案路徑相符）；無則回傳 null。
+_Exception? _matchException(_Violation v) {
+  for (final e in _exceptions) {
+    if (e.rule == v.ruleName && e.file == v.file) return e;
+  }
+  return null;
 }
 
 void main(List<String> args) {
@@ -217,7 +277,25 @@ void main(List<String> args) {
     exit(2);
   }
 
-  final violations = _scan(lib);
+  // 掃描後先濾掉 `_exceptions` 命中的條目；剩下的才是真正要把關的違規。
+  final rawViolations = _scan(lib);
+  final excepted = <_Violation>[];
+  final violations = <_Violation>[];
+  for (final v in rawViolations) {
+    if (_matchException(v) != null) {
+      excepted.add(v);
+    } else {
+      violations.add(v);
+    }
+  }
+
+  if (warnOnly && excepted.isNotEmpty) {
+    stdout.writeln(
+        '[check_layers] ${excepted.length} skipped via _exceptions:');
+    for (final v in excepted) {
+      stdout.writeln('  ~ $v  (reason: ${_matchException(v)!.reason})');
+    }
+  }
 
   if (update) {
     _writeBaseline(violations);
