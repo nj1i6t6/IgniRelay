@@ -63,6 +63,9 @@ class BlePlugin: NSObject, FlutterPlugin {
     var bloomReceivedDevices: Set<String> = []
     /// Pending 10s subscribe→Bloom fallback timers, keyed by central uuidString.
     var bloomFallbackTimers: [String: DispatchSourceTimer] = [:]
+    /// v0.3 Stage 0c wave 3A — peers we've already emitted peer_ready_for_hello for.
+    /// Spec: docs/specs/native_transport_v1_2026-05-13.md §5.2.
+    var helloReadyDevices: Set<String> = []
 
     // Stage 6 (commit #10)：handoff PIN 跨平台對齊。Provider 端在
     // `startHandoffAdvertising` 暫存 (resourceId, sha256(pin))，待 GATT server
@@ -579,6 +582,10 @@ extension BlePlugin: CBCentralManagerDelegate {
         deviceMtuMap.removeValue(forKey: deviceId)
         bloomReceivedDevices.remove(deviceId)
         bloomFallbackTimers.removeValue(forKey: deviceId)?.cancel()
+        // v0.3 Stage 0c wave 3A — clear HELLO ready set so a reconnect
+        // re-emits peer_ready_for_hello and the Dart-side 5 s fallback
+        // timer restarts cleanly.
+        helloReadyDevices.remove(deviceId)
         NSLog("[BLE-iOS] Disconnected: \(deviceId)")
     }
 }
@@ -720,12 +727,44 @@ extension BlePlugin: CBPeripheralManagerDelegate {
         NSLog("[BLE-iOS] \(deviceId) subscribed to \(characteristic.uuid)")
 
         if characteristic.uuid == BlePlugin.EVENT_CHAR_UUID {
+            // v0.3 Stage 0c wave 3A — peripheral-role HELLO trigger. By the
+            // time a central subscribes to EVENT_CHAR notify it has discovered
+            // our service; the per-central MTU is exposed via
+            // `central.maximumUpdateValueLength` plus the ATT header. This
+            // satisfies §5.2 from the peripheral perspective.
+            let attMtu = central.maximumUpdateValueLength + IgniRelayConstants.ATT_HEADER_SIZE
+            deviceMtuMap[deviceId] = attMtu
+            if helloReadyDevices.insert(deviceId).inserted {
+                sendEvent([
+                    "type": "peer_ready_for_hello",
+                    "device": deviceId,
+                    "mtu": attMtu,
+                    "role": "peripheral",
+                ])
+            }
+
             // v0.3 Stage 0c3 — schedule the 10-second subscribe→Bloom fallback
             // timer (spec native_transport_v1 §3.2.5 / §15.4). If a Bloom write
             // arrives within 10s the timer is cancelled in didReceiveWrite;
             // otherwise we fall back to the legacy blind-push outbox path so
             // legacy peers (no Bloom support) still receive events.
             scheduleSubscribeBloomFallback(for: central)
+        }
+    }
+
+    // ── GATT Server: Central 取消訂閱 / 斷線清理 ───────────────────────
+    func peripheralManager(_ peripheral: CBPeripheralManager,
+                           central: CBCentral,
+                           didUnsubscribeFrom characteristic: CBCharacteristic) {
+        let deviceId = central.identifier.uuidString
+        NSLog("[BLE-iOS] \(deviceId) unsubscribed from \(characteristic.uuid)")
+        if characteristic.uuid == BlePlugin.EVENT_CHAR_UUID {
+            // v0.3 Stage 0c wave 3A — drop the ready-set entry so a reconnect
+            // re-emits peer_ready_for_hello and re-arms the Dart-side timer.
+            helloReadyDevices.remove(deviceId)
+            deviceMtuMap.removeValue(forKey: deviceId)
+            bloomFallbackTimers.removeValue(forKey: deviceId)?.cancel()
+            bloomReceivedDevices.remove(deviceId)
         }
     }
 
@@ -840,6 +879,17 @@ class PeripheralDelegate: NSObject, CBPeripheralDelegate {
             "device": deviceId,
             "mtu": attMtu,
         ])
+
+        // v0.3 Stage 0c wave 3A — central-role HELLO trigger. Service discovery
+        // and MTU computation have both completed here, satisfying §5.2.
+        if let plugin = plugin, plugin.helloReadyDevices.insert(deviceId).inserted {
+            plugin.sendEvent([
+                "type": "peer_ready_for_hello",
+                "device": deviceId,
+                "mtu": attMtu,
+                "role": "central",
+            ])
+        }
 
         plugin?.connectCallbacks.removeValue(forKey: deviceId)?(hasAll)
     }

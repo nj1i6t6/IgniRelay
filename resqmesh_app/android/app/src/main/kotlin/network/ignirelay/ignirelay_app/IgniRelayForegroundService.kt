@@ -72,6 +72,10 @@ class IgniRelayForegroundService : Service() {
     // Used by safeSingleNotify() to size notify payloads dynamically rather
     // than truncating to a hard-coded constant. Spec: docs/specs/native_transport_v1_2026-05-13.md §2.
     private val deviceMtuMap = ConcurrentHashMap<String, Int>()
+    // v0.3 Stage 0c wave 3A: peers we've already emitted peer_ready_for_hello for.
+    // Avoids duplicate emissions when MTU is renegotiated mid-session.
+    // Spec: docs/specs/native_transport_v1_2026-05-13.md §5.2.
+    private val helloReadyDevices = ConcurrentHashMap.newKeySet<String>()
     /** Conservative MTU baseline for peers whose MTU upcall has not arrived yet. */
     private val defaultMtuFallback = 185
     private var eventCharRef: BluetoothGattCharacteristic? = null
@@ -256,6 +260,8 @@ class IgniRelayForegroundService : Service() {
                 if (newState != BluetoothProfile.STATE_CONNECTED) {
                     notifySubscribers.remove(device.address)
                     bloomReceivedDevices.remove(device.address)
+                    helloReadyDevices.remove(device.address)
+                    deviceMtuMap.remove(device.address)
                     preparedWriteBuffers.keys.filter { it.startsWith(device.address) }.forEach {
                         preparedWriteBuffers.remove(it)
                         preparedWriteTimestamps.remove(it)
@@ -351,6 +357,11 @@ class IgniRelayForegroundService : Service() {
                     if (isEnableNotify) {
                         Log.i(TAG, "Notify subscribed by ${device.address} (waiting for Bloom write to trigger diff push)")
                         notifySubscribers[device.address] = device
+                        // v0.3 Stage 0c wave 3A — peripheral-side service-discovery-complete
+                        // proxy: when the central has subscribed to our notify, it has
+                        // discovered our service. Combined with MTU (already on or arriving
+                        // via onMtuChanged), this is the §5.2 trigger to send HELLO.
+                        emitPeerReadyForHelloIfReady(device.address, role = "peripheral")
                         // 10 秒後若還沒收到 Bloom Write，降級盲推（向下相容舊版 Central）
                         mainHandler.postDelayed({
                             if (notifySubscribers.containsKey(device.address) &&
@@ -474,6 +485,12 @@ class IgniRelayForegroundService : Service() {
                         "mtu" to mtu
                     ))
                 }
+                // v0.3 Stage 0c wave 3A — MTU side of the HELLO trigger.
+                // If the central had already subscribed, this is the second
+                // half of the §5.2 trigger pair; emit now.
+                if (device != null) {
+                    emitPeerReadyForHelloIfReady(device.address, role = "peripheral")
+                }
             }
         })
 
@@ -580,6 +597,30 @@ class IgniRelayForegroundService : Service() {
      *
      * 當 OPPO (Central) 連上我方 GATT Server 並 subscribe Event Char 通知時呼叫。
      * OPPO 的 GATT Server 壞掉（read/write 都 timeout），但 Central 角色正常。
+     * v0.3 Stage 0c wave 3A — emit `peer_ready_for_hello` exactly once per
+     * connection. Both the MTU upcall and the CCCD ENABLE_NOTIFY descriptor
+     * write must have happened (in either order) before we report ready.
+     *
+     * Spec: docs/specs/native_transport_v1_2026-05-13.md §5.2 — the 5 s
+     * fallback timer in Dart starts from this event.
+     */
+    private fun emitPeerReadyForHelloIfReady(deviceAddress: String, role: String) {
+        if (helloReadyDevices.contains(deviceAddress)) return
+        val mtu = deviceMtuMap[deviceAddress] ?: return
+        if (!notifySubscribers.containsKey(deviceAddress)) return
+        helloReadyDevices.add(deviceAddress)
+        Log.i(TAG, "peer_ready_for_hello: dev=$deviceAddress mtu=$mtu role=$role")
+        mainHandler.post {
+            MainActivity.sharedEventSink?.success(mapOf(
+                "type" to "peer_ready_for_hello",
+                "device" to deviceAddress,
+                "mtu" to mtu,
+                "role" to role
+            ))
+        }
+    }
+
+    /**
      * 透過 Notify 反向推送，讓 OPPO 能「透過 Central 角色」接收資料。
      *
      * 使用 onNotificationSent callback 做流量控制（等前一個 notification 送完再送下一個），

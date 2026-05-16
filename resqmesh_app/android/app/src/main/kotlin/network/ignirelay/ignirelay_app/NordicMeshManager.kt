@@ -172,7 +172,23 @@ class NordicMeshManager(private val context: Context) {
             .timeout(10000)
             .done {
                 Log.i(TAG, "Connected to $deviceAddress via Nordic")
-                mainHandler.post { callback(true) }
+                // v0.3 Stage 0c wave 3A — central-side HELLO trigger.
+                // Nordic's done{} fires after initialize() completes, which
+                // means MTU negotiation AND service discovery + notification
+                // setup are all done. This is the §5.2 trigger to start the
+                // 5 s fallback timer on the Dart side.
+                val mtu = client.negotiatedMtu
+                mainHandler.post {
+                    MainActivity.sharedEventSink?.success(
+                        mapOf(
+                            "type" to "peer_ready_for_hello",
+                            "device" to deviceAddress,
+                            "mtu" to mtu,
+                            "role" to "central"
+                        )
+                    )
+                    callback(true)
+                }
             }
             .fail { _, status ->
                 Log.e(TAG, "Connect failed to $deviceAddress: status=$status")
@@ -294,6 +310,14 @@ class IgniRelayBleClient(context: Context) : BleManager(context) {
     /** 通知資料回調（由 NordicMeshManager 設定） */
     var onNotificationReceived: ((ByteArray) -> Unit)? = null
 
+    /**
+     * v0.3 Stage 0c wave 3A — captured MTU from requestMtu().with{}.
+     * Defaults to the BLE 4.0 baseline (23) so callers always get a sane
+     * value even if the request callback hasn't fired yet.
+     */
+    var negotiatedMtu: Int = 23
+        private set
+
     override fun getGattCallback(): BleManagerGattCallback = IgniRelayGattCallback()
 
     private inner class IgniRelayGattCallback : BleManagerGattCallback() {
@@ -315,7 +339,11 @@ class IgniRelayBleClient(context: Context) : BleManager(context) {
 
         override fun initialize() {
             // MTU 協商（517，BLE 5.0+）
+            // v0.3 Stage 0c wave 3A — capture the actually negotiated MTU so
+            // NordicMeshManager can include it in the peer_ready_for_hello
+            // event (§5.2).
             requestMtu(IgniRelayConstants.REQUEST_MTU)
+                .with { _, mtu -> negotiatedMtu = mtu }
                 .enqueue()
 
             // 自動啟用 Event Characteristic 通知

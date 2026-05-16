@@ -53,12 +53,17 @@ class DispatchAccepted extends DispatchOutcome {
   /// True when this insert won the LWW slot for its (author, event_type) tuple.
   final bool isLwwWinner;
 
+  /// BLE short id of the immediate sender (null when the dispatcher was
+  /// invoked without one, e.g., from a unit test).
+  final String? peerId;
+
   const DispatchAccepted({
     required this.envelope,
     required this.sourceTrust,
     this.downgraded = false,
     this.downgradedFromPriority,
     this.isLwwWinner = false,
+    this.peerId,
   });
 }
 
@@ -72,10 +77,15 @@ class DispatchDropped extends DispatchOutcome {
   /// Optional human-readable detail; not meant for UI.
   final String? detail;
 
+  /// BLE short id of the immediate sender (null when the dispatcher was
+  /// invoked without one).
+  final String? peerId;
+
   const DispatchDropped({
     required this.dropReason,
     this.envelopeId,
     this.detail,
+    this.peerId,
   });
 }
 
@@ -116,7 +126,10 @@ class EnvelopeDispatcherV2 {
       envelope = EventEnvelopeV2.decode(envelopeBytes);
     } on ProtoDecodeException catch (e) {
       return _drop(
-        const DispatchDropped(dropReason: 'decode-required-field-missing'),
+        DispatchDropped(
+          dropReason: 'decode-required-field-missing',
+          peerId: peerId,
+        ),
         traceMeta: _TraceMeta.empty(peerId, e.message),
       );
     }
@@ -128,6 +141,7 @@ class EnvelopeDispatcherV2 {
           dropReason: 'unknown-sig-algo',
           envelopeId: envelope.envelopeId,
           detail: 'sig_algo=${envelope.sigAlgo}',
+          peerId: peerId,
         ),
         traceMeta: _TraceMeta.fromEnvelope(envelope, peerId),
       );
@@ -157,6 +171,7 @@ class EnvelopeDispatcherV2 {
         DispatchDropped(
           dropReason: 'signature-invalid',
           envelopeId: envelope.envelopeId,
+          peerId: peerId,
         ),
         traceMeta: _TraceMeta.fromEnvelope(envelope, peerId, sigStatus: 1),
       );
@@ -168,6 +183,7 @@ class EnvelopeDispatcherV2 {
         DispatchDropped(
           dropReason: 'tombstone-hit',
           envelopeId: envelope.envelopeId,
+          peerId: peerId,
         ),
         traceMeta: _TraceMeta.fromEnvelope(envelope, peerId, sigStatus: 0),
       );
@@ -190,6 +206,7 @@ class EnvelopeDispatcherV2 {
         DispatchDropped(
           dropReason: matrix.dropReason ?? 'priority-mismatch',
           envelopeId: envelope.envelopeId,
+          peerId: peerId,
         ),
         traceMeta: _TraceMeta.fromEnvelope(envelope, peerId,
             sigStatus: 0, sourceTrust: _stToInt(sourceTrust)),
@@ -212,6 +229,7 @@ class EnvelopeDispatcherV2 {
           dropReason: budget.dropReason!,
           envelopeId: envelope.envelopeId,
           detail: 'size=${envelopeBytes.length} cap=${budget.cap}',
+          peerId: peerId,
         ),
         traceMeta: _TraceMeta.fromEnvelope(envelope, peerId,
             sigStatus: 0, sourceTrust: _stToInt(sourceTrust)),
@@ -224,6 +242,7 @@ class EnvelopeDispatcherV2 {
         DispatchDropped(
           dropReason: 'author-rate-limited',
           envelopeId: envelope.envelopeId,
+          peerId: peerId,
         ),
         traceMeta: _TraceMeta.fromEnvelope(envelope, peerId,
             sigStatus: 0, sourceTrust: _stToInt(sourceTrust)),
@@ -244,6 +263,7 @@ class EnvelopeDispatcherV2 {
       downgraded: wasDowngraded,
       downgradedFromPriority: wasDowngraded ? envelope.priority : null,
       isLwwWinner: stored.isLwwWinner,
+      peerId: peerId,
     );
     _outcomes.add(accepted);
 
