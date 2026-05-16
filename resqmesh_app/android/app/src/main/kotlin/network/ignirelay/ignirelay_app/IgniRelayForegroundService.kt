@@ -53,6 +53,13 @@ class IgniRelayForegroundService : Service() {
         @JvmStatic
         var gattServiceStatus: Int = -999  // 尚未回報
 
+        // v0.3 Stage 0c wave 3B — instance handle so MainActivity can reach
+        // into the live service for capability-aware single-chunk notify.
+        // Set in onCreate, cleared in onDestroy.
+        @Volatile
+        @JvmStatic
+        var instance: IgniRelayForegroundService? = null
+
         // Bloom filter bit-vector 參數：2048 bytes (16384 bits), 7 hash functions
         const val BLOOM_SIZE_BYTES = 2048
         const val BLOOM_HASH_COUNT = 7
@@ -113,6 +120,7 @@ class IgniRelayForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        instance = this
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -147,8 +155,33 @@ class IgniRelayForegroundService : Service() {
         preparedWriteBuffers.clear()
         preparedWriteTimestamps.clear()
         stopBlePeripheral()
+        if (instance === this) instance = null
         Log.i(TAG, "IgniRelay Data Mule service stopped")
         super.onDestroy()
+    }
+
+    /**
+     * v0.3 Stage 0c wave 3B — public entry point for Dart-side v2 chunked
+     * notify pushes. Called by MainActivity's `notifyEventChunk` MethodChannel
+     * handler. Returns true on accept by the BLE stack (size <= per-device
+     * MTU); false on reject (oversize / unknown peer / GATT server down).
+     *
+     * Spec: docs/specs/native_transport_v1_2026-05-13.md §4.5 — every byte
+     * written here is a single 18B-header-framed chunk; the chunker that
+     * produced these bytes lives in Dart.
+     */
+    fun notifyEventChunkToCentral(deviceAddress: String, chunkBytes: ByteArray): Boolean {
+        val device = notifySubscribers[deviceAddress]
+        if (device == null) {
+            Log.w(TAG, "notifyEventChunkToCentral: no subscriber for $deviceAddress")
+            return false
+        }
+        val char = eventCharRef
+        if (char == null) {
+            Log.w(TAG, "notifyEventChunkToCentral: eventCharRef is null")
+            return false
+        }
+        return safeSingleNotify(device, char, chunkBytes, kind = "v2_chunk")
     }
 
     // ── Notification ──────────────────────────────────────────────────────

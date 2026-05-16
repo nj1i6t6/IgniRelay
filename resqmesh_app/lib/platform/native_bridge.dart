@@ -131,6 +131,28 @@ class NativeBridge {
     }
   }
 
+  /// v0.3 Stage 0c wave 3B — Peripheral 角色 (GATT Server) 主動 Notify 一個
+  /// EVENT_CHAR chunk 給已 subscribe 的 Central。
+  ///
+  /// 與 [nordicWriteEvent] 對稱：v2 chunked 流量在 Dart 端切好 chunks 後，依
+  /// 連線角色決定走哪一邊：central 角色用 nordicWriteEvent (peripheral 收)；
+  /// peripheral 角色用 notifyEventChunk (central 收)。
+  ///
+  /// Spec: docs/specs/native_transport_v1_2026-05-13.md §4.5 (Option B mandate).
+  static Future<bool> notifyEventChunk(
+      String deviceId, Uint8List data) async {
+    try {
+      final bool result = await _channel.invokeMethod('notifyEventChunk', {
+        'deviceId': deviceId,
+        'data': data,
+      });
+      return result;
+    } on PlatformException catch (e) {
+      debugPrint("notifyEventChunk failed: '${e.message}'.");
+      return false;
+    }
+  }
+
   /// Stage 6-fix：把 PIN+resourceId JSON 寫到對端 Handshake Characteristic。
   /// Provider 的 GATT server 在收到後做 SHA-256 + resourceId 比對，並透過
   /// GATT response status 回報結果（Android：GATT_SUCCESS / GATT_FAILURE；

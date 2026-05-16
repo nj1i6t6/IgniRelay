@@ -66,6 +66,10 @@ class BlePlugin: NSObject, FlutterPlugin {
     /// v0.3 Stage 0c wave 3A — peers we've already emitted peer_ready_for_hello for.
     /// Spec: docs/specs/native_transport_v1_2026-05-13.md §5.2.
     var helloReadyDevices: Set<String> = []
+    /// v0.3 Stage 0c wave 3B — subscribed centrals (keyed by uuidString) so
+    /// `notifyEventChunk` can target a specific peer with updateValue(_:for:
+    /// onSubscribedCentrals:).
+    var subscribedCentrals: [String: CBCentral] = [:]
 
     // Stage 6 (commit #10)：handoff PIN 跨平台對齊。Provider 端在
     // `startHandoffAdvertising` 暫存 (resourceId, sha256(pin))，待 GATT server
@@ -180,6 +184,18 @@ class BlePlugin: NSObject, FlutterPlugin {
             writeEvent(deviceId, data: data.data) { success in
                 result(success)
             }
+
+        // v0.3 Stage 0c wave 3B — peripheral-side notify a single v2 chunk
+        // to a subscribed central. Mirrors Android's notifyEventChunk method;
+        // the chunker that produced these bytes lives in Dart.
+        case "notifyEventChunk":
+            guard let args = call.arguments as? [String: Any],
+                  let deviceId = args["deviceId"] as? String,
+                  let data = args["data"] as? FlutterStandardTypedData else {
+                result(false)
+                return
+            }
+            result(notifyEventChunk(deviceId: deviceId, data: data.data))
 
         // Stage 6-fix：requester 透過此 method 把 PIN+resourceId 寫到 provider
         // 的 HANDSHAKE_CHAR；provider 的 peripheralManager(_:didReceiveWrite:)
@@ -734,6 +750,9 @@ extension BlePlugin: CBPeripheralManagerDelegate {
             // satisfies §5.2 from the peripheral perspective.
             let attMtu = central.maximumUpdateValueLength + IgniRelayConstants.ATT_HEADER_SIZE
             deviceMtuMap[deviceId] = attMtu
+            // v0.3 Stage 0c wave 3B — track the CBCentral so notifyEventChunk
+            // can target it directly via updateValue(_:for:onSubscribedCentrals:).
+            subscribedCentrals[deviceId] = central
             if helloReadyDevices.insert(deviceId).inserted {
                 sendEvent([
                     "type": "peer_ready_for_hello",
@@ -765,7 +784,52 @@ extension BlePlugin: CBPeripheralManagerDelegate {
             deviceMtuMap.removeValue(forKey: deviceId)
             bloomFallbackTimers.removeValue(forKey: deviceId)?.cancel()
             bloomReceivedDevices.remove(deviceId)
+            // v0.3 Stage 0c wave 3B — drop the CBCentral handle too.
+            subscribedCentrals.removeValue(forKey: deviceId)
         }
+    }
+
+    // MARK: - v0.3 Stage 0c wave 3B — capability-aware single-chunk notify
+
+    /// Notify a single v2 chunk to a subscribed central. The chunker is in
+    /// Dart; here we just hand one PDU to CoreBluetooth.
+    ///
+    /// Returns true when the BLE stack accepted the bytes for the given
+    /// central; false when:
+    ///   • the deviceId is not currently subscribed,
+    ///   • the bytes exceed the per-central MTU cap,
+    ///   • CoreBluetooth back-pressures (updateValue returned false).
+    fileprivate func notifyEventChunk(deviceId: String, data: Data) -> Bool {
+        guard let central = subscribedCentrals[deviceId] else {
+            NSLog("[BLE-iOS] notifyEventChunk: no subscriber \(deviceId)")
+            return false
+        }
+        guard let eventChar = eventCharacteristic else {
+            NSLog("[BLE-iOS] notifyEventChunk: eventCharacteristic is nil")
+            return false
+        }
+        let cap = central.maximumUpdateValueLength
+        if data.count > cap {
+            NSLog("[BLE-iOS] notifyEventChunk: oversize \(data.count)B > cap \(cap) for \(deviceId)")
+            sendEvent([
+                "type": "notify_push_error",
+                "device": deviceId,
+                "error": "oversize-payload",
+                "kind": "v2_chunk",
+                "size": data.count,
+                "cap": cap,
+            ])
+            return false
+        }
+        let ok = peripheralManager?.updateValue(
+            data,
+            for: eventChar,
+            onSubscribedCentrals: [central]
+        ) ?? false
+        if !ok {
+            NSLog("[BLE-iOS] notifyEventChunk: updateValue back-pressured for \(deviceId)")
+        }
+        return ok
     }
 
     /// Start (or restart) the 10s subscribe→Bloom fallback timer for a central.

@@ -167,6 +167,25 @@ class MainActivity : FlutterFragmentActivity() {
                             result.success(success)
                         }
                     }
+                    // v0.3 Stage 0c wave 3B — peripheral-side notify a single
+                    // v2 chunk to a subscribed central. The chunker is in Dart;
+                    // this method just forwards one PDU. See
+                    // IgniRelayForegroundService.notifyEventChunkToCentral.
+                    "notifyEventChunk" -> {
+                        val deviceId = call.argument<String>("deviceId") ?: ""
+                        val data = call.argument<ByteArray>("data")
+                        if (deviceId.isEmpty() || data == null) {
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+                        val svc = IgniRelayForegroundService.instance
+                        if (svc == null) {
+                            Log.w(TAG, "notifyEventChunk: foreground service not running")
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+                        result.success(svc.notifyEventChunkToCentral(deviceId, data))
+                    }
                     // Stage 6-fix：requester 透過此 method 把 PIN+resourceId
                     // 寫到 provider 的 HANDSHAKE_CHAR；provider 的 GATT server 在
                     // IgniRelayForegroundService 做驗證後以 response status 回報結果。

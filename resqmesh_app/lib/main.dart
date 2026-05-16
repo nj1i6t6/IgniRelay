@@ -17,10 +17,20 @@ import 'package:ignirelay_app/ui/shell/main_shell.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/app/mesh/mesh_constants.dart';
 import 'package:ignirelay_app/app/geo/village_geofence.dart';
 import 'package:ignirelay_app/platform/mesh_transport.dart';
 import 'package:ignirelay_app/app/mesh/transport_factory.dart';
 import 'package:ignirelay_app/platform/native_bridge.dart';
+import 'package:ignirelay_app/app/controllers/envelope_dispatcher_v2.dart';
+import 'package:ignirelay_app/app/controllers/message_publisher_v2.dart';
+import 'package:ignirelay_app/app/proto/event_envelope_v2.dart';
+import 'package:ignirelay_app/app/services/author_rate_limiter.dart';
+import 'package:ignirelay_app/app/services/ble_v2_bridge.dart';
+import 'package:ignirelay_app/app/services/envelope_store_v2.dart';
+import 'package:ignirelay_app/app/services/mesh_trace_writer.dart';
+import 'package:ignirelay_app/app/services/peer_capability_registry.dart';
+import 'package:ignirelay_app/app/services/protocol_hello_service.dart';
 import 'package:ignirelay_app/app/controllers/event_publisher.dart';
 import 'package:ignirelay_app/app/controllers/event_stream.dart';
 import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
@@ -69,6 +79,13 @@ void main() {
   // 在 background 跑，不阻塞 UI 啟動。
   unawaited(_purgeOldDebugLogs());
 
+  // v0.3 Stage 0c wave 3B — wire the v2 EventEnvelope trusted pipeline into
+  // the native BLE event stream. Construction is async because the Ed25519
+  // keypair has to be loaded from secure storage; we fire-and-forget so the
+  // UI doesn't have to wait. The bridge is retained at module scope so its
+  // EventChannel subscription survives.
+  unawaited(_startV2Bridge());
+
   runApp(IgniRelayApp(transport: transport));
 }
 
@@ -78,6 +95,59 @@ Future<void> _purgeOldDebugLogs() async {
     if (n > 0) debugPrint('[main] purged $n old debug logs');
   } catch (e) {
     debugPrint('[main] purgeDebugLogs failed: $e');
+  }
+}
+
+/// v0.3 Stage 0c wave 3B — module-level handle so the v2 bridge is not
+/// garbage-collected after construction. Kept module-private; UI does not
+/// touch it directly in wave 3B (no Provider wiring yet — UI integration
+/// is wave 3C+).
+BleV2Bridge? _v2Bridge;
+
+Future<void> _startV2Bridge() async {
+  if (_v2Bridge != null) return;
+  try {
+    final identity = IdentityManager();
+    final keyPair = await identity.getOrCreateKeyPair();
+    final pubKey = Uint8List.fromList(await identity.getPublicKeyBytes());
+    final dbHelper = DatabaseHelper();
+    final store = EnvelopeStoreV2(dbHelper);
+    final trace = MeshTraceWriter(dbHelper);
+    final rateLimiter = AuthorRateLimiter();
+    final dispatcher = EnvelopeDispatcherV2(
+      store: store,
+      trace: trace,
+      rateLimiter: rateLimiter,
+    );
+    final publisher = MessagePublisherV2(
+      keyPair: keyPair,
+      authorPublicKey: pubKey,
+      trace: trace,
+    );
+    final registry = PeerCapabilityRegistry();
+    final bridge = BleV2Bridge(
+      store: store,
+      dispatcher: dispatcher,
+      publisher: publisher,
+      registry: registry,
+      selfHelloFactory: () => buildSelfHello(
+        peerKind: PeerKind.phoneV1,
+        maxRxEnvelopeBytes: kMaxEnvelopeBytes,
+        supportsIblt: true,
+        supportsBloomV2: true,
+        supportsChunking: true,
+        minNegotiatedMtu: 247,
+        bgState: BgState.foreground,
+      ),
+      nativeEventStream: NativeBridge.nativeEventStream,
+      writeEventToPeer: NativeBridge.nordicWriteEvent,
+      notifyEventToPeer: NativeBridge.notifyEventChunk,
+    );
+    bridge.start();
+    _v2Bridge = bridge;
+    debugPrint('[main] v2 bridge started');
+  } catch (e, st) {
+    debugPrint('[main] v2 bridge start failed: $e\n$st');
   }
 }
 
