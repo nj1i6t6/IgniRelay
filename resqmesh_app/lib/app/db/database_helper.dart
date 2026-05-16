@@ -43,7 +43,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 8,
+      version: 9,
       onConfigure: (db) async {
         await db.rawQuery('PRAGMA journal_mode=WAL');
       },
@@ -239,6 +239,140 @@ class DatabaseHelper {
         )
       ''');
     }
+    if (oldVersion < 9) {
+      // v0.3 Stage 0c1 — Envelope v2 storage scaffold (additive).
+      // Spec: docs/specs/envelope_v2_spec_2026-05-13.md §12.
+      // The new tables sit alongside the legacy Event_Logs table; the v0.3
+      // dispatcher reads `Envelopes_V2` while v0.2.x writers continue to feed
+      // Event_Logs until the wire flip happens. After the wire flip, Event_Logs
+      // becomes a debug-only history table.
+      await _createEnvelopeV2Tables(db);
+    }
+  }
+
+  /// v0.3 Stage 0c1 — schema for the Envelope v2 storage layer.
+  /// Spec: docs/specs/envelope_v2_spec_2026-05-13.md §12.
+  Future<void> _createEnvelopeV2Tables(Database db) async {
+    // §12.1 db_version single-row table.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS Db_Version_V2 (
+        id          INTEGER PRIMARY KEY CHECK (id = 1),
+        schema_ver  INTEGER NOT NULL,
+        applied_at  INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('''
+      INSERT OR REPLACE INTO Db_Version_V2 (id, schema_ver, applied_at)
+      VALUES (1, 2, ${DateTime.now().millisecondsSinceEpoch})
+    ''');
+
+    // §12.2 Envelopes (primary store).
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS Envelopes_V2 (
+        envelope_id        BLOB PRIMARY KEY,
+        protocol_version   INTEGER NOT NULL,
+        event_type         INTEGER NOT NULL,
+        priority           INTEGER NOT NULL,
+        created_at_hlc_ms  INTEGER NOT NULL,
+        created_at_hlc_ctr INTEGER NOT NULL,
+        expires_at_hlc_ms  INTEGER NOT NULL,
+        expires_at_hlc_ctr INTEGER NOT NULL,
+        max_hops           INTEGER NOT NULL,
+        hop_count_seen     INTEGER NOT NULL DEFAULT 0,
+        author_key         BLOB NOT NULL,
+        sig_algo           INTEGER NOT NULL,
+        signature          BLOB NOT NULL,
+        payload            BLOB NOT NULL,
+        signature_status   INTEGER NOT NULL,
+        source_trust       INTEGER NOT NULL,
+        last_relay_id      TEXT,
+        is_experimental    INTEGER NOT NULL DEFAULT 0,
+        relay_attempt_count INTEGER NOT NULL DEFAULT 0,
+        is_tombstoned      INTEGER NOT NULL DEFAULT 0,
+        was_surfaced_in_ui INTEGER NOT NULL DEFAULT 0,
+        received_at_ms     INTEGER NOT NULL,
+        first_seen_via     TEXT
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_envelopes_v2_event_type ON Envelopes_V2 (event_type)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_envelopes_v2_priority ON Envelopes_V2 (priority)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_envelopes_v2_created_hlc ON Envelopes_V2 (created_at_hlc_ms DESC, created_at_hlc_ctr DESC)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_envelopes_v2_expires_hlc ON Envelopes_V2 (expires_at_hlc_ms)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_envelopes_v2_author_key ON Envelopes_V2 (author_key)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_envelopes_v2_lww_lookup ON Envelopes_V2 (author_key, event_type, created_at_hlc_ms DESC, created_at_hlc_ctr DESC)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_envelopes_v2_tombstoned ON Envelopes_V2 (is_tombstoned)');
+
+    // §12.3 LWW current-winner cache.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS Lww_Index_V2 (
+        lww_key_hash        BLOB PRIMARY KEY,
+        event_type          INTEGER NOT NULL,
+        winning_envelope_id BLOB NOT NULL REFERENCES Envelopes_V2 (envelope_id) ON DELETE CASCADE,
+        winning_hlc_ms      INTEGER NOT NULL,
+        winning_hlc_ctr     INTEGER NOT NULL,
+        updated_at_ms       INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_lww_index_v2_event_type ON Lww_Index_V2 (event_type)');
+
+    // §12.4 Tombstones.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS Tombstones_V2 (
+        envelope_id        BLOB PRIMARY KEY,
+        event_type         INTEGER NOT NULL,
+        expired_at_ms      INTEGER NOT NULL,
+        tombstone_until_ms INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_tombstones_v2_until ON Tombstones_V2 (tombstone_until_ms)');
+
+    // §15 dev-only structured mesh trace log (NOT folded into Debug_Logs).
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS Mesh_Trace_Logs (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts_ms               INTEGER NOT NULL,
+        envelope_id         BLOB NOT NULL,
+        event_type          INTEGER NOT NULL,
+        priority            INTEGER NOT NULL,
+        author_key_hash     BLOB NOT NULL,
+        last_relay_id       TEXT,
+        created_at_hlc_ms   INTEGER NOT NULL,
+        expires_at_hlc_ms   INTEGER NOT NULL,
+        action              INTEGER NOT NULL,
+        drop_reason         TEXT,
+        dedupe_outcome      INTEGER,
+        signature_status    INTEGER,
+        source_trust        INTEGER,
+        hop_count_seen      INTEGER,
+        relay_attempt_count INTEGER,
+        peer_id             TEXT
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_mesh_trace_ts ON Mesh_Trace_Logs (ts_ms)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_mesh_trace_envelope_id ON Mesh_Trace_Logs (envelope_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_mesh_trace_action ON Mesh_Trace_Logs (action)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_mesh_trace_drop_reason ON Mesh_Trace_Logs (drop_reason)');
+
+    // §12.6 Official_Sources (NCDR / CWA pubkey list).
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS Official_Sources_V2 (
+        author_key    BLOB PRIMARY KEY,
+        provider_name TEXT NOT NULL,
+        added_at_ms   INTEGER NOT NULL,
+        trust_label   INTEGER NOT NULL
+      )
+    ''');
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -456,6 +590,10 @@ class DatabaseHelper {
       INSERT INTO GeoContext_Cache (id, environment_type, suggested_range_meters)
       VALUES (1, 'URBAN', 1000.0)
     ''');
+
+    // v0.3 Stage 0c1 — new installs must get the additive Envelope v2 schema
+    // too. Upgrades enter through _onUpgrade(oldVersion < 9).
+    await _createEnvelopeV2Tables(db);
   }
 
   // --- DAO 方法 ---

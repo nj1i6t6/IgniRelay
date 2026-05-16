@@ -1,0 +1,36 @@
+# Wire conformance scenario — STATUS_UPDATE with one URGENT need at SOS_YELLOW.
+# Spec: docs/specs/envelope_v2_spec_2026-05-13.md §5.3 (sender priority floor).
+#
+# StatusUpdateData with safety_state=INJURED and one NEED_WATER URGENT — the
+# sender's priority floor derives SOS_YELLOW. Receiver matrix accepts.
+
+name: status_with_needs_yellow
+description: STATUS_UPDATE injured + NEED_WATER URGENT → SOS_YELLOW (single notify).
+
+envelope:
+  protocol_version: 2
+  envelope_id_hex: "01890b1ab1bd7d3a8b9c4f8d63b21f01"
+  event_type: 1                  # EVENT_TYPE_STATUS_UPDATE
+  priority: 2                    # PRIORITY_SOS_YELLOW (per impliedPriorityFloor)
+  created_at_hlc:
+    ms_since_epoch: 1747350200000
+    counter: 0
+  expires_at_hlc:
+    ms_since_epoch: 1747393400000  # +12h per §11.2
+    counter: 0
+  max_hops: 6
+  author_key_hex: "5f5e3a8d6f0c1f8a2c7e4b1d8f6a3c2e5d7b9a1f3c5e7b9d1a3c5e7f9b1d3a5c"
+  sig_algo: 1
+  # StatusUpdateData encoding: safety_state=3 (INJURED) + 1 NeedEntry(WATER, URGENT, +1h expiry).
+  payload_hex: "08031210080112020803180a"
+  is_experimental: false
+
+test_signing:
+  private_key_hex: "0000000000000000000000000000000000000000000000000000000000000000"
+  public_key_hex_must_match_author: true
+
+expected:
+  canonical_sig_input_bytes: 124
+  chunk_count_at_mtu_247: 1
+  chunk_count_at_mtu_185: 1
+  chunk_count_at_mtu_512: 1

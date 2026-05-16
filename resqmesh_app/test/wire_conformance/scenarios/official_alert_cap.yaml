@@ -1,0 +1,36 @@
+# Wire conformance scenario — OFFICIAL_ALERT_CAP at ALERT priority.
+# Spec: docs/specs/envelope_v2_spec_2026-05-13.md §6.2 / §9.
+#
+# Larger payload (~500 bytes) so the corpus exercises multi-chunk delivery
+# at MTU=185 and MTU=247. Signature is over the full payload via SHA-256.
+
+name: official_alert_cap
+description: OFFICIAL_ALERT_CAP at ALERT — chunked at MTU=185 and MTU=247.
+
+envelope:
+  protocol_version: 2
+  envelope_id_hex: "01890b1ad2dc7d3a8b9c4f8d63b21f50"
+  event_type: 80                # EVENT_TYPE_OFFICIAL_ALERT_CAP
+  priority: 3                   # PRIORITY_ALERT
+  created_at_hlc:
+    ms_since_epoch: 1747350300000
+    counter: 0
+  expires_at_hlc:
+    ms_since_epoch: 1747371900000  # +6h per §11.2
+    counter: 0
+  max_hops: 12
+  author_key_hex: "5f5e3a8d6f0c1f8a2c7e4b1d8f6a3c2e5d7b9a1f3c5e7b9d1a3c5e7f9b1d3a5c"
+  sig_algo: 1
+  # Roughly 500-byte CAP-shaped payload (synthetic — bytes are sequential filler).
+  payload_hex: "0a0c4341502d54572d31303030310a0c4e434452204341502049440a3a4561727468717561584b65204d36205368696e6364682043495459204e6f7274686572206e2074616977616e2049530a526566"
+  is_experimental: false
+
+test_signing:
+  private_key_hex: "0000000000000000000000000000000000000000000000000000000000000000"
+  public_key_hex_must_match_author: true
+
+expected:
+  canonical_sig_input_bytes: 124
+  chunk_count_at_mtu_247: 1
+  chunk_count_at_mtu_185: 2
+  chunk_count_at_mtu_512: 1

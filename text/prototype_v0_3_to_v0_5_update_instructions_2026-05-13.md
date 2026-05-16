@@ -17,6 +17,8 @@ Source briefs:
 
 完成後，原型即為 v0.5 完成時的 UI/UX 完整 mock。
 
+> **Scope note (added 2026-05-15):** 本文件僅描述原型（JSX mock）工作，不含主 App 實作指示。主 App 的 v0.3 UI/UX feature 實作必須等 v0.3 Stage 0d 真機驗收 gate 通過後才開始（見 `text/resqmesh_v0.3_v0.5_protocol_roadmap_spec_brief_2026-05-13.md` §3.5）。本文件**不應**加入 BLE / protocol / wire-format / envelope / signature / chunking / MTU / IBLT 等通訊層細節——那些屬於 `docs/specs/envelope_v2_spec_2026-05-13.md` 與 `docs/specs/native_transport_v1_2026-05-13.md`，不在原型範圍。原型 agent 收到通訊層概念時請拒絕、回報，不要把細節塞進原型文件。
+
 **重要原則：**
 - 沿用既有設計系統（glass 模糊 / mono 字體 / accent token / dark+light theme）。不要重新發明 token。
 - 沿用既有 SheetShell / SheetHeader / GlassIconBtn / QuickAction / SectionLabel / SubPageHeader 元件。

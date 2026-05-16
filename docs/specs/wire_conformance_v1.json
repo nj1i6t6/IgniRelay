@@ -1,0 +1,190 @@
+{
+  "spec_version": "v0.3 Stage 0c",
+  "spec_envelope": "docs/specs/envelope_v2_spec_2026-05-13.md",
+  "spec_transport": "docs/specs/native_transport_v1_2026-05-13.md",
+  "generated_at_iso": "2026-05-16T02:18:58.404706Z",
+  "envelope_samples": [
+    {
+      "kind": "envelope",
+      "name": "chat_message_normal",
+      "description": "CHAT_MESSAGE = 30 at NORMAL priority — single-notify at MTU >= 247.",
+      "envelope_struct": {
+        "protocol_version": 2,
+        "envelope_id_hex": "01890b1aa1cf7d3a8b9c4f8d63b21f30",
+        "event_type": 30,
+        "priority": 6,
+        "created_at_hlc": {
+          "ms_since_epoch": 1747350100000,
+          "counter": 0
+        },
+        "expires_at_hlc": {
+          "ms_since_epoch": 1747436500000,
+          "counter": 0
+        },
+        "max_hops": 6,
+        "author_key_hex": "5f5e3a8d6f0c1f8a2c7e4b1d8f6a3c2e5d7b9a1f3c5e7b9d1a3c5e7f9b1d3a5c",
+        "sig_algo": 1,
+        "payload_hex": "0a1268656c6c6f206d6573682068657920a1a4",
+        "is_experimental": false
+      },
+      "expected_canonical_sig_input_hex": "020000001001890b1aa1cf7d3a8b9c4f8d63b21f301e0000000600000020982ed6960100000000000020f454db960100000000000006000000203b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da290120297935385d6cc9f2d033bdc288f9fbfd2a0d597eb71e81a0f532415f8c50c317",
+      "expected_canonical_sig_input_bytes": 124,
+      "expected_signature_hex": "c73bbd9dcddb490e32c9add8e0aebd91d058fb380417481109d48a5d4365f05713d3a9a9d1bde58e70342327950b4d1da9a16d13edad0f0c2ea726e5ba1b4106",
+      "derived_author_key_hex": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+      "test_only_private_key_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "kind": "envelope",
+      "name": "official_alert_cap",
+      "description": "OFFICIAL_ALERT_CAP at ALERT — chunked at MTU=185 and MTU=247.",
+      "envelope_struct": {
+        "protocol_version": 2,
+        "envelope_id_hex": "01890b1ad2dc7d3a8b9c4f8d63b21f50",
+        "event_type": 80,
+        "priority": 3,
+        "created_at_hlc": {
+          "ms_since_epoch": 1747350300000,
+          "counter": 0
+        },
+        "expires_at_hlc": {
+          "ms_since_epoch": 1747371900000,
+          "counter": 0
+        },
+        "max_hops": 12,
+        "author_key_hex": "5f5e3a8d6f0c1f8a2c7e4b1d8f6a3c2e5d7b9a1f3c5e7b9d1a3c5e7f9b1d3a5c",
+        "sig_algo": 1,
+        "payload_hex": "0a0c4341502d54572d31303030310a0c4e434452204341502049440a3a4561727468717561584b65204d36205368696e6364682043495459204e6f7274686572206e2074616977616e2049530a526566",
+        "is_experimental": false
+      },
+      "expected_canonical_sig_input_hex": "020000001001890b1ad2dc7d3a8b9c4f8d63b21f50500000000300000060a531d69601000000000000603c7bd796010000000000000c000000203b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da290120dddc8f0b756822b443239e7d00b5e9b500bb86c6ffe24d49894b5efe319d5f99",
+      "expected_canonical_sig_input_bytes": 124,
+      "expected_signature_hex": "9caaed4291c33474f1d22cf0ae8d82071625262a22c690f82a12975092540aff044ae653ff73196de924e40edbcdf417b9a523eb9bbdf87d85a26c587951b20e",
+      "derived_author_key_hex": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+      "test_only_private_key_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "kind": "envelope",
+      "name": "sos_red_minimal",
+      "description": "SOS_RED snapshot at minimal payload — single-notify at MTU=512, 2 chunks at MTU=247.",
+      "envelope_struct": {
+        "protocol_version": 2,
+        "envelope_id_hex": "01890b1a8e7c7c0a8b9c4f8d63b21f00",
+        "event_type": 1,
+        "priority": 1,
+        "created_at_hlc": {
+          "ms_since_epoch": 1747350000000,
+          "counter": 0
+        },
+        "expires_at_hlc": {
+          "ms_since_epoch": 1747350720000,
+          "counter": 0
+        },
+        "max_hops": 6,
+        "author_key_hex": "5f5e3a8d6f0c1f8a2c7e4b1d8f6a3c2e5d7b9a1f3c5e7b9d1a3c5e7f9b1d3a5c",
+        "sig_algo": 1,
+        "payload_hex": "08041206080112020803",
+        "is_experimental": false
+      },
+      "expected_canonical_sig_input_hex": "020000001001890b1a8e7c7c0a8b9c4f8d63b21f00010000000100000080112dd69601000000000000000e38d6960100000000000006000000203b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da290120fd13f0dd833fc87032d59d497a8c2d998513981b873303c06399c7187b367837",
+      "expected_canonical_sig_input_bytes": 124,
+      "expected_signature_hex": "82b000d2770049c3f65f91b5d3e6b44e380bf708b4db6e771fb9ad6f3a0f36464ca4cd2ff5fc6c8f2c7a858bdd190e02b0791c4305e04821a34355576c4c7109",
+      "derived_author_key_hex": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+      "test_only_private_key_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "kind": "envelope",
+      "name": "status_with_needs_yellow",
+      "description": "STATUS_UPDATE injured + NEED_WATER URGENT → SOS_YELLOW (single notify).",
+      "envelope_struct": {
+        "protocol_version": 2,
+        "envelope_id_hex": "01890b1ab1bd7d3a8b9c4f8d63b21f01",
+        "event_type": 1,
+        "priority": 2,
+        "created_at_hlc": {
+          "ms_since_epoch": 1747350200000,
+          "counter": 0
+        },
+        "expires_at_hlc": {
+          "ms_since_epoch": 1747393400000,
+          "counter": 0
+        },
+        "max_hops": 6,
+        "author_key_hex": "5f5e3a8d6f0c1f8a2c7e4b1d8f6a3c2e5d7b9a1f3c5e7b9d1a3c5e7f9b1d3a5c",
+        "sig_algo": 1,
+        "payload_hex": "08031210080112020803180a",
+        "is_experimental": false
+      },
+      "expected_canonical_sig_input_hex": "020000001001890b1ab1bd7d3a8b9c4f8d63b21f010100000002000000c01e30d69601000000000000c04cc3d8960100000000000006000000203b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da2901206562e0a44497b573b2a1c6af1c556593788d99b013ed3375a7aad9d45f61ff15",
+      "expected_canonical_sig_input_bytes": 124,
+      "expected_signature_hex": "3656f8c07de7b13b76150ba66c39d6ea26ab9efa23ca954441f4a1f0ff5b917eef156bc72f47c8d808e31ae0d972db08215cae860416a1816684a7f2f7b1410a",
+      "derived_author_key_hex": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+      "test_only_private_key_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "chunking_samples": [
+    {
+      "kind": "chunking",
+      "envelope_bytes_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeef",
+      "envelope_id_hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+      "negotiated_mtu": 185,
+      "expected_chunk_bytes_hex_array": [
+        "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0002000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3",
+        "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0102a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeef"
+      ],
+      "expected_chunk_count": 2
+    },
+    {
+      "kind": "chunking",
+      "envelope_bytes_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeef",
+      "envelope_id_hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+      "negotiated_mtu": 247,
+      "expected_chunk_bytes_hex_array": [
+        "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0002000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1",
+        "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0102e2e3e4e5e6e7e8e9eaebecedeeef"
+      ],
+      "expected_chunk_count": 2
+    },
+    {
+      "kind": "chunking",
+      "envelope_bytes_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeef",
+      "envelope_id_hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+      "negotiated_mtu": 512,
+      "expected_chunk_bytes_hex_array": [
+        "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0001000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeef"
+      ],
+      "expected_chunk_count": 1
+    }
+  ],
+  "iblt_samples": [],
+  "bloom_samples": [],
+  "negative_cases": [
+    {
+      "kind": "oversize_sos",
+      "description": "SOS envelope > 240B — sender REJECTS at publish time.",
+      "envelope_bytes_hex_length": 241,
+      "expected_drop_reason": "over-budget-sos-rejected"
+    },
+    {
+      "kind": "oversize_envelope",
+      "description": "Envelope > MAX_ENVELOPE_BYTES — Chunker REJECTS.",
+      "envelope_bytes_hex_length": 2049,
+      "expected_drop_reason": "over-max-envelope-bytes"
+    },
+    {
+      "kind": "unknown_sig_algo",
+      "description": "sig_algo = 0x02 (post-quantum slot, not implemented in v0.3).",
+      "sig_algo": 2,
+      "expected_drop_reason": "unknown-sig-algo"
+    },
+    {
+      "kind": "chunk_total_zero",
+      "description": "Chunk header with total_chunks=0 is illegal.",
+      "expected_drop_reason": "chunk-bad-header"
+    },
+    {
+      "kind": "chunk_index_oob",
+      "description": "Chunk header with chunk_index >= total_chunks is illegal.",
+      "expected_drop_reason": "chunk-bad-header"
+    }
+  ]
+}

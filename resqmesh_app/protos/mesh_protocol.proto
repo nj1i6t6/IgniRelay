@@ -341,3 +341,164 @@ message HandshakeCompleteData {
   // optional：使接收端可用 hasSchemaVersion() 區分「未帶此欄位的舊 payload」。
   optional int32 schema_version = 10;
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// v0.3 Envelope v2 — Stage 0c additions
+// Spec: docs/specs/envelope_v2_spec_2026-05-13.md (decisions locked §20)
+// Spec: docs/specs/native_transport_v1_2026-05-13.md (decisions locked §15)
+//
+// The legacy MeshEvent / MeshEnvelope above are kept for v0.2.x history; v0.3
+// readers do NOT decode them. The new EventEnvelope v2 owns its own field-tag
+// space starting at tag 1.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// EventTypeV2 — v0.3 wire enum. Permanent reservations cover legacy v0.2 values.
+// Naming convention: EVENT_TYPE_<GROUP>_<NAME>.
+enum EventTypeV2 {
+  EVENT_TYPE_UNSPECIFIED = 0;
+
+  // 1-19  Personal / status
+  EVENT_TYPE_STATUS_UPDATE        = 1;
+  EVENT_TYPE_BATTERY_STATUS       = 2;
+  reserved 3 to 9;
+  reserved 10, 11, 12;   // legacy MATCH_INQUIRY/AVAILABLE/GONE — never reuse
+  reserved 13;           // legacy CHAT_MESSAGE=13 — moved to 30
+  reserved 14 to 19;
+
+  // 20-49 Request / supply / coordination
+  EVENT_TYPE_SUPPLY_REQUEST       = 20;
+  EVENT_TYPE_SUPPLY_OFFER         = 21;
+  EVENT_TYPE_MATCH_INTENT         = 22;
+  EVENT_TYPE_NEGOTIATION          = 23;
+  EVENT_TYPE_RELAY_TO_CONTACT     = 24;
+  reserved 25 to 29;
+  EVENT_TYPE_CHAT_MESSAGE         = 30;   // locked decision §20.1
+  reserved 31 to 49;
+
+  // 50-79 Hazard / disaster report
+  EVENT_TYPE_HAZARD_MARKER        = 50;
+  EVENT_TYPE_DISASTER_REPORT      = 51;
+  EVENT_TYPE_SHELTER_STATUS       = 52;
+  reserved 53 to 79;
+
+  // 80-99 Official alerts
+  EVENT_TYPE_OFFICIAL_ALERT_CAP     = 80;
+  EVENT_TYPE_OFFICIAL_ALERT_SUMMARY = 81;
+  reserved 82 to 99;
+
+  // 100-129 Mesh / system / control
+  EVENT_TYPE_PROTOCOL_HELLO       = 100;
+  EVENT_TYPE_PROTOCOL_NOTICE      = 101;
+  EVENT_TYPE_HEARTBEAT            = 102;
+  EVENT_TYPE_TRACE_PING           = 103;
+  EVENT_TYPE_TRACE_ACK            = 104;
+  reserved 105 to 129;
+
+  // 1000+ Experimental / local-only
+  // Envelope MUST set is_experimental=true; relays SHOULD NOT propagate.
+}
+
+enum PriorityV2 {
+  PRIORITY_UNSPECIFIED = 0;     // REJECTED on wire
+  PRIORITY_SOS_RED     = 1;
+  PRIORITY_SOS_YELLOW  = 2;
+  PRIORITY_ALERT       = 3;
+  PRIORITY_STATUS      = 4;
+  PRIORITY_RESOURCE    = 5;
+  PRIORITY_NORMAL      = 6;
+}
+
+// HLC pair — millis since epoch + tie-breaker counter; node_id implicit via author_key.
+message HlcTimestampV2 {
+  uint64 ms_since_epoch = 1;
+  uint32 counter        = 2;
+}
+
+// EventEnvelope v2 — single-layer top-level wire envelope.
+//
+// Hot-path fields use single-byte varint tags (≤ 15). Tags 14-15 reserved for
+// v0.4 additions before allocating multi-byte tags. payload_hash is NOT a wire
+// field — it is computed locally as SHA-256(payload) and fed into the canonical
+// signature input (see canonical_encoder.dart).
+message EventEnvelopeV2 {
+  uint32 protocol_version    = 1;     // v0.3 == 2
+  bytes  envelope_id         = 2;     // 16 bytes; UUIDv7 (locked §20.3)
+  EventTypeV2 event_type     = 3;
+  PriorityV2  priority       = 4;
+  HlcTimestampV2 created_at_hlc = 5;
+  HlcTimestampV2 expires_at_hlc = 6;
+  uint32 max_hops            = 7;     // initial hop budget chosen by author
+  bytes  author_key          = 8;     // 32 bytes Ed25519 pubkey
+  uint32 sig_algo            = 9;     // 0x01 = Ed25519 (v0.3 mandatory)
+  bytes  signature           = 10;    // 64 bytes (Ed25519); covers canonical input incl. SHA-256(payload)
+  bytes  payload             = 11;
+  string last_relay_id       = 12;    // OPTIONAL on origin; set by relays
+  bool   is_experimental     = 13;    // event_type >= 1000 MUST set true
+  reserved 14 to 31;                  // hot-path single-byte headroom
+}
+
+// StatusUpdateData — snapshot payload for EVENT_TYPE_STATUS_UPDATE.
+// Snapshot LWW: each new STATUS_UPDATE from the same author_key fully
+// supersedes the prior one. Empty needs CLEARS prior needs.
+message StatusUpdateData {
+  enum SafetyState {
+    SAFETY_STATE_UNSPECIFIED = 0;     // REJECTED on receive
+    SAFETY_STATE_SAFE        = 1;
+    SAFETY_STATE_UNSAFE      = 2;
+    SAFETY_STATE_INJURED     = 3;
+    SAFETY_STATE_TRAPPED     = 4;     // implies SOS_RED priority floor
+  }
+  enum NeedCategory {
+    NEED_CATEGORY_UNSPECIFIED = 0;    // REJECTED on receive
+    NEED_CATEGORY_WATER       = 1;
+    NEED_CATEGORY_POWER       = 2;
+    NEED_CATEGORY_MEDICINE    = 3;
+    NEED_CATEGORY_FOOD        = 4;
+    NEED_CATEGORY_SHELTER     = 5;
+    NEED_CATEGORY_EVAC        = 6;
+    reserved 7 to 31;
+  }
+  enum NeedSeverity {
+    NEED_SEVERITY_UNSPECIFIED = 0;    // REJECTED on receive
+    NEED_SEVERITY_WANT        = 1;
+    NEED_SEVERITY_NEED        = 2;
+    NEED_SEVERITY_URGENT      = 3;
+  }
+  message NeedEntry {
+    NeedCategory category       = 1;
+    NeedSeverity severity       = 2;
+    HlcTimestampV2 expires_at_hlc = 3;
+  }
+  SafetyState safety_state = 1;
+  repeated NeedEntry needs = 2;
+  reserved 3 to 15;
+}
+
+// ProtocolHelloData — capability declaration exchanged once per BLE connection
+// after MTU negotiation + service discovery (5s timeout → assume PhoneV1-legacy).
+message ProtocolHelloData {
+  enum PeerKind {
+    PEER_KIND_UNSPECIFIED   = 0;      // REJECTED on receive
+    PEER_KIND_PHONE_V1      = 1;
+    PEER_KIND_BLE_NODE_V1   = 2;
+    PEER_KIND_TIER0_MULE    = 3;
+    PEER_KIND_PHONE_V1_LEGACY = 4;    // self-declaring legacy = drop connection (§5.7)
+  }
+  enum BgState {
+    BG_STATE_UNSPECIFIED = 0;
+    BG_STATE_FOREGROUND  = 1;
+    BG_STATE_BACKGROUND  = 2;         // iOS background hint
+    BG_STATE_DOZE        = 3;         // Android Doze mode hint
+  }
+
+  uint32 protocol_version          = 1;     // 2 in v0.3
+  PeerKind peer_kind               = 2;
+  uint32 max_rx_envelope_bytes     = 3;
+  bool   supports_iblt             = 4;
+  bool   supports_bloom_v2         = 5;
+  bool   supports_chunking         = 6;     // MUST be true for PhoneV1
+  uint32 min_negotiated_mtu        = 7;
+  repeated string capabilities     = 8;     // opt-in flags ("shelter_status", ...)
+  BgState bg_state                 = 9;
+  reserved 10 to 15;
+}

@@ -54,6 +54,16 @@ class BlePlugin: NSObject, FlutterPlugin {
     private var localBloomBytes: Data = Data()
     private var outboxEvents: [Data] = []
 
+    // ── v0.3 Stage 0c3 — per-peer transport state ─────────────────────
+    // Spec: docs/specs/native_transport_v1_2026-05-13.md §3 (iOS parity).
+    /// Per-peer negotiated MTU (set when MTU upcall fires after service discovery).
+    var deviceMtuMap: [String: Int] = [:]
+    /// Tracks centrals that wrote a Bloom filter so the 10s fallback timer can be
+    /// suppressed (spec §3.2.5 §15.4).
+    var bloomReceivedDevices: Set<String> = []
+    /// Pending 10s subscribe→Bloom fallback timers, keyed by central uuidString.
+    var bloomFallbackTimers: [String: DispatchSourceTimer] = [:]
+
     // Stage 6 (commit #10)：handoff PIN 跨平台對齊。Provider 端在
     // `startHandoffAdvertising` 暫存 (resourceId, sha256(pin))，待 GATT server
     // 收到 HANDSHAKE_CHAR 寫入時驗證並發出 `handoff_result` 事件。
@@ -565,6 +575,10 @@ extension BlePlugin: CBCentralManagerDelegate {
         let deviceId = peripheral.identifier.uuidString
         connectedPeripherals.removeValue(forKey: deviceId)
         peripheralDelegates.removeValue(forKey: deviceId)
+        // v0.3 Stage 0c3 — drop per-peer transport state on disconnect.
+        deviceMtuMap.removeValue(forKey: deviceId)
+        bloomReceivedDevices.remove(deviceId)
+        bloomFallbackTimers.removeValue(forKey: deviceId)?.cancel()
         NSLog("[BLE-iOS] Disconnected: \(deviceId)")
     }
 }
@@ -604,6 +618,13 @@ extension BlePlugin: CBPeripheralManagerDelegate {
     func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
         if let error = error {
             NSLog("[BLE-iOS] Advertising failed: \(error.localizedDescription)")
+            // v0.3 Stage 0c3 — emit gatt_server_error to Dart so error handling
+            // is symmetric with Android (spec native_transport_v1 §3.2.6).
+            sendEvent([
+                "type": "gatt_server_error",
+                "kind": "advertising_failed",
+                "message": error.localizedDescription,
+            ])
         }
     }
 
@@ -643,6 +664,9 @@ extension BlePlugin: CBPeripheralManagerDelegate {
                       let data = request.value {
                 let deviceId = request.central.identifier.uuidString
                 NSLog("[BLE-iOS] Bloom received from \(deviceId): \(data.count) bytes")
+                // v0.3 Stage 0c3 — cancel the 10s subscribe→Bloom fallback timer
+                // and mark this peer as Bloom-capable for this session.
+                cancelSubscribeBloomFallback(forDeviceId: deviceId)
                 pushOutboxToSubscriber(request.central)
             } else if request.characteristic.uuid == BlePlugin.HANDSHAKE_CHAR_UUID,
                       let data = request.value {
@@ -696,9 +720,51 @@ extension BlePlugin: CBPeripheralManagerDelegate {
         NSLog("[BLE-iOS] \(deviceId) subscribed to \(characteristic.uuid)")
 
         if characteristic.uuid == BlePlugin.EVENT_CHAR_UUID {
-            // 立即推送 outbox
-            pushOutboxToSubscriber(central)
+            // v0.3 Stage 0c3 — schedule the 10-second subscribe→Bloom fallback
+            // timer (spec native_transport_v1 §3.2.5 / §15.4). If a Bloom write
+            // arrives within 10s the timer is cancelled in didReceiveWrite;
+            // otherwise we fall back to the legacy blind-push outbox path so
+            // legacy peers (no Bloom support) still receive events.
+            scheduleSubscribeBloomFallback(for: central)
         }
+    }
+
+    /// Start (or restart) the 10s subscribe→Bloom fallback timer for a central.
+    /// If the central already wrote a Bloom filter, push immediately and exit.
+    private func scheduleSubscribeBloomFallback(for central: CBCentral) {
+        let deviceId = central.identifier.uuidString
+        if bloomReceivedDevices.contains(deviceId) {
+            // Peer already wrote Bloom in this session — push outbox now.
+            pushOutboxToSubscriber(central)
+            return
+        }
+        // Cancel any previous pending timer for this central.
+        bloomFallbackTimers[deviceId]?.cancel()
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        let deadline: DispatchTimeInterval = .milliseconds(IgniRelayConstants.SUBSCRIBE_BLOOM_FALLBACK_MS)
+        timer.schedule(deadline: .now() + deadline)
+        timer.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            self.bloomFallbackTimers.removeValue(forKey: deviceId)
+            if !self.bloomReceivedDevices.contains(deviceId) {
+                NSLog("[BLE-iOS] Bloom fallback fired for \(deviceId); blind-pushing outbox")
+                self.sendEvent([
+                    "type": "bloom_fallback_fired",
+                    "device": deviceId,
+                ])
+                self.pushOutboxToSubscriber(central)
+            }
+        }
+        bloomFallbackTimers[deviceId] = timer
+        timer.resume()
+    }
+
+    /// Cancel a pending subscribe-fallback timer (call from didReceiveWrite for
+    /// BLOOM_CHAR_UUID).
+    fileprivate func cancelSubscribeBloomFallback(forDeviceId deviceId: String) {
+        bloomFallbackTimers.removeValue(forKey: deviceId)?.cancel()
+        bloomReceivedDevices.insert(deviceId)
     }
 }
 
@@ -759,6 +825,21 @@ class PeripheralDelegate: NSObject, CBPeripheralDelegate {
         if let eventChar = eventCharacteristic, eventChar.properties.contains(.notify) {
             peripheral.setNotifyValue(true, for: eventChar)
         }
+
+        // v0.3 Stage 0c3 — MTU upcall to Dart (spec native_transport_v1 §3.2.4).
+        // iOS does not expose a `didNegotiateMtu` callback; the equivalent is
+        // `peripheral.maximumWriteValueLength(for:)` once service discovery
+        // completes. We add the chunk-header size + ATT header to derive the
+        // ATT MTU value reported to Dart so the cross-platform `gatt_mtu` event
+        // shape stays symmetric with Android.
+        let writeWithoutResponseLen = peripheral.maximumWriteValueLength(for: .withoutResponse)
+        let attMtu = writeWithoutResponseLen + IgniRelayConstants.ATT_HEADER_SIZE
+        plugin?.deviceMtuMap[deviceId] = attMtu
+        plugin?.sendEvent([
+            "type": "gatt_mtu",
+            "device": deviceId,
+            "mtu": attMtu,
+        ])
 
         plugin?.connectCallbacks.removeValue(forKey: deviceId)?(hasAll)
     }

@@ -1,0 +1,44 @@
+# Wire conformance scenario — minimal SOS_RED at the 240B envelope budget.
+# Spec: docs/specs/envelope_v2_spec_2026-05-13.md §9 / §20.6.
+#
+# A reference envelope used by the canonical-encoder + signature path. The
+# generator script will load this YAML, build an EventEnvelopeV2 with the
+# fields below, compute the canonical signature input (124 bytes), sign with
+# the test-only private key (also from this file), and emit the resulting
+# (envelope_struct, expected_canonical_bytes_hex, expected_proto_bytes_hex,
+# expected_signature_hex) tuple into wire_conformance_v1.json.
+#
+# DO NOT use the test-only private key for any production signing. It is
+# committed to the repo intentionally so cross-platform implementations can
+# verify against the same public key.
+
+name: sos_red_minimal
+description: SOS_RED snapshot at minimal payload — single-notify at MTU=512, 2 chunks at MTU=247.
+
+envelope:
+  protocol_version: 2
+  envelope_id_hex: "01890b1a8e7c7c0a8b9c4f8d63b21f00"   # UUIDv7 sample
+  event_type: 1                                          # EVENT_TYPE_STATUS_UPDATE
+  priority: 1                                            # PRIORITY_SOS_RED
+  created_at_hlc:
+    ms_since_epoch: 1747350000000
+    counter: 0
+  expires_at_hlc:
+    ms_since_epoch: 1747350720000   # +12 minutes
+    counter: 0
+  max_hops: 6
+  author_key_hex: "5f5e3a8d6f0c1f8a2c7e4b1d8f6a3c2e5d7b9a1f3c5e7b9d1a3c5e7f9b1d3a5c"
+  sig_algo: 1
+  payload_hex: "08041206080112020803"   # short StatusUpdateData snapshot
+  is_experimental: false
+
+# Test-only signing material. Generated locally; do NOT reuse in production.
+test_signing:
+  private_key_hex: "0000000000000000000000000000000000000000000000000000000000000000"
+  public_key_hex_must_match_author: true   # the generator will substitute author_key with the public key derived from private_key_hex
+
+expected:
+  canonical_sig_input_bytes: 124   # locked length per spec §8.2
+  chunk_count_at_mtu_247: 1        # fits in single notify (envelope ≤ 226 B)
+  chunk_count_at_mtu_185: 1        # fits in single notify (envelope ≤ 164 B)
+  chunk_count_at_mtu_512: 1

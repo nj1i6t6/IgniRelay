@@ -61,3 +61,87 @@ const int kTier2MinBattery = 20;
 
 /// 遲滯帶：需高於門檻 +10% 才升級，防止邊界震盪
 const int kTierHysteresis = 10;
+
+// ═════════════════════════════════════════════════════════════════════════════
+// v0.3 Stage 0c — App-level chunking + envelope budgets
+// Spec: docs/specs/native_transport_v1_2026-05-13.md §4.6 (decisions §15.3, §15.8)
+// Spec: docs/specs/envelope_v2_spec_2026-05-13.md §9 (decisions §20.6)
+//
+// Cross-platform single source of truth. Mirrored in:
+//   - android/.../IgniRelayConstants.kt
+//   - ios/Runner/IgniRelayConstants.swift
+// CI guard tool/check_constants_parity.dart greps each file and fails on
+// divergence. Do not change a value here without updating the other two files.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Wire protocol version. v0.3 uses EventEnvelope v2.
+const int kProtocolVersionV2 = 2;
+
+/// Hard cap on serialized envelope size (NORMAL priority cap; bounds reassembly).
+const int kMaxEnvelopeBytes = 2048;
+
+/// Chunk header size = envelope_id (16) + chunk_index (1) + total_chunks (1).
+const int kChunkHeaderSize = 18;
+
+/// Bytes consumed by the BLE ATT header on a notify PDU.
+const int kAttHeaderSize = 3;
+
+/// Maximum number of chunks per envelope. 16 × (185-3-18) = 2624 B headroom > 2048 cap.
+const int kMaxChunksPerEnvelope = 16;
+
+/// Reassembly buffer timeout — partial chunks past this are discarded.
+const int kReassemblyTimeoutMs = 30000;
+
+/// Hard cap on total in-flight reassembly state per device.
+const int kMaxReassemblyBufferBytes = 65536;
+
+/// Hard cap on number of in-flight envelope_ids being reassembled.
+const int kMaxReassemblyBufferEntries = 64;
+
+// ── SOS / priority budgets ──────────────────────────────────────────────────
+
+/// SOS_RED / SOS_YELLOW / STATUS envelope budget (locked §20.6).
+/// 240 B → 2 chunks at MTU=185 and 247; 1 chunk at MTU=512.
+const int kSosEnvelopeBudgetBytes = 240;
+
+/// RESOURCE envelope budget (match negotiation; chunking allowed but disfavor).
+const int kResourceEnvelopeBudgetBytes = 400;
+
+/// ALERT envelope budget (CAP messages; chunking required).
+const int kAlertEnvelopeBudgetBytes = 800;
+
+// ── HELLO timing ────────────────────────────────────────────────────────────
+
+/// PROTOCOL_HELLO fallback timer (§5.2 §15.2). Starts at service-discovery-complete.
+const int kHelloFallbackTimeoutMs = 5000;
+
+/// 10s subscribe→Bloom fallback (§3.2.5 §15.4).
+const int kSubscribeBloomFallbackMs = 10000;
+
+// ── Tombstone / GC (envelope_v2_spec §13.4) ────────────────────────────────
+
+/// Default grace period before an expired envelope becomes a tombstone.
+const int kTombstoneGracePeriodDefaultMs = 60 * 60 * 1000; // 1 hour
+
+/// SOS-class grace period (longer for diagnostic).
+const int kTombstoneGracePeriodSosMs = 6 * 60 * 60 * 1000; // 6 hours
+
+/// Chat-class grace period (decays fast).
+const int kTombstoneGracePeriodChatMs = 5 * 60 * 1000; // 5 minutes
+
+/// Tombstone TTL — kept after grace period to suppress IBLT/Bloom re-circulation.
+const int kTombstoneTtlMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+/// Hard cap on tombstone rows; oldest evicted on overflow.
+const int kMaxTombstoneRows = 100000;
+
+/// Hard cap on envelope rows; defensive bound to keep DB lean.
+const int kMaxEnvelopeRows = 50000;
+
+/// Per-author rate limit (§13.7 §20.5). 120/h average; token bucket size 20.
+const int kMaxEnvelopesPerAuthorPerHour = 120;
+const int kAuthorRateLimitBucketSize = 20;
+
+/// Mesh trace log retention.
+const int kMeshTraceRetentionMs = 24 * 60 * 60 * 1000; // 24 hours
+const int kMaxTraceRows = 200000;

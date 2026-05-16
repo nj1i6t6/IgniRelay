@@ -68,6 +68,12 @@ class IgniRelayForegroundService : Service() {
 
     // Bug 7: Notify 反向推送 — 追蹤已 subscribe 通知的 Central 裝置
     private val notifySubscribers = ConcurrentHashMap<String, BluetoothDevice>()
+    // v0.3 Stage 0c2: per-device negotiated MTU (set in onMtuChanged).
+    // Used by safeSingleNotify() to size notify payloads dynamically rather
+    // than truncating to a hard-coded constant. Spec: docs/specs/native_transport_v1_2026-05-13.md §2.
+    private val deviceMtuMap = ConcurrentHashMap<String, Int>()
+    /** Conservative MTU baseline for peers whose MTU upcall has not arrived yet. */
+    private val defaultMtuFallback = 185
     private var eventCharRef: BluetoothGattCharacteristic? = null
     // Bug 10: 追蹤已收到 Bloom Write 的裝置（區分新舊版 Central）
     private val bloomReceivedDevices = ConcurrentHashMap.newKeySet<String>()
@@ -456,6 +462,11 @@ class IgniRelayForegroundService : Service() {
             // 診斷: MTU 協商結果
             override fun onMtuChanged(device: BluetoothDevice?, mtu: Int) {
                 Log.d(TAG, "MTU changed: dev=${device?.address} mtu=$mtu")
+                // v0.3 Stage 0c2: track per-device MTU so safeSingleNotify() can
+                // size notify payloads dynamically rather than via a hard-coded cap.
+                if (device != null) {
+                    deviceMtuMap[device.address] = mtu
+                }
                 mainHandler.post {
                     MainActivity.sharedEventSink?.success(mapOf(
                         "type" to "gatt_mtu",
@@ -603,18 +614,12 @@ class IgniRelayForegroundService : Service() {
                     return@postDelayed
                 }
                 try {
-                    // Bug 13 Fix: 限制 Notify 封包 ≤ MTU-3 = 514 bytes，超過的截斷
-                    val safeEvent = if (event.size > 514) event.copyOf(514) else event
-                    val result: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        gattServer?.notifyCharacteristicChanged(device, char, false, safeEvent) ?: -1
-                    } else {
-                        @Suppress("DEPRECATION")
-                        char.value = safeEvent
-                        @Suppress("DEPRECATION")
-                        gattServer?.notifyCharacteristicChanged(device, char, false) ?: false
-                    }
-                    Log.d(TAG, "pushOutbox: event ${index + 1}/${events.size} → ${device.address} (result=$result, ${safeEvent.size}B)")
-                    if (result == 0 || result == true) successCount++ else failCount++
+                    // v0.3 Stage 0c2: legacy hard-cap silent truncation replaced with
+                    // safeSingleNotify() — sizes against the per-device MTU and REJECTS
+                    // oversize payloads with explicit notify_push_error instead of
+                    // silently corrupting them. Spec: native_transport_v1 §2.
+                    val ok = safeSingleNotify(device, char, event, kind = "pushOutbox")
+                    if (ok) successCount++ else failCount++
                 } catch (e: Exception) {
                     failCount++
                     Log.e(TAG, "pushOutbox: notify failed at event $index: ${e.message}")
@@ -764,26 +769,20 @@ class IgniRelayForegroundService : Service() {
                 }
             }
 
-            // Bug 13 Fix: 封包大小必須 ≤ MTU-3 = 514 bytes
-            // 舊版 517 bytes 超過 Notify 上限導致 BLE stack 原生崩潰！
-            // Pack response: control(1) + watermark(8) + iblt(504) = 513 bytes (≤ 514)
+            // Pack IBLT response: control(1) + watermark(8) + iblt(504) = 513 bytes.
+            // Fits any negotiated MTU >= 517 single-notify (MTU-3 ATT header). For
+            // smaller MTU peers safeSingleNotify rejects with notify_push_error
+            // rather than the legacy silent truncation. Spec: native_transport_v1 §2.
             val localIbltBytes = localIblt.toBytes()
-            val response = ByteArray(1 + 8 + minOf(localIbltBytes.size, 504))
+            val response = ByteArray(1 + 8 + minOf(localIbltBytes.size, IBLT.TOTAL_BYTES))
             response[0] = 0x01 // kControlIBLT
             // Watermark: use 0 (Kotlin side doesn't track chat watermark separately)
             System.arraycopy(localIbltBytes, 0, response, 9,
-                minOf(localIbltBytes.size, 504))
+                minOf(localIbltBytes.size, IBLT.TOTAL_BYTES))
 
-            // Send IBLT response via Notify
-            val result: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                gattServer?.notifyCharacteristicChanged(device, char, false, response) ?: -1
-            } else {
-                @Suppress("DEPRECATION")
-                char.value = response
-                @Suppress("DEPRECATION")
-                gattServer?.notifyCharacteristicChanged(device, char, false) ?: false
-            }
-            Log.i(TAG, "IBLT response sent to ${device.address}: ${response.size}B, events=${eventIds.size}, result=$result")
+            // Send IBLT response via safe MTU-aware notify
+            val ibltSent = safeSingleNotify(device, char, response, kind = "ibltResponse")
+            Log.i(TAG, "IBLT response sent to ${device.address}: ${response.size}B, events=${eventIds.size}, ok=$ibltSent")
 
             // Mark as bloom received to prevent fallback blind push
             bloomReceivedDevices.add(device.address)
@@ -936,18 +935,10 @@ class IgniRelayForegroundService : Service() {
                     return@postDelayed
                 }
                 try {
-                    // Bug 13 Fix: 限制 Notify 封包 ≤ MTU-3 = 514 bytes
-                    val safePacket = if (packet.size > 514) packet.copyOf(514) else packet
-                    val result: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        gattServer?.notifyCharacteristicChanged(device, char, false, safePacket) ?: -1
-                    } else {
-                        @Suppress("DEPRECATION")
-                        char.value = safePacket
-                        @Suppress("DEPRECATION")
-                        gattServer?.notifyCharacteristicChanged(device, char, false) ?: false
-                    }
-                    Log.d(TAG, "pushDiff: packet ${index + 1}/${allPackets.size} → ${device.address} (result=$result, ${safePacket.size}B)")
-                    if (result == 0 || result == true) successCount++ else failCount++
+                    // v0.3 Stage 0c2: legacy hard-cap silent truncation replaced with
+                    // safeSingleNotify() (per-device MTU sizing). Spec: native_transport_v1 §2.
+                    val ok = safeSingleNotify(device, char, packet, kind = "pushDiff")
+                    if (ok) successCount++ else failCount++
                 } catch (e: Exception) {
                     failCount++
                     Log.e(TAG, "pushDiff: notify failed at packet $index: ${e.message}")
@@ -998,6 +989,67 @@ class IgniRelayForegroundService : Service() {
         gattServiceReady = false
         notifySubscribers.clear()
         bloomReceivedDevices.clear()
+        deviceMtuMap.clear()
         eventCharRef = null
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // v0.3 Stage 0c2 — MTU-aware notify path
+    // Spec: docs/specs/native_transport_v1_2026-05-13.md §2 (P0 truncation removal)
+    //       and §4 (chunk framing).
+    //
+    // Replaces the legacy hard-cap silent truncation. The maximum single-notify
+    // byte count is derived from the per-device negotiated MTU (tracked in
+    // `deviceMtuMap` via `onMtuChanged`). Oversized payloads are EITHER chunk-
+    // framed via the v0.3 Chunker or REJECTED with an explicit
+    // `notify_push_error` event — never silently truncated.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** Single-notify ATT cap for a peer. Falls back to the conservative MTU=185
+     *  baseline when the peer's MTU has not been negotiated yet. */
+    private fun maxSingleNotifyBytes(deviceAddress: String): Int {
+        val mtu = deviceMtuMap[deviceAddress] ?: defaultMtuFallback
+        return mtu - IgniRelayConstants.ATT_HEADER_SIZE
+    }
+
+    /**
+     * Send a single notify payload that fits in one ATT PDU.
+     *
+     * Returns true when the BLE stack accepts the bytes; false when the bytes
+     * exceed the per-device MTU cap (rejected — never truncated). Logs an
+     * explicit `notify_push_error` to Dart on rejection so the symptom surfaces
+     * instead of being silently corrupted (the legacy notify-truncation bug).
+     */
+    private fun safeSingleNotify(
+        device: BluetoothDevice,
+        char: BluetoothGattCharacteristic,
+        payload: ByteArray,
+        kind: String,
+    ): Boolean {
+        val cap = maxSingleNotifyBytes(device.address)
+        if (payload.size > cap) {
+            Log.w(TAG, "$kind: oversize payload (${payload.size}B > MTU-${IgniRelayConstants.ATT_HEADER_SIZE}=$cap) for ${device.address}; rejecting")
+            mainHandler.post {
+                MainActivity.sharedEventSink?.success(mapOf(
+                    "type" to "notify_push_error",
+                    "device" to device.address,
+                    "error" to "oversize-payload",
+                    "kind" to kind,
+                    "size" to payload.size,
+                    "cap" to cap,
+                ))
+            }
+            return false
+        }
+        val result: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gattServer?.notifyCharacteristicChanged(device, char, false, payload) ?: -1
+        } else {
+            @Suppress("DEPRECATION")
+            char.value = payload
+            @Suppress("DEPRECATION")
+            gattServer?.notifyCharacteristicChanged(device, char, false) ?: false
+        }
+        Log.d(TAG, "$kind: notify → ${device.address} size=${payload.size} cap=$cap result=$result")
+        return result == 0 || result == true
     }
 }
