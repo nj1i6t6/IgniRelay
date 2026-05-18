@@ -54,6 +54,29 @@ class BlePlugin: NSObject, FlutterPlugin {
     private var localBloomBytes: Data = Data()
     private var outboxEvents: [Data] = []
 
+    // v0.3 Stage 0c wave 3C — Bloom bit-vector parameters. MUST match
+    // android/.../IgniRelayForegroundService.kt (BLOOM_SIZE_BYTES /
+    // BLOOM_HASH_COUNT / BLOOM_MAGIC). Used by pushDiffToSubscriber to do
+    // a real diff push instead of blind-pushing the whole outbox.
+    private static let bloomSizeBytes = 2048
+    private static let bloomHashCount = 7
+    private static let bloomMagic: [UInt8] = [0xFF, 0xBF, 0x02, 0x00]
+    /// Marker emitted at the end of a diff push as the local bloom payload
+    /// frame: [0xFF, 0xB1, 0x00, 0x4D] || localBloom. Matches Android.
+    private static let bloomPushMagic: [UInt8] = [0xFF, 0xB1, 0x00, 0x4D]
+    /// End-of-push marker. Matches Android exactly.
+    private static let bloomPushEndMarker: [UInt8] = [0xFF, 0xE7, 0xD0, 0x7E]
+
+    // v0.3 Stage 0c wave 3C — Long Write / Prepared Write incoming. iOS
+    // CoreBluetooth surfaces ALL fragments of one Long Write in a single
+    // didReceiveWrite callback (one CBATTRequest per fragment, each with
+    // its own offset). Pre-3C we treated each fragment as an independent
+    // write, which silently corrupted any payload split across fragments.
+    // The wave 3C code path concatenates fragments by offset and emits a
+    // single nordic_data event with the assembled value.
+    //
+    // Spec: docs/specs/native_transport_v1_2026-05-13.md §3.2.3.
+
     // ── v0.3 Stage 0c3 — per-peer transport state ─────────────────────
     // Spec: docs/specs/native_transport_v1_2026-05-13.md §3 (iOS parity).
     /// Per-peer negotiated MTU (set when MTU upcall fires after service discovery).
@@ -502,11 +525,17 @@ class BlePlugin: NSObject, FlutterPlugin {
     }
 
     // ── Outbox 推送（Central subscribe 時觸發）────────────────────────
+    //
+    // pushOutboxToSubscriber is the LEGACY blind-push path. It stays as the
+    // fallback used by the 10s subscribe→Bloom timer (spec §3.2.5 §15.4)
+    // when a peer never writes its Bloom filter. The Bloom-write-triggered
+    // path now goes through pushDiffToSubscriber (added in wave 3C) for
+    // parity with Android pushDiffToDevice.
     private func pushOutboxToSubscriber(_ central: CBCentral) {
         guard let eventChar = eventCharacteristic, !outboxEvents.isEmpty else { return }
 
         let deviceId = central.identifier.uuidString
-        sendEvent(["type": "notify_push_start", "device": deviceId, "count": outboxEvents.count])
+        sendEvent(["type": "notify_push_start", "device": deviceId, "count": outboxEvents.count, "mode": "blind"])
 
         var sentCount = 0
         for eventData in outboxEvents {
@@ -516,7 +545,164 @@ class BlePlugin: NSObject, FlutterPlugin {
             if ok { sentCount += 1 }
         }
 
-        sendEvent(["type": "notify_push_done", "device": deviceId, "count": sentCount])
+        sendEvent(["type": "notify_push_done", "device": deviceId, "count": sentCount, "mode": "blind"])
+    }
+
+    // ── v0.3 Stage 0c wave 3C — Bloom-diff push (Android parity) ────────
+    //
+    // Mirrors android/.../IgniRelayForegroundService.kt pushDiffToDevice.
+    // Compares each outbox event against the remote bloom bit-vector and
+    // only notifies events the peer is missing, followed by our own bloom
+    // (so the peer can reciprocate) and an END marker.
+    private func pushDiffToSubscriber(_ central: CBCentral, remoteBloomBytes: Data) {
+        guard let eventChar = eventCharacteristic else {
+            NSLog("[BLE-iOS] pushDiff: eventCharacteristic nil, skip")
+            return
+        }
+        let deviceId = central.identifier.uuidString
+        bloomReceivedDevices.insert(deviceId)
+
+        let remoteBytes = [UInt8](remoteBloomBytes)
+        let isBitVector = BlePlugin.hasBloomMagic(remoteBytes)
+
+        // Legacy fallback format: newline-separated UTF-8 event IDs.
+        let remoteEventIds: Set<String>
+        if isBitVector {
+            remoteEventIds = []
+        } else if let s = String(data: remoteBloomBytes, encoding: .utf8) {
+            remoteEventIds = Set(
+                s.split(separator: "\n").map { String($0) }.filter { !$0.isEmpty }
+            )
+        } else {
+            remoteEventIds = []
+        }
+
+        // Snapshot outbox to avoid concurrent mutation.
+        let events = outboxEvents
+        var diffEvents: [Data] = []
+        var bloomSkipped = 0
+        for event in events {
+            if let eventId = BlePlugin.tryExtractEventId(event) {
+                let alreadyHas: Bool
+                if isBitVector {
+                    alreadyHas = BlePlugin.bloomMayContain(remoteBytes, eventId: eventId)
+                } else {
+                    alreadyHas = remoteEventIds.contains(eventId)
+                }
+                if alreadyHas {
+                    bloomSkipped += 1
+                    continue
+                }
+            }
+            diffEvents.append(event)
+        }
+
+        // Append local bloom (magic-prefixed) + end marker so the peer can
+        // reciprocate. Identical packet layout to Android.
+        var bloomPacket = Data(BlePlugin.bloomPushMagic)
+        bloomPacket.append(localBloomBytes)
+        let endMarker = Data(BlePlugin.bloomPushEndMarker)
+        let allPackets = diffEvents + [bloomPacket, endMarker]
+
+        sendEvent([
+            "type": "notify_push_start",
+            "device": deviceId,
+            "count": diffEvents.count,
+            "bloom_skip": bloomSkipped,
+            "mode": "diff",
+        ])
+
+        var successCount = 0
+        var failCount = 0
+        // Match Android's 150ms inter-packet pacing to avoid BLE congestion.
+        for (idx, packet) in allPackets.enumerated() {
+            let delay = DispatchTime.now() + .milliseconds(idx * 150)
+            DispatchQueue.main.asyncAfter(deadline: delay) { [weak self] in
+                guard let self = self else { return }
+                guard self.subscribedCentrals[deviceId] != nil else {
+                    NSLog("[BLE-iOS] pushDiff: \(deviceId) disconnected, abort at packet \(idx)")
+                    return
+                }
+                let ok = self.peripheralManager?.updateValue(
+                    packet, for: eventChar, onSubscribedCentrals: [central]
+                ) ?? false
+                if ok { successCount += 1 } else { failCount += 1 }
+            }
+        }
+        let doneDelay = DispatchTime.now() + .milliseconds(allPackets.count * 150 + 300)
+        DispatchQueue.main.asyncAfter(deadline: doneDelay) { [weak self] in
+            self?.sendEvent([
+                "type": "notify_push_done",
+                "device": deviceId,
+                "count": diffEvents.count,
+                "bloom_skip": bloomSkipped,
+                "success": successCount,
+                "fail": failCount,
+                "mode": "diff",
+            ])
+        }
+    }
+
+    // ── Bloom helpers (static; cross-platform parity with Android) ──────
+
+    static func hasBloomMagic(_ bytes: [UInt8]) -> Bool {
+        guard bytes.count >= 4 else { return false }
+        return bytes[0] == bloomMagic[0] && bytes[1] == bloomMagic[1] &&
+               bytes[2] == bloomMagic[2] && bytes[3] == bloomMagic[3]
+    }
+
+    /// Per-character single-byte MurmurHash3-32 — matches Android's
+    /// `murmurHash(s: String, seed: Int)` used by buildBitVectorBloom and
+    /// bloomMayContain. NOTE: this is a SEPARATE function from IBLT's
+    /// `murmurHash([UInt8], seed:)` even though they're nearly identical —
+    /// the Bloom variant accepts a String directly and matches the Kotlin
+    /// signature used by IgniRelayForegroundService.murmurHash for Bloom
+    /// bit-vector construction.
+    static func bloomMurmurHash(_ s: String, seed: UInt32) -> UInt32 {
+        var h: UInt32 = seed
+        for codeUnit in s.utf16 {
+            var k = UInt32(codeUnit & 0xFF)
+            k = k &* 0xcc9e2d51
+            k = (k << 15) | (k >> 17)
+            k = k &* 0x1b873593
+            h ^= k
+            h = (h << 13) | (h >> 19)
+            h = h &* 5 &+ 0xe6546b64
+        }
+        h ^= UInt32(s.utf16.count)
+        h ^= h >> 16
+        h = h &* 0x85ebca6b
+        h ^= h >> 13
+        h = h &* 0xc2b2ae35
+        h ^= h >> 16
+        return h
+    }
+
+    /// Mirror of Kotlin bloomMayContain. Handles both magic-prefixed
+    /// bit-vector and raw (no-magic) bit-vector — strips magic when present.
+    static func bloomMayContain(_ bloom: [UInt8], eventId: String) -> Bool {
+        let offset = hasBloomMagic(bloom) ? 4 : 0
+        let size = bloom.count - offset
+        if size <= 0 { return false }
+        let totalBits = UInt32(size * 8)
+        for i in 0..<UInt32(bloomHashCount) {
+            let hash = bloomMurmurHash(eventId, seed: i) % totalBits
+            let idx = Int(hash)
+            let byte = bloom[offset + (idx >> 3)]
+            let mask = UInt8(1 << (idx & 7))
+            if (byte & mask) == 0 { return false }
+        }
+        return true
+    }
+
+    /// Best-effort proto field-1 (event_id) extractor — mirror of Android's
+    /// tryExtractEventId. Assumes the legacy `pb.MeshEvent` layout where
+    /// field 1 is a length-delimited string at the front of the message.
+    static func tryExtractEventId(_ data: Data) -> String? {
+        guard data.count > 2, data[0] == 0x0A else { return nil }
+        let len = Int(data[1])
+        guard data.count >= 2 + len else { return nil }
+        return String(data: data.subdata(in: 2..<(2 + len)), encoding: .utf8)
     }
 
     // ── Length-prefix frame 解析 ──────────────────────────────────────
@@ -670,37 +856,90 @@ extension BlePlugin: CBPeripheralManagerDelegate {
     // ── GATT Server: 處理 Central 的寫請求 ─────────────────────────────
     func peripheralManager(_ peripheral: CBPeripheralManager,
                            didReceiveWrite requests: [CBATTRequest]) {
-        // Stage 6-fix：HANDSHAKE 寫入要把驗證結果以 respond(withResult:) 傳回。
-        // 其他 char 維持先 success-respond 再處理（不影響 outbox 路徑）。
+        // v0.3 Stage 0c wave 3C — Long Write / Prepared Write incoming. The
+        // requests array may contain MULTIPLE CBATTRequest objects for one
+        // Long Write, each with its own offset. We group by (centralId,
+        // characteristicUuid), sort by offset, validate contiguity + total
+        // size, and emit a single concatenated value to the upper layers.
+        //
+        // For regular (non-prepared) writes the array still typically has
+        // one request → grouping is a no-op.
+        //
+        // ── Why this is callback-internal, NOT a per-device persistent
+        // buffer + timeout (unlike Android's Reassembler.kt) ──────────────
+        //
+        // CoreBluetooth's peripheral GATT server hides the ATT Prepared
+        // Write / Execute Write handshake from us. The framework itself
+        // accumulates each ATT_PREPARE_WRITE_REQ fragment, and only after
+        // it receives ATT_EXECUTE_WRITE_REQ does it surface ONE
+        // peripheralManager(_:didReceiveWrite:) call carrying the full
+        // [CBATTRequest] batch. Aborted prepared sessions never reach us
+        // at all — the framework drops them.
+        //
+        // Android's BluetoothGattServerCallback works the opposite way:
+        // each prepared fragment fires onCharacteristicWriteRequest with
+        // preparedWrite=true, the app must keep a per-device buffer, then
+        // commit on onExecuteWrite(execute=true) — which is exactly why
+        // android/.../Reassembler.kt exists with a per-device cleanup
+        // timer. Porting that pattern to iOS would add dead state and a
+        // redundant timer; do NOT cargo-cult it across.
+        //
+        // Edge case: if CoreBluetooth ever folds two distinct Long Writes
+        // from the same central+characteristic into one callback (spec
+        // permits but is rare in practice), our offset contiguity check
+        // catches it and emits a `gatt_server_error` event with reason
+        // `non-contiguous-offset` — visible, not silent corruption.
         var handshakeVerifiedFirst: Bool? = nil
 
-        for request in requests {
-            if request.characteristic.uuid == BlePlugin.EVENT_CHAR_UUID,
-               let data = request.value {
-                let deviceId = request.central.identifier.uuidString
-                sendEvent([
-                    "type": "nordic_data",
-                    "device": deviceId,
-                    "data": FlutterStandardTypedData(bytes: data),
-                ])
-            } else if request.characteristic.uuid == BlePlugin.BLOOM_CHAR_UUID,
-                      let data = request.value {
-                let deviceId = request.central.identifier.uuidString
-                NSLog("[BLE-iOS] Bloom received from \(deviceId): \(data.count) bytes")
-                // v0.3 Stage 0c3 — cancel the 10s subscribe→Bloom fallback timer
-                // and mark this peer as Bloom-capable for this session.
-                cancelSubscribeBloomFallback(forDeviceId: deviceId)
-                pushOutboxToSubscriber(request.central)
-            } else if request.characteristic.uuid == BlePlugin.HANDSHAKE_CHAR_UUID,
-                      let data = request.value {
-                let verified = verifyAndEmitHandshake(centralId: request.central.identifier.uuidString,
-                                                      data: data)
-                if handshakeVerifiedFirst == nil {
-                    handshakeVerifiedFirst = verified
+        // Group by (central uuid, characteristic uuid).
+        var grouped: [GroupKey: [CBATTRequest]] = [:]
+        for req in requests {
+            let key = GroupKey(
+                centralId: req.central.identifier.uuidString,
+                charUuid: req.characteristic.uuid
+            )
+            grouped[key, default: []].append(req)
+        }
+
+        for (key, group) in grouped {
+            switch assembleLongWrite(group) {
+            case .ok(let data):
+                if key.charUuid == BlePlugin.EVENT_CHAR_UUID {
+                    sendEvent([
+                        "type": "nordic_data",
+                        "device": key.centralId,
+                        "data": FlutterStandardTypedData(bytes: data),
+                    ])
+                } else if key.charUuid == BlePlugin.BLOOM_CHAR_UUID {
+                    NSLog("[BLE-iOS] Bloom received from \(key.centralId): \(data.count) bytes")
+                    // v0.3 Stage 0c3 — cancel the 10s subscribe→Bloom fallback
+                    // timer and mark this peer as Bloom-capable.
+                    cancelSubscribeBloomFallback(forDeviceId: key.centralId)
+                    // v0.3 Stage 0c wave 3C — real diff push instead of blind
+                    // push (mirror Android pushDiffToDevice).
+                    pushDiffToSubscriber(group[0].central, remoteBloomBytes: data)
+                } else if key.charUuid == BlePlugin.HANDSHAKE_CHAR_UUID {
+                    let verified = verifyAndEmitHandshake(
+                        centralId: key.centralId, data: data
+                    )
+                    if handshakeVerifiedFirst == nil {
+                        handshakeVerifiedFirst = verified
+                    }
                 }
+            case .dropped(let reason):
+                NSLog("[BLE-iOS] long-write dropped from \(key.centralId) char=\(key.charUuid) reason=\(reason)")
+                sendEvent([
+                    "type": "gatt_server_error",
+                    "kind": "long_write_dropped",
+                    "device": key.centralId,
+                    "char": key.charUuid.uuidString,
+                    "reason": reason,
+                ])
             }
         }
-        // 回應第一個請求：HANDSHAKE 用驗證結果決定 .success / .writeNotPermitted
+
+        // 回應第一個請求：HANDSHAKE 用驗證結果決定 .success / .writeNotPermitted；
+        // 其他 char 維持 .success（不影響 outbox 路徑）。
         if let first = requests.first {
             if first.characteristic.uuid == BlePlugin.HANDSHAKE_CHAR_UUID,
                let verified = handshakeVerifiedFirst {
@@ -710,6 +949,41 @@ extension BlePlugin: CBPeripheralManagerDelegate {
                 peripheral.respond(to: first, withResult: .success)
             }
         }
+    }
+
+    /// v0.3 Stage 0c wave 3C — concatenate Long Write fragments by offset.
+    ///
+    /// Returns:
+    ///   .ok(data)            — fragments are contiguous (offset 0..N-1 cover
+    ///                           the whole value) and total <= cap; data is
+    ///                           the assembled payload.
+    ///   .dropped("reason")   — fragments are non-contiguous, overlap, or
+    ///                           the total exceeds kMaxReassemblyBufferBytes.
+    ///                           Caller emits a gatt_server_error event so
+    ///                           the symptom is visible (never silent).
+    private func assembleLongWrite(_ requests: [CBATTRequest]) -> LongWriteAssembly {
+        if requests.count == 1, requests[0].offset == 0, let data = requests[0].value {
+            return .ok(data)
+        }
+        // Sort by offset (CoreBluetooth typically delivers in order but the
+        // spec does not guarantee it).
+        let sorted = requests.sorted { $0.offset < $1.offset }
+        var assembled = Data()
+        var expectedOffset = 0
+        for req in sorted {
+            guard let value = req.value else {
+                return .dropped("missing-value")
+            }
+            if req.offset != expectedOffset {
+                return .dropped("non-contiguous-offset")
+            }
+            assembled.append(value)
+            expectedOffset += value.count
+            if assembled.count > IgniRelayConstants.MAX_REASSEMBLY_BUFFER_BYTES {
+                return .dropped("oversize-long-write")
+            }
+        }
+        return .ok(assembled)
     }
 
     /// Stage 6-fix：解析 PIN+resourceId、SHA-256 + resourceId 比對、emit
@@ -998,6 +1272,23 @@ class PeripheralDelegate: NSObject, CBPeripheralDelegate {
 // ══════════════════════════════════════════════════════════════════════════
 // ── FlutterStreamHandler (EventChannel) ───────────────────────────────────
 // ══════════════════════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════════════════════
+// ── v0.3 Stage 0c wave 3C — Long Write assembly support types ─────────────
+// ══════════════════════════════════════════════════════════════════════════
+
+/// Composite key used by didReceiveWrite to group CBATTRequest fragments
+/// that belong to the same Long Write transaction.
+struct GroupKey: Hashable {
+    let centralId: String
+    let charUuid: CBUUID
+}
+
+/// Result of concatenating Long Write fragments.
+enum LongWriteAssembly {
+    case ok(Data)
+    case dropped(String)
+}
 
 extension BlePlugin: FlutterStreamHandler {
     func onListen(withArguments arguments: Any?,
