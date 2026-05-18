@@ -658,88 +658,194 @@ When battery saver is enabled, the OS may further restrict BLE operations. The f
 
 `docs/specs/wire_conformance_v1.json` — the same single JSON file co-owned with 0a (envelope slice in 0a §17). The transport slice is 0b's responsibility.
 
+The corpus is **deterministic** (no live timestamp) and carries a `corpus_revision` string + `spec_date`; the current revision is `v0.3-stage0c-wave3d-1`. A `notes` object documents corpus-wide conventions (`bloom_hash_ascii_only`, `payload_generator_lcg_byte_pattern_v1`, `event_id_generator_ascii_seq_v1`, `iblt_peel_quirk`). Re-generating MUST produce a byte-identical file; the Dart `tool/generate_wire_conformance_v1.dart --check` mode enforces this.
+
+#### 11.1.1 Size discipline (Stage 0c wave 3D decision)
+
+To keep the JSON file readable in code review and prevent it from ballooning across waves, the corpus uses two indirections instead of raw inline bytes wherever the input is large or determined by a generator:
+
+1. **Deterministic input generators** — large `event_ids` arrays and large `envelope_bytes` are emitted as a small generator descriptor (algorithm name + parameters) rather than expanded inline. The consumer reproduces the bytes from the descriptor at test time using the algorithm documented in `notes.*`.
+2. **SHA-256 of expected output** — large expected outputs (Bloom bit-vectors, the first/last chunk of a chunking sample) are stored as `*_sha256_hex` plus an `expected_*_size` integer rather than raw hex. The IBLT slice still uses raw hex (`expected_bytes_hex` is only 504 bytes — small enough to inline and small enough that drift is easier to read off the diff).
+
+Concretely:
+
+| Slice | Inputs | Expected output |
+|---|---|---|
+| IBLT | `operations[]` describing `insert` / `remove` waves, each with an `event_ids_generator: ascii_seq_v1` descriptor | Raw `expected_bytes_hex` (1008 chars = 504 B) |
+| Bloom | `event_ids_generator: ascii_seq_v1` | `expected_bytes_size: 2052` + `expected_bytes_sha256_hex` |
+| Chunking | `envelope_bytes_generator: lcg_byte_pattern_v1` + `envelope_id_hex` | `expected_chunk_count` + `expected_first_chunk_sha256_hex` + `expected_last_chunk_sha256_hex` (plus the tiny first/last raw `bytes` for sanity) |
+
+The generator descriptor algorithms (`ascii_seq_v1`, `lcg_byte_pattern_v1`) are normatively documented inside the corpus `notes` field. Any addition to the generator vocabulary requires a new `notes.<generator_name>` key plus a 0a/0b spec amendment.
+
 ### 11.2 IBLT slice (≥ 50 samples)
 
-Each sample:
+Each sample is one of two `kind`s.
+
+**Kind `iblt`** — single bucket state after a sequence of operations:
 
 ```json
 {
   "kind": "iblt",
-  "input_event_ids": ["envelope_id_hex_1", "envelope_id_hex_2", ...],
-  "expected_bucket_state_hex": "..."
+  "name": "iblt_insert_30",
+  "operations": [
+    {
+      "op": "insert",
+      "event_ids_generator": {
+        "algorithm": "ascii_seq_v1",
+        "prefix": "evt-",
+        "start": 0,
+        "count": 30,
+        "width": 8
+      }
+    }
+  ],
+  "expected_bytes_hex": "<1008 hex chars = 504 bytes = 56 buckets × 9 bytes>"
 }
 ```
+
+**Kind `iblt_subtract`** — two bucket states plus their subtract result, used to verify the wire-level `subtract()` operator:
+
+```json
+{
+  "kind": "iblt_subtract",
+  "name": "iblt_subtract_a_minus_b",
+  "a_operations": [ /* insert/remove waves */ ],
+  "b_operations": [ /* insert/remove waves */ ],
+  "expected_a_bytes_hex": "...",
+  "expected_b_bytes_hex": "...",
+  "expected_diff_bytes_hex": "..."
+}
+```
+
+`op` is `insert` or `remove`; both consume an `event_ids_generator` descriptor (currently `ascii_seq_v1`).
 
 Coverage:
 
 - Empty IBLT (0 inserts).
 - Single insert.
 - 30 inserts (mid-load).
-- 50 inserts (near 56-bucket capacity, peel succeeds).
-- 100 inserts (overflow, peel fails).
-- Subtraction tests: 2 IBLT byte sequences and the expected `subtract` result.
-- Peel tests: input bucket state, expected `IBLTPeelResult` (only-in-A, only-in-B, success/fail flag).
+- 50 inserts (near 56-bucket capacity, but see peel quirk below).
+- 100 inserts (overflow).
+- Subtraction tests: A and B both built from operations, with the expected `subtract(A, B)` bytes.
+- Inserts + removes within a single sample (verifies `count` going back to 0 and `keySum/hashSum` XOR-ing back out).
+
+**Peel coverage — DEFERRED.** `IBLT.peel()` results are NOT in the v3D corpus because of a pre-existing implementation quirk documented in `notes.iblt_peel_quirk`: Dart/Kotlin/Swift `peel()` uses a CRC-derived index lookup while `insert/remove` use MurmurHash-derived indices. The wire-level contract (bucket bytes, subtract bytes) IS covered byte-identically and is sufficient for cross-platform sync because peel is a receiver-local recovery operation that doesn't go on the wire. Adding peel coverage requires first fixing the index-space mismatch; tracked as a future protocol cleanup, NOT a 3D scope item.
 
 The Dart IBLT (`resqmesh_app/lib/app/mesh/iblt.dart`) uses CRC32 + FNV-1a + MurmurHash3. The Kotlin and Swift implementations MUST produce bit-identical bucket bytes for every input set. The corpus is the verifier.
 
 ### 11.3 Bloom slice (≥ 30 samples)
 
-Each sample:
+Each sample uses an `event_ids_generator` descriptor (no raw event ID lists inline) and stores expected output as a SHA-256 hash plus byte-length sanity:
 
 ```json
 {
   "kind": "bloom_v2",
-  "input_event_ids": ["envelope_id_hex_1", ...],
-  "expected_bit_vector_hex": "MAGIC_HEADER || ...bits..."
+  "name": "bloom_v2_n100",
+  "event_ids_generator": {
+    "algorithm": "ascii_seq_v1",
+    "prefix": "bloom-",
+    "start": 0,
+    "count": 100,
+    "width": 8
+  },
+  "ascii_only": true,
+  "expected_bytes_size": 2052,
+  "expected_bytes_sha256_hex": "<64 hex chars = sha256(magic || bit_vector)>"
 }
 ```
+
+The 2052-byte total is the 4-byte magic header `[0xFF, 0xBF, 0x02, 0x00]` plus the 2048-byte bit vector. The magic header lets the receiver distinguish Bloom v2 bytes from raw envelope bytes on the shared `BLOOM_CHAR_UUID` characteristic.
 
 Coverage:
 
 - Empty bloom.
-- 1 / 10 / 50 / 100 / 500 / 1000 inserts.
-- Magic-header verification (the bit-vector starts with a 4-byte magic so the receiver can distinguish bloom-v2 bytes from raw envelope bytes on the same characteristic — confirms with the existing `BLOOM_CHAR_UUID` framing).
+- 1 / 10 / 50 / 100 / 500 / 1000 inserts, plus several intermediate sizes to push past 30 samples.
 
-The Bloom implementation lives at... (refer to the existing Bloom code in `resqmesh_app/lib/app/mesh/`). The 0c1 lane re-implements as needed and adds the corpus runner.
+**ASCII-only invariant (load-bearing).** `ascii_only: true` MUST be present on every Bloom sample, and the `prefix` plus `ascii_seq_v1`'s zero-padded decimal output guarantees only ASCII bytes feed into `bloomMurmurHash`. This is the corpus-side mitigation for the Kotlin/Swift Bloom hash divergence documented in `notes.bloom_hash_ascii_only` — Kotlin's `c.code` is unmasked while Swift's `codeUnit & 0xFF` masks to a byte; the two converge on ASCII inputs but diverge for code points ≥ 0x80. The Dart generator (and the conformance test) MUST throw if any sample feeds a non-ASCII event ID into Bloom. Fixing the runtime divergence is tracked as a future protocol cleanup, NOT a 3D scope item.
+
+The Bloom v2 magic-header byte layout is asserted bit-identically by the Dart consumer test and the Swift `WireConformanceTests`. The Kotlin consumer is covered by the existing Android `IgniRelayForegroundService.buildBitVectorBloom` path; an Android instrumentation test will be wired in a later wave.
 
 ### 11.4 Chunking slice (≥ 20 samples)
 
-Each sample:
+Each sample carries an `envelope_bytes_generator` descriptor plus the SHA-256 of the first and last chunk:
 
 ```json
 {
   "kind": "chunking",
-  "envelope_bytes_hex": "...",
+  "name": "mtu247_size800",
+  "envelope_bytes_generator": {
+    "algorithm": "lcg_byte_pattern_v1",
+    "seed": 7012,
+    "size": 800
+  },
+  "envelope_id_hex": "<32 hex chars = 16-byte envelope_id>",
   "negotiated_mtu": 247,
-  "expected_chunk_bytes_hex_array": ["chunk0_hex", "chunk1_hex", ...]
+  "expected_chunk_count": 4,
+  "expected_first_chunk_sha256_hex": "...",
+  "expected_last_chunk_sha256_hex": "...",
+  "expected_first_chunk_bytes": 244,
+  "expected_last_chunk_bytes": 86
 }
 ```
 
+`expected_first_chunk_bytes` and `expected_last_chunk_bytes` are **integer byte lengths** (NOT raw byte arrays). They provide a cheap sanity check that the consumer's chunk-payload sizing math is correct before it bothers to compute SHA-256. The byte-parity gate is:
+
+- `expected_chunk_count` — total chunks the consumer's `Chunker.split` must produce.
+- `expected_first_chunk_sha256_hex` — SHA-256 of chunk 0 (full bytes including 18-byte chunk header).
+- `expected_last_chunk_sha256_hex` — SHA-256 of chunk `total_chunks - 1`.
+
+Middle chunks (if any) are NOT individually fingerprinted; first + last + count is sufficient to catch any chunker drift since chunk_payload sizing is uniform except for the trailing chunk.
+
 Coverage:
 
-- 1-chunk envelope at MTU=512 (240 B SOS — single-notify case).
-- 2-chunk envelope at MTU=247 (240 B SOS — the symmetric 2-chunk case per §7.3).
-- 2-chunk envelope at MTU=185 (240 B SOS — also 2 chunks per §7.3).
-- 4-chunk envelope at MTU=247 (ALERT ~800 B).
-- 16-chunk envelope at MTU=185 (max chunks, ~2 KB envelope).
-- Reassembly out-of-order test (input chunks in shuffled order; expected reassembled envelope bytes).
-- Reassembly with duplicate chunk (same chunk twice; expected reassembly succeeds without error).
+- 1-chunk envelopes at MTU=185 across several sizes from 1 B up to the single-notify cap.
+- 1-chunk vs 2-chunk boundary cases at MTU=185 (sizes 163 / 164 / 165 exercise the off-by-one around `chunk_payload = mtu - 3 - 18 = 164`).
+- 2-chunk envelopes at MTU=185 (240 B SOS — see §7.3).
+- Multi-chunk envelopes at MTU=247 (ALERT ~800 B → 4 chunks).
+- Larger envelopes at MTU=247 and MTU=512 to cover the full MTU matrix from §7. Max `expected_chunk_count` in the positive chunking slice is **5** (mtu=512, envelope=2048 B). The 16-chunk `MAX_CHUNKS_PER_ENVELOPE` cap is NOT exercised by positive samples — cap-rejection is covered by the `over_max_chunks` negative case (§11.5) at MTU=121.
 
-### 11.5 Negative cases (≥ 5 transport-specific)
+**Reassembly behavior — DEFERRED to additional coverage.** Out-of-order delivery, duplicate chunks, and `reassembly-timeout` are NOT covered by per-sample fixtures in the v3D corpus. The transport-layer contract `Chunker.split` is fully covered; the receiver-layer contract `Reassembler.onChunk` is covered by the existing Dart unit tests (`test/mesh/chunker_reassembler_test.dart`) and the Android/iOS native implementations are covered by their own unit tests. A future wave will add cross-platform `reassembly_samples` (input chunk order + expected reassembled envelope bytes); when that lands, this section will be updated and `notes.reassembly_samples_v1` added.
 
-- Chunk with `total_chunks = 0` (illegal).
-- Chunk with `chunk_index >= total_chunks` (illegal).
-- Two chunks for the same envelope_id with different `total_chunks` values (illegal — drop with `chunk-total-mismatch`).
-- Reassembly that times out (test runner advances simulated clock past 30s; expected: drop with `reassembly-timeout`).
-- Envelope bytes that exceed `MAX_ENVELOPE_BYTES = 2048` (sender rejects at split time with `over-max-envelope-bytes`).
+### 11.5 Negative cases (≥ 10)
+
+Each negative case carries a `kind`, a human-readable `description`, and an `expected_drop_reason` drawn from the spec-recognized vocabulary. The conformance test asserts the vocabulary is closed (no rogue drop reasons sneak into the corpus).
+
+Coverage in v3D corpus (11 negatives):
+
+| `kind` | `expected_drop_reason` | Verifier |
+|---|---|---|
+| `oversize_sos` | `over-budget-sos-rejected` | publish-side budget check (Dart) |
+| `oversize_envelope` | `over-max-envelope-bytes` | `Chunker.split` (Dart, Kotlin, Swift) |
+| `unknown_sig_algo` | `unknown-sig-algo` | envelope decoder |
+| `chunk_total_zero` | `chunk-bad-header` | `Chunker.split` / receiver |
+| `chunk_index_oob` | `chunk-bad-header` | `Chunker.split` / receiver |
+| `chunk_bad_envelope_id_length` | `invalid-envelope-id` | `Chunker.split` (verified live) |
+| `mtu_below_minimum` | `mtu-below-minimum-for-chunked` | `Chunker.split` (verified live) |
+| `over_max_chunks` | `over-max-chunks` | `Chunker.split` (verified live; mtu read dynamically from corpus, see below) |
+| `unknown_protocol_version` | `unknown-protocol-version` | envelope decoder |
+| `expires_before_created` | `envelope-expired` | dispatcher |
+| `invalid_envelope_id_in_chunk` | `reassembly-envelope-id-mismatch` | `Reassembler` |
+
+The Chunker-structural negatives (`chunk_bad_envelope_id_length`, `mtu_below_minimum`, `over_max_chunks`, plus the `over-max-envelope-bytes` case) are RE-RUN against live `Chunker.split` in `test/conformance/wire_conformance_corpus_test.dart`. Test code MUST read `mtu` / `envelope_bytes_hex_length` / `expected_drop_reason` from the corpus rather than hard-coding them, so that a corpus drift surfaces immediately rather than silently passing against stale hard-coded constants.
+
+The decoder/dispatcher negatives (`unknown_sig_algo`, `unknown_protocol_version`, `envelope-expired`, `reassembly-envelope-id-mismatch`) are covered by the existing decoder / dispatcher / reassembler test suites; cross-platform parity for these is enforced by re-decoding the negative envelope bytes in each language's test runner (Kotlin/Swift coverage to land in a later wave; v3D ships Dart-side coverage only).
 
 ### 11.6 CI gate
 
-Each of Dart / Kotlin / Swift MUST encode and decode every positive sample bit-identically and reject every negative sample with the documented reason. CI is part of the Stage 0c acceptance check (brief §3.4).
+Each of Dart / Kotlin / Swift MUST encode and decode every positive sample bit-identically (or, where applicable, match the SHA-256 hash of the expected output and the documented byte-length) and reject every negative sample with the documented `expected_drop_reason`. CI is part of the Stage 0c acceptance check (brief §3.4).
+
+As of Stage 0c wave 3D the Dart consumer (`test/conformance/wire_conformance_corpus_test.dart`) and the Swift consumer (`ios/RunnerTests/WireConformanceTests.swift`) are wired. Kotlin and Android instrumentation consumers are scheduled for a follow-up wave; the Android runtime is already exercised through end-to-end pair tests but does not yet read the JSON corpus directly.
 
 ### 11.7 Generation tooling
 
 Per 0a §17.5: the Dart `tool/generate_wire_conformance_v1.dart` script is the SOLE generator. It produces the joint corpus (envelope + IBLT + Bloom + chunking + negatives). Kotlin and Swift consume the JSON; they MUST NOT regenerate.
+
+The generator exposes two modes:
+
+- `dart run tool/generate_wire_conformance_v1.dart` — regenerates the corpus on disk.
+- `dart run tool/generate_wire_conformance_v1.dart --check` — regenerates in memory, compares to the on-disk file, and exits non-zero on drift. CI runs `--check`; the Dart conformance test ALSO calls `buildCorpus()` directly and compares to the on-disk bytes, so the determinism gate fails either as a tool exit code or as a test assertion (whichever runs first).
+
+The generator MUST be deterministic: no `DateTime.now()`, no implicit map ordering, no filesystem-order dependence (YAML scenarios are explicitly sorted by path). The corpus's `corpus_revision` string bumps on any intentional shape change.
 
 ---
 

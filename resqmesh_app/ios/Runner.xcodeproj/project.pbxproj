@@ -18,6 +18,7 @@
 		B1E1F0312EC3DD0000AABBCC /* Reassembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1E1F0302EC3DD0000AABBCC /* Reassembler.swift */; };
 		B1E1F0412EC3DD0000AABBCC /* IBLT.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1E1F0402EC3DD0000AABBCC /* IBLT.swift */; };
 		B1E1F0512EC3DD0000AABBCC /* IBLTParityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1E1F0502EC3DD0000AABBCC /* IBLTParityTests.swift */; };
+		B1E1F0612EC3DD0000AABBCC /* WireConformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1E1F0602EC3DD0000AABBCC /* WireConformanceTests.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
@@ -61,6 +62,7 @@
 		B1E1F0302EC3DD0000AABBCC /* Reassembler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reassembler.swift; sourceTree = "<group>"; };
 		B1E1F0402EC3DD0000AABBCC /* IBLT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IBLT.swift; sourceTree = "<group>"; };
 		B1E1F0502EC3DD0000AABBCC /* IBLTParityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IBLTParityTests.swift; sourceTree = "<group>"; };
+		B1E1F0602EC3DD0000AABBCC /* WireConformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireConformanceTests.swift; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
@@ -87,6 +89,7 @@
 			children = (
 				331C807B294A618700263BE5 /* RunnerTests.swift */,
 				B1E1F0502EC3DD0000AABBCC /* IBLTParityTests.swift */,
+				B1E1F0602EC3DD0000AABBCC /* WireConformanceTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -283,6 +286,7 @@
 			files = (
 				331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */,
 				B1E1F0512EC3DD0000AABBCC /* IBLTParityTests.swift in Sources */,
+				B1E1F0612EC3DD0000AABBCC /* WireConformanceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
