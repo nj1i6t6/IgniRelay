@@ -25,9 +25,12 @@ import 'package:ignirelay_app/platform/native_bridge.dart';
 import 'package:ignirelay_app/app/controllers/envelope_dispatcher_v2.dart';
 import 'package:ignirelay_app/app/controllers/message_publisher_v2.dart';
 import 'package:ignirelay_app/app/proto/event_envelope_v2.dart';
+import 'package:ignirelay_app/app/services/adapter_health_monitor.dart';
 import 'package:ignirelay_app/app/services/author_rate_limiter.dart';
 import 'package:ignirelay_app/app/services/ble_v2_bridge.dart';
 import 'package:ignirelay_app/app/services/envelope_store_v2.dart';
+import 'package:ignirelay_app/app/services/event_publisher_v2_facade.dart';
+import 'package:ignirelay_app/app/services/mesh_debug_controller.dart';
 import 'package:ignirelay_app/app/services/mesh_trace_writer.dart';
 import 'package:ignirelay_app/app/services/peer_capability_registry.dart';
 import 'package:ignirelay_app/app/services/protocol_hello_service.dart';
@@ -104,6 +107,47 @@ Future<void> _purgeOldDebugLogs() async {
 /// is wave 3C+).
 BleV2Bridge? _v2Bridge;
 
+/// v0.3 Stage 0c wave 3E — adapter health monitor + debug controller, also
+/// retained at module scope. Both are constructed inside [_startV2Bridge]
+/// so they share the same MeshTraceWriter / native event stream.
+AdapterHealthMonitor? _adapterHealthMonitor;
+MeshDebugController? _meshDebugController;
+
+/// v0.3 Stage 0c wave 3E — shared PeerCapabilityRegistry. Created eagerly
+/// at app startup so the v2 publish facade can hold a non-null reference
+/// from the first frame (Stage 0c wave 3E-r2 Provider-lifecycle fix). The
+/// async [_startV2Bridge] later constructs the bridge against this same
+/// registry instance.
+final PeerCapabilityRegistry _peerCapabilityRegistry = PeerCapabilityRegistry();
+
+/// v0.3 Stage 0c wave 3E — v2 publish facade. Exposed to the UI via
+/// Provider (see MultiProvider below). UI / app services use this in place
+/// of (or in addition to) `EventPublisher` for the four 0d-eligible event
+/// types (SOS_RED STATUS_UPDATE, STATUS_UPDATE, HAZARD_MARKER, CHAT_MESSAGE).
+///
+/// Stage 0c wave 3E-r2: now constructed EAGERLY at module-load time with
+/// just the registry; [BleV2Bridge] is attached later via
+/// [EventPublisherV2Facade.attachBridge] inside [_startV2Bridge]. Sends
+/// issued before the bridge attaches are held in an in-memory pending
+/// queue and drained when the first peer becomes ready for traffic. This
+/// makes the Provider non-nullable from the first build() and removes the
+/// silent "UI reads null forever" failure mode of 3E-r1.
+/// Wave 3F — pass `DatabaseHelper()` so the facade mirrors its pending
+/// queue to the `Outbox_V2` SQLite table and re-hydrates on next launch.
+/// Tests construct the facade with `db: null` to opt out (in-memory only).
+final EventPublisherV2Facade _eventPublisherV2 = EventPublisherV2Facade(
+  registry: _peerCapabilityRegistry,
+  db: DatabaseHelper(),
+);
+
+/// Visible-for-test accessors so the 0d-gate test runner can drive the
+/// debug controller without reaching into module state. UI MUST NOT call
+/// these (the controllers are not Provider-wired; they are infrastructure).
+@visibleForTesting
+AdapterHealthMonitor? get debugAdapterHealthMonitor => _adapterHealthMonitor;
+@visibleForTesting
+MeshDebugController? get debugMeshDebugController => _meshDebugController;
+
 Future<void> _startV2Bridge() async {
   if (_v2Bridge != null) return;
   try {
@@ -118,13 +162,24 @@ Future<void> _startV2Bridge() async {
       store: store,
       trace: trace,
       rateLimiter: rateLimiter,
+      // v0.3 Stage 0c wave 3E — opt into spec-strict drop reasons. Tests
+      // default to OFF for legacy synthetic-HLC compatibility; production
+      // wires both ON. See EnvelopeDispatcherV2 docstrings for migration
+      // notes and the QA agent follow-up plan to flip defaults globally.
+      enableClockBasedExpiry: true,
+      enableMaxHopsOvercommit: true,
     );
     final publisher = MessagePublisherV2(
       keyPair: keyPair,
       authorPublicKey: pubKey,
       trace: trace,
     );
-    final registry = PeerCapabilityRegistry();
+    // Stage 0c wave 3E-r2 — re-use the module-level registry so the
+    // eagerly-constructed [_eventPublisherV2] facade and the bridge share
+    // the same per-peer state. Building a fresh PeerCapabilityRegistry()
+    // here (the wave 3E-r1 behavior) split state in two and made the
+    // facade's drain trigger never fire.
+    final registry = _peerCapabilityRegistry;
     final bridge = BleV2Bridge(
       store: store,
       dispatcher: dispatcher,
@@ -136,7 +191,19 @@ Future<void> _startV2Bridge() async {
         supportsIblt: true,
         supportsBloomV2: true,
         supportsChunking: true,
-        minNegotiatedMtu: 247,
+        // v0.3 Stage 0c wave 3E — `min_negotiated_mtu` per spec §5.4 is a
+        // CAPABILITY COMMITMENT ("lowest MTU the peer commits to handle"),
+        // not the per-connection negotiated MTU. PhoneV1 (§6.1.2) commits
+        // to MTU 185-512, so the spec-correct floor is 185 — NOT 247. The
+        // previous hardcoded 247 was a latent contract violation: on a
+        // link that negotiated MTU=185, we would advertise "I commit to
+        // 247" while actually handling 185, confusing capability-aware
+        // peers (e.g., BleNodeV1 declining to send chunks they think we
+        // can handle in one notify). The actual per-connection negotiated
+        // MTU is plumbed through `peer_ready_for_hello` → BleV2Bridge
+        // ._peerMtu map and used by `publisher.send(negotiatedMtu: ...)`;
+        // the HELLO field declares the COMMITMENT, not the live value.
+        minNegotiatedMtu: 185,
         bgState: BgState.foreground,
       ),
       nativeEventStream: NativeBridge.nativeEventStream,
@@ -145,6 +212,42 @@ Future<void> _startV2Bridge() async {
     );
     bridge.start();
     _v2Bridge = bridge;
+
+    // Stage 0c wave 3E — adapter health observability + debug hooks.
+    // Both run unconditionally in dev builds; the native debug hooks are
+    // deliberately UNGATED on release too so the QA agent can drive the
+    // 0d gate against release binaries (see MainActivity.kt /
+    // BlePlugin.swift). Their impact is bounded (MTU clamp + tick
+    // suppression only — no wire-format mutation, no signature bypass).
+    //
+    // Stage 0c wave 3F — wire the Dart-side §8.3 step 1 recovery action.
+    // The native FS (Android) owns the advertise bounce; the Dart monitor
+    // owns the scan bounce because `NordicMeshManager` is held by
+    // `MainActivity`, not the foreground service. On iOS the BlePlugin's
+    // own native watchdog bounces both managers — the Dart callback is
+    // redundant but harmless (startScan/stopScan are idempotent there).
+    final healthMonitor = AdapterHealthMonitor(
+      nativeEventStream: NativeBridge.nativeEventStream,
+      trace: trace,
+      onIdleDetected: () async {
+        // 300 ms gap between stop and start — long enough for the BLE
+        // scanner to actually release, short enough that scenario #11's
+        // 60 s recovery budget is not eaten by housekeeping.
+        await NativeBridge.stopNordicScan();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        await NativeBridge.startNordicScan();
+      },
+    );
+    healthMonitor.start();
+    _adapterHealthMonitor = healthMonitor;
+    _meshDebugController = MeshDebugController(trace: trace);
+    // Stage 0c wave 3E-r2 — attach the bridge to the EAGERLY-constructed
+    // facade. Any sends issued before now have been buffered in the
+    // facade's in-memory pending queue; attachBridge schedules a drain
+    // attempt immediately so the queue clears as soon as a peer reaches
+    // isReadyForTraffic.
+    _eventPublisherV2.attachBridge(bridge);
+
     debugPrint('[main] v2 bridge started');
   } catch (e, st) {
     debugPrint('[main] v2 bridge start failed: $e\n$st');
@@ -244,8 +347,20 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
         Provider<EventDecoder>(
           create: (_) => EventDecoder(),
         ),
+        // v0.3 Stage 0c wave 3E-r2 — v2 publish facade. NON-NULLABLE:
+        // constructed eagerly at module load with the shared
+        // PeerCapabilityRegistry, then has its BLE bridge attached
+        // asynchronously inside [_startV2Bridge]. Sends issued before the
+        // bridge attaches are buffered in the facade's pending queue and
+        // drained automatically when the first peer becomes ready for
+        // traffic. UI / EventPublisher receive a usable facade from the
+        // first frame; no nullable-Provider gymnastics required.
+        Provider<EventPublisherV2Facade>.value(value: _eventPublisherV2),
         Provider<EventPublisher>(
-          create: (_) => EventPublisher(eventManager: EventManager()),
+          create: (_) => EventPublisher(
+            eventManager: EventManager(),
+            v2Facade: _eventPublisherV2,
+          ),
         ),
         Provider<EventStore>(
           create: (_) => EventStore(databaseHelper: DatabaseHelper()),

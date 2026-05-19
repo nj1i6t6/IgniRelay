@@ -443,4 +443,101 @@ class NativeBridge {
         .where((event) => event is List)
         .map((event) => List<int>.from(event));
   }
+
+  // ── Stage 0c wave 3E — 0d acceptance-gate debug hooks ─────────────────
+  //
+  // Spec: native_transport_v1 §7.4 (force MTU) + §8.5 (force adapter idle).
+  // These exist so the 0d real-device gate can exercise specific MTUs and
+  // the adapter-recovery state machine without rebooting hardware.
+  //
+  // RELEASE-BUILD POLICY (Stage 0c wave 3F): the native handlers are
+  // DELIBERATELY UNGATED on BuildConfig.DEBUG / DEBUG Info.plist so the
+  // 0d gate can drive release binaries. Impact is bounded — MTU clamp
+  // and tick suppression only; no wire-format mutation, no signature
+  // bypass. See `MeshDebugController` header for the full policy
+  // rationale and the rule for adding future hard-gated hooks.
+  //
+  // CURRENT NATIVE IMPLEMENTATION STATUS — Android source-wired; Dart gates green; device preflight pending. iOS code-wired-only (Stage 0c wave 3F-r3):
+  //   "Source-wired" means: the Kotlin handlers compile, the Dart-side
+  //   facade exercises them in unit + on-device instrumentation suites,
+  //   and `flutter analyze` + `flutter test` are clean. It does NOT yet
+  //   mean an Android device pair has run the 0d real-device gate
+  //   scenarios #1–#11 — that is the Android↔Android preflight queued
+  //   for after Stage 0c source-complete.
+  //   Android (MainActivity.kt method-channel + IgniRelayForegroundService
+  //     companion): WIRED + SMOKE-TESTABLE on device.
+  //     `debugForceTargetMtu` writes into `debugMtuOverrideByDevice` and
+  //     is applied in both `onMtuChanged` (peripheral) and
+  //     `NordicMeshManager.done{}` (central). `debugForceAdapterIdle`
+  //     writes `adapterIdleSuppressedUntilMs` which gates
+  //     `emitAdapterTick`. Recovery: `adapterRecoveryRunnable` runs the
+  //     §8.3 soft → hard → permanent_error ladder (advertise bounce);
+  //     scan bounce is owned by the Dart-side `AdapterHealthMonitor`
+  //     `onIdleDetected` callback (`main.dart`).
+  //   iOS (BlePlugin.swift): CODE WIRED, NOT VERIFIED. The Swift
+  //     handlers + tick emitters + recovery state machine all exist in
+  //     source (`debugForceTargetMtu` clamp at three points, native
+  //     watchdog mirroring Android), but as of wave 3F no `xcodebuild`
+  //     or XCTest run has happened on macOS / CI, and no iOS device
+  //     pair has exercised scenarios #1–#11. iOS-pair and Android↔iOS
+  //     0d gate rows therefore remain BLOCKED on macOS build + smoke
+  //     test, not on missing code.
+
+  /// Debug-only: force the next BLE MTU negotiation for `deviceId` to clamp
+  /// at `targetMtu`. Pass `null` to clear the override and use the OS-
+  /// negotiated value. Returns `false` if the native side is not built with
+  /// debug hooks enabled, or if `targetMtu` is outside the spec-supported
+  /// range (23..512).
+  ///
+  /// Used by the 0d acceptance gate to exercise MTU=185, 247, 512 on the
+  /// same hardware pair (spec §7.4 + brief §3.5.2 row 6).
+  static Future<bool> debugForceTargetMtu({
+    required String deviceId,
+    required int? targetMtu,
+  }) async {
+    if (targetMtu != null && (targetMtu < 23 || targetMtu > 512)) {
+      debugPrint('debugForceTargetMtu: rejected mtu=$targetMtu out of [23,512]');
+      return false;
+    }
+    try {
+      final bool result = await _channel.invokeMethod('debugForceTargetMtu', {
+        'deviceId': deviceId,
+        'targetMtu': targetMtu, // null clears the override
+      });
+      return result;
+    } on PlatformException catch (e) {
+      // Expected in release builds / on platforms where the hook is not
+      // yet wired — surface a debug log but don't crash production paths.
+      debugPrint('debugForceTargetMtu not available: ${e.message}');
+      return false;
+    } on MissingPluginException {
+      debugPrint('debugForceTargetMtu not available on this platform');
+      return false;
+    }
+  }
+
+  /// Debug-only: tell the native AdapterHealthMonitor to suppress all
+  /// scan/advertise emissions for the next [duration]. Used by the 0d
+  /// gate to exercise §8.3 soft-recover and hard-restart paths without
+  /// physically toggling Bluetooth.
+  ///
+  /// `duration > 6 minutes` triggers the spec §8.5 acceptance scenario
+  /// (mesh recovers within 60 s of soft restart). Returns `false` when the
+  /// native hook is not wired.
+  static Future<bool> debugForceAdapterIdle({
+    required Duration duration,
+  }) async {
+    try {
+      final bool result = await _channel.invokeMethod('debugForceAdapterIdle', {
+        'durationMs': duration.inMilliseconds,
+      });
+      return result;
+    } on PlatformException catch (e) {
+      debugPrint('debugForceAdapterIdle not available: ${e.message}');
+      return false;
+    } on MissingPluginException {
+      debugPrint('debugForceAdapterIdle not available on this platform');
+      return false;
+    }
+  }
 }

@@ -70,6 +70,49 @@ class MeshTraceWriter {
     });
   }
 
+  /// Stage 0c wave 3E — write a non-envelope system event (e.g. adapter
+  /// health transitions, debug-hook toggles) to the same Mesh_Trace_Logs
+  /// table so the dev-mode trace screen + 0d gate test runner can observe
+  /// adapter state changes alongside envelope flow.
+  ///
+  /// System events use a synthetic envelope_id (16 zero bytes + ASCII
+  /// `'SYS'` overlay) so they sort distinctively from real UUIDv7
+  /// envelope_ids. The drop_reason column carries a `<category>:<action>`
+  /// string (e.g. `adapter_health:adapter_soft_recover`) for indexable
+  /// querying; the `last_relay_id` column carries the freeform `detail`
+  /// because Mesh_Trace_Logs has no generic 'note' field and adding one
+  /// is a v0.4 schema concern.
+  Future<void> writeSystemEvent({
+    required String category,
+    required String action,
+    String? detail,
+    DateTime? at,
+  }) async {
+    final db = await _db.database;
+    final syntheticId = Uint8List(16);
+    // ASCII 'SYS' = 0x53 0x59 0x53 — placed at offsets 0..2 so the row is
+    // easy to spot in a hex dump. Bytes 3..15 stay 0x00.
+    syntheticId[0] = 0x53; syntheticId[1] = 0x59; syntheticId[2] = 0x53;
+    await db.insert('Mesh_Trace_Logs', {
+      'ts_ms': (at ?? DateTime.now()).millisecondsSinceEpoch,
+      'envelope_id': syntheticId,
+      'event_type': 0,
+      'priority': 0,
+      'author_key_hash': Uint8List(8),
+      'last_relay_id': detail,
+      'created_at_hlc_ms': 0,
+      'expires_at_hlc_ms': 0,
+      'action': TraceAction.dropped, // closest existing action; reused for system events
+      'drop_reason': '$category:$action',
+      'dedupe_outcome': null,
+      'signature_status': null,
+      'source_trust': null,
+      'hop_count_seen': null,
+      'relay_attempt_count': null,
+      'peer_id': null,
+    });
+  }
+
   /// SHA-256(author_key)[:8] — privacy filter mandated by spec §15.4.
   static Future<Uint8List> _shortAuthorHash(Uint8List key) async {
     final digest = await Sha256().hash(key);

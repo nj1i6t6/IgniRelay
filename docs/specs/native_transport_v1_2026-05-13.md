@@ -558,6 +558,21 @@ The 0a §9 SOS budget is locked at 240 B (decision in 0a §20.6). At the two MUS
 
 The 0d acceptance gate (brief §3.5.2 row 6) requires testing at MTU=185, 247, 512. The 0c implementation MUST expose a debug-mode toggle to FORCE a target MTU (clamped via the BLE adapter API), so 0d can exercise each MTU on the same hardware pair. The toggle lives in the dev-mode trace screen.
 
+**Implementation status — Android source-wired; Dart gates green; device preflight pending. iOS code-wired-only (Stage 0c wave 3F-r3):**
+
+"Source-wired" means: native handlers compile, Dart facade exercises them, and `flutter analyze` + `flutter test` + layer / parity / corpus checks all pass. It does NOT mean an Android device pair has executed the 0d real-device gate — that preflight is the next step after Stage 0c source-complete and is owned outside this wave.
+
+- Dart-side facade: `MeshDebugController.forceTargetMtu({deviceId, targetMtu})` (`lib/app/services/mesh_debug_controller.dart`) — writes a trace row + invokes the method channel.
+- Method channel name: `debugForceTargetMtu` on `network.ignirelay/native`, payload `{deviceId: String, targetMtu: int?}`. `targetMtu = null` clears the override.
+- Android handler — **SOURCE-WIRED, GATES GREEN, DEVICE PREFLIGHT PENDING**: `MainActivity.kt` writes to `IgniRelayForegroundService.debugMtuOverrideByDevice`. The clamp is applied in BOTH `IgniRelayForegroundService.onMtuChanged` (peripheral side) AND `NordicMeshManager.connect.done{}` (central side) so the higher layers see a consistent effective MTU.
+- iOS handler — **CODE WIRED, NOT VERIFIED**: `BlePlugin.swift` writes to instance-scoped `debugMtuOverrideByDevice`. The clamp is applied at THREE points so all downstream sizing sees the same effective MTU: (1) `PeripheralDelegate.didDiscoverCharacteristicsFor` (central-role: clamps the value reported via `gatt_mtu` / `peer_ready_for_hello`), (2) `peripheralManager.didSubscribeTo` (peripheral-role: same), (3) `notifyEventChunk` (uses the stored clamped MTU for oversize rejection, so forced MTU=185 actually rejects 247-byte payloads instead of letting CoreBluetooth's real-MTU through). **The iOS source has not been `xcodebuild`-built or XCTest-run since this wave landed — dev host is Windows.**
+
+The clamp is `min(actual_negotiated_mtu, target_mtu)` — a clamp never raises MTU, it only lowers it. Out-of-range targets (< 23 or > 512) are rejected by Dart before the channel call AND by both native handlers as defense in depth.
+
+**Release-build policy:** the native handlers are DELIBERATELY UNGATED on `BuildConfig.DEBUG` (Android) and the DEBUG Info.plist key (iOS) so the 0d acceptance gate can drive RELEASE binaries (the gate exercises what users install). Impact is bounded — MTU clamp and tick suppression only; no wire-format mutation, no signature bypass.
+
+**Still required before §3.4 Stage 0c sign-off:** the §7.4 surface code is present on both platforms but only Android has been smoke-tested. iOS needs (a) `xcodebuild` on macOS / CI, (b) `IBLTParityTests` / `WireConformanceTests` pass, (c) at least one iOS-pair 0d dry run on hardware. Until (a)–(c) land, Stage 0c remains "Android-pair preflight ready" and the iPhone-12 / iPhone-15 / Android↔iOS rows of §3.5.1 stay blocked.
+
 ---
 
 ## 8. BLE Adapter Recovery Story
@@ -576,6 +591,32 @@ The Stage 0c implementation MUST add a per-platform `AdapterHealthMonitor`:
 
 - **Android**: every 60 seconds, check `lastSuccessfulScanResult_at_ms` and `lastSuccessfulAdvertise_at_ms`. If both are > 5 minutes stale AND foreground service is active AND there are subscribed peers, flag `adapter_idle_too_long`.
 - **iOS**: equivalent via the `centralManager.state` and `peripheralManager.state` observers + `lastSuccessfulCallback_at_ms`.
+
+**Native event channel — Android source-wired; Dart gates green; device preflight pending. iOS code-wired-only (Stage 0c wave 3F-r3):** the Dart-side `AdapterHealthMonitor` (`lib/app/services/adapter_health_monitor.dart`) consumes `adapter_health_tick` events from `network.ignirelay/events`. Payload shape:
+
+```jsonc
+{
+  "type": "adapter_health_tick",
+  "kind": "scan" | "advertise" | "gatt_op",
+  "ts_ms": <epoch ms when the tick fired>
+}
+```
+
+The Dart monitor tracks the LAST timestamp per `kind`. The staleness rule is: BOTH `scan` AND `advertise` ticks must be > 5 minutes stale to flag `adapter_idle_too_long`; `gatt_op` is informational only.
+
+Android emit sites:
+
+- `IgniRelayForegroundService.adapterHealthTickRunnable` (every 30 s while `isAdvertising`) emits `advertise`.
+- `NordicMeshManager.onScanResult` emits `scan` for every BLE advertisement seen (whether it matches our service or not).
+- `IgniRelayForegroundService` GATT callbacks (`onCharacteristicWriteRequest`, `onCharacteristicReadRequest`, `onNotificationSent`, `onConnectionStateChange`, `onMtuChanged`) emit `gatt_op`; the periodic runnable also emits `gatt_op` when there is ≥ 1 notify subscriber.
+
+iOS emit sites (mirror of Android, via `BlePlugin.emitAdapterTick`; **code present, not yet `xcodebuild`-verified**):
+
+- `BlePlugin.advertiseHealthTickTimer` (every 30 s while `peripheralManager.isAdvertising`) emits `advertise`. `peripheralManagerDidStartAdvertising` success also emits `advertise` as the "we've started" anchor.
+- `centralManager(_:didDiscover:)` emits `scan` for every advertisement seen.
+- `peripheralManager` callbacks `didReceiveRead`, `didReceiveWrite`, `didSubscribeTo`, `didUnsubscribeFrom`, plus `PeripheralDelegate` `didDiscoverCharacteristicsFor` / `didUpdateValueFor` / `didWriteValueFor`, plus `notifyEventChunk` on successful `updateValue`, all emit `gatt_op`. The periodic timer also emits `gatt_op` when `subscribedCentrals` is non-empty.
+
+All emissions go through `emitAdapterTick`, which on BOTH platforms (a) skips delivery to the Dart event sink AND (b) skips updating the per-kind `lastXxxTickAtMs` companion field while the `debugForceAdapterIdle` suppression window (§8.5) is active. Skipping (b) is deliberate so the native-side recovery watchdog (§8.3) exercises end-to-end: the watchdog reads the same staleness clock the Dart monitor does, so forcing idle makes BOTH escalation paths fire.
 
 ### 8.3 Recovery actions (in order)
 
@@ -598,6 +639,30 @@ When the user toggles BT off:
 The 0c implementation MUST add a debug-mode "force adapter idle" toggle that disables scan/advertise emissions for 6 minutes, so the recovery monitor can be exercised in 0d.
 
 The 0d acceptance gate (§3.5 of brief) now includes scenario #11 — "force adapter idle for 6 minutes; mesh recovers within 60 seconds of soft restart" — locked by decision §15.6.
+
+**Implementation status — Android source-wired; Dart gates green; device preflight pending. iOS code-wired-only (Stage 0c wave 3F-r3):**
+
+- Dart-side facade: `MeshDebugController.forceAdapterIdle({duration})` (`lib/app/services/mesh_debug_controller.dart`).
+- Method channel name: `debugForceAdapterIdle` on `network.ignirelay/native`, payload `{durationMs: int}`. `durationMs <= 0` clears the suppression window.
+- Android handler — **SOURCE-WIRED, GATES GREEN, DEVICE PREFLIGHT PENDING**: `MainActivity.kt` writes `IgniRelayForegroundService.adapterIdleSuppressedUntilMs = now + durationMs`. While the window is active, `emitAdapterTick` returns immediately without delivering to the event sink AND without updating the per-kind staleness clock, so BOTH the Dart-side `AdapterHealthMonitor` AND the native-side `adapterRecoveryRunnable` observe the artificial silence and exercise their §8.2 / §8.3 paths.
+- iOS handler — **CODE WIRED, NOT VERIFIED**: `BlePlugin.swift` writes `adapterIdleSuppressedUntilMs`. Same suppression semantics as Android. No macOS `xcodebuild` / XCTest run yet — dev host is Windows.
+
+**Recovery action is implemented in source on both platforms (wave 3F).** The §8.3 ladder is split per-platform between the native foreground service / plugin AND the Dart-side `AdapterHealthMonitor.onIdleDetected` callback (wired in `main.dart`):
+
+| Step | Trigger                                          | Android implementation                                                                                                  | iOS implementation                                                                                                                            | Event emitted                       |
+|------|--------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------|
+| 1    | bothStale && isAdvertising && subscribers > 0    | **FS**: `attemptSoftRestart` — stop+restart advertising. **Dart**: `onIdleDetected` — `NativeBridge.stopNordicScan` + delay + `startNordicScan` (scan bounce; FS cannot reach `NordicMeshManager`). | `BlePlugin.attemptSoftRestart` — stop+restart scan AND stop+restart advertising in one process. Dart `onIdleDetected` also fires (idempotent). | `adapter_native_soft_restart` + Dart `AdapterIdleTooLong` |
+| 2    | step 1 ineffective for 2 consecutive eval cycles | `attemptHardRestart` — `stopBlePeripheral` + delayed `startBlePeripheral`                                               | `attemptHardRestart` — tear down `CBPeripheralManager` + `ensurePeripheralManager` after delay                                                | `adapter_native_hard_restart`       |
+| 3    | (UI banner; unchanged — owned by Dart monitor)   | n/a (Dart `AdapterHealthMonitor` → Provider → UI)                                                                       | n/a                                                                                                                                           | (Dart `AdapterIdleTooLong`)         |
+| 4    | step 2 ineffective for 2 consecutive eval cycles | `emitPermanentError` — also resets escalation counters                                                                  | `emitPermanentError` — same                                                                                                                   | `adapter_native_permanent_error`    |
+
+The native escalation counters reset to 0 the moment a real (non-suppressed) tick lands and `evaluateAndRecover` sees both `scan` and `advertise` fresh again — so a 6-minute `debugForceAdapterIdle` window followed by natural recovery does NOT permanently wedge the watchdog. Native events (`adapter_native_*`) are distinct from Dart's `AdapterSoftRecover` / `AdapterHardRecover` so QA can attribute the action to the native side vs. the Dart-side observation.
+
+**Why scan bounce lives in Dart on Android, not in the FS:** `NordicMeshManager` (which owns the Nordic BLE scanner) is held by `MainActivity`. The foreground service is a separate component and cannot reach `MainActivity` instance state without an IPC dance. The Dart-side `AdapterHealthMonitor` already observes the same tick stream as the FS watchdog; wiring the scan bounce into its `onIdleDetected` callback is the natural split. iOS doesn't have this problem because `BlePlugin` owns both `CBCentralManager` and `CBPeripheralManager` in one process.
+
+**Scenario #11 status on each platform:**
+- **Android↔Android**: SOURCE-COMPLETE and ready for device preflight as of wave 3F-r3. Drive `debugForceAdapterIdle(6 min)` via dev-mode trace screen → expect `adapter_native_soft_restart` event within 60 s → expect `AdapterSoftRecover` Dart event when ticks resume. The native + Dart code paths are wired and unit-test green; the actual two-device run has NOT been executed yet (Windows dev host; preflight is the next step).
+- **iOS↔iOS / Android↔iOS**: BLOCKED on macOS build + XCTest + device smoke. The Swift implementation is structurally complete but has not executed on hardware once.
 
 ---
 

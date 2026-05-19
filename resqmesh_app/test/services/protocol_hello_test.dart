@@ -17,6 +17,7 @@ import 'package:ignirelay_app/app/controllers/envelope_dispatcher_v2.dart';
 import 'package:ignirelay_app/app/controllers/message_publisher_v2.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/mesh/capability_profile.dart';
+import 'package:ignirelay_app/app/mesh/reassembler.dart';
 import 'package:ignirelay_app/app/proto/event_envelope_v2.dart';
 import 'package:ignirelay_app/app/services/author_rate_limiter.dart';
 import 'package:ignirelay_app/app/services/envelope_store_v2.dart';
@@ -302,6 +303,7 @@ void main() {
   group('ProtocolHelloService', () {
     Future<_HelloHarness> makeHarness({
       Duration helloTimeout = const Duration(milliseconds: 200),
+      bool enableMaxHopsOvercommit = false,
     }) async {
       final db = DatabaseHelper();
       final store = EnvelopeStoreV2(db);
@@ -311,6 +313,7 @@ void main() {
         store: store,
         trace: trace,
         rateLimiter: rate,
+        enableMaxHopsOvercommit: enableMaxHopsOvercommit,
       );
       final selfKey = await Ed25519().newKeyPair();
       final selfPub =
@@ -367,6 +370,25 @@ void main() {
       await h.dispose();
     });
 
+    test('outgoing HELLO uses maxHops=0', () async {
+      final h = await makeHarness();
+      await h.service.onPeerReadyForHello('AA:BB', 247);
+      final sent = h.sentChunks.single.chunks;
+      final reassembler = Reassembler(
+        isAlreadyDispatched: (_) => false,
+        isTombstoned: (_) => false,
+      );
+      Uint8List? wire;
+      for (final chunk in sent) {
+        wire = reassembler.onChunk(chunk);
+      }
+      expect(wire, isNotNull);
+      final env = EventEnvelopeV2.decode(wire!);
+      expect(env.eventType, EventTypeV2.protocolHello);
+      expect(env.maxHops, 0);
+      await h.dispose();
+    });
+
     test('valid peer HELLO via dispatcher → registry active(PhoneV1)',
         () async {
       final h = await makeHarness();
@@ -387,7 +409,7 @@ void main() {
         payload: peerHello.encode(),
         createdAtHlc: HlcTimestampV2(msSinceEpoch: 1000, counter: 0),
         expiresAtHlc: HlcTimestampV2(msSinceEpoch: 60000, counter: 0),
-        maxHops: 1,
+        maxHops: 0,
         negotiatedMtu: 247,
       );
 
@@ -435,7 +457,7 @@ void main() {
         payload: peerHello.encode(),
         createdAtHlc: HlcTimestampV2(msSinceEpoch: 1000, counter: 0),
         expiresAtHlc: HlcTimestampV2(msSinceEpoch: 60000, counter: 0),
-        maxHops: 1,
+        maxHops: 0,
         negotiatedMtu: 247,
       );
       await h.dispatcher.onReceiveEnvelopeBytes(
@@ -468,11 +490,43 @@ void main() {
           ).encode(),
           createdAtHlc: HlcTimestampV2(msSinceEpoch: 1, counter: 0),
           expiresAtHlc: HlcTimestampV2(msSinceEpoch: 60000, counter: 0),
-          maxHops: 1,
+          maxHops: 0,
           negotiatedMtu: 247,
         ),
         throwsA(isA<PublishRejected>()),
       );
+      await h.dispose();
+    });
+
+    test('strict dispatcher accepts valid HELLO when maxHops=0', () async {
+      final h = await makeHarness(enableMaxHopsOvercommit: true);
+      await h.service.onPeerReadyForHello('AA:BB', 247);
+
+      final peerHello = ProtocolHelloData(
+        peerKind: PeerKind.phoneV1,
+        maxRxEnvelopeBytes: 2048,
+        supportsIblt: true,
+        supportsBloomV2: true,
+        supportsChunking: true,
+        minNegotiatedMtu: 247,
+      );
+      final published = await h.peerPublisher.send(
+        eventType: EventTypeV2.protocolHello,
+        priority: PriorityV2.normal,
+        payload: peerHello.encode(),
+        createdAtHlc: HlcTimestampV2(msSinceEpoch: 1000, counter: 0),
+        expiresAtHlc: HlcTimestampV2(msSinceEpoch: 60000, counter: 0),
+        maxHops: 0,
+        negotiatedMtu: 247,
+      );
+
+      final outcome = await h.dispatcher.onReceiveEnvelopeBytes(
+        published.wireBytes,
+        peerId: 'AA:BB',
+      );
+      expect(outcome, isA<DispatchAccepted>());
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      expect(h.registry.stateFor('AA:BB')?.status, PeerCapabilityStatus.active);
       await h.dispose();
     });
   });

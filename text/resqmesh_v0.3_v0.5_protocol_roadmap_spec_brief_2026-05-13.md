@@ -597,6 +597,8 @@ Acceptance check before moving to 0d:
 
 Stage 1 may NOT begin until 0d passes.
 
+Android-to-Android preflight runbook: `docs/specs/android_android_0d_preflight_2026-05-19.md`. This runbook is the two-phone Android source-wired smoke/preflight before the full 0d matrix; it does not replace the iOS, cross-platform, or 3-hop acceptance rows below.
+
 #### 3.5.1 Device Pool (Minimum)
 
 Six phones, pairwise tested:

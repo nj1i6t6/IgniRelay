@@ -193,6 +193,13 @@ class MessagePublisherV2 {
     );
   }
 
+  /// UUIDv7 envelope_id factory exposed for pre-allocation paths (e.g.,
+  /// `EventPublisherV2Facade` Outbox_V2 persistence — wave 3F-r3). When the
+  /// caller pre-allocates so a restart-driven re-send emits the SAME id the
+  /// first attempt did, receiver-side dedup on `Envelopes_V2.envelope_id`
+  /// PK / `Tombstones_V2` stays idempotent.
+  static Uint8List newEnvelopeId() => _newUuidV7();
+
   /// UUIDv7 generator — RFC 9562 §5.7 layout (48-bit unix_ts_ms || version 7
   /// nibble || 12-bit rand_a || variant 10b || 62-bit rand_b). Self-contained
   /// (uses only dart:math). Spec-locked decision §20.3.

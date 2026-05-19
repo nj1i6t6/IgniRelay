@@ -43,7 +43,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 9,
+      version: 11,
       onConfigure: (db) async {
         await db.rawQuery('PRAGMA journal_mode=WAL');
       },
@@ -248,6 +248,37 @@ class DatabaseHelper {
       // becomes a debug-only history table.
       await _createEnvelopeV2Tables(db);
     }
+    if (oldVersion < 10) {
+      // v0.3 Stage 0c wave 3F — Outbox_V2 for EventPublisherV2Facade
+      // pending-queue persistence. Survives process death so 0d scenarios
+      // that test "publish while last peer is dropping" / "publish before
+      // first peer completes HELLO" can include a restart in the middle
+      // without losing the message.
+      await _createOutboxV2Table(db);
+    }
+    if (oldVersion < 11) {
+      // v0.3 Stage 0c wave 3F-r3 — Outbox_V2 now stores the pre-allocated
+      // `envelope_id` so restart-driven re-sends emit the SAME id the first
+      // attempt did. Without this, GPT review surfaced that
+      // `MessagePublisherV2.send()` would mint a fresh UUIDv7 every drain,
+      // defeating receiver-side dedup for non-LWW events (SOS / HAZARD /
+      // CHAT) and producing duplicates on the receiver.
+      //
+      // Migration approach: drop & recreate. Justification:
+      //   • Wave 3F's v10 schema has NOT shipped to any production device
+      //     (committed only on dev workstations, see Stage 0c wave 3F-r2
+      //     "honest caveats" — schema migration was not yet device-tested).
+      //   • The Outbox_V2 table is ephemeral by contract — bounded queue
+      //     with cap-eviction + TTL drop. Losing in-flight rows on
+      //     migration is functionally equivalent to a single process
+      //     restart during the same window.
+      //   • `ALTER TABLE ADD COLUMN ... NOT NULL` requires a default
+      //     value sqflite can fill, but `envelope_id` has no sensible
+      //     synthetic default (any bytes we invent would still be a
+      //     fresh id per row, defeating the whole point).
+      await db.execute('DROP TABLE IF EXISTS Outbox_V2');
+      await _createOutboxV2Table(db);
+    }
   }
 
   /// v0.3 Stage 0c1 — schema for the Envelope v2 storage layer.
@@ -373,6 +404,55 @@ class DatabaseHelper {
         trust_label   INTEGER NOT NULL
       )
     ''');
+  }
+
+  /// v0.3 Stage 0c wave 3F / 3F-r3 — schema for the EventPublisherV2Facade
+  /// pending queue. One row per queued (not-yet-broadcast) envelope. The
+  /// facade hydrates its in-memory queue from this table on construction;
+  /// drains and TTL expiries delete rows.
+  ///
+  /// Schema notes:
+  ///   • `id` is an auto-increment so the natural FIFO order is preserved
+  ///     across restarts (oldest = lowest id).
+  ///   • `envelope_id` is the 16-byte UUIDv7 the facade pre-allocates at
+  ///     `_broadcast()` time. PERSISTING it (added in wave 3F-r3) is what
+  ///     makes restart-driven re-sends idempotent: the same envelope_id
+  ///     goes out the second time, so receiver-side dedup
+  ///     (`Envelopes_V2.envelope_id` PK + `Tombstones_V2`) drops the
+  ///     duplicate. Without this, non-LWW events (SOS / HAZARD / CHAT)
+  ///     would surface twice in the receiver UI after a restart-mid-drain.
+  ///     UNIQUE so a buggy double-insert can't silently double-send.
+  ///   • HLC pair is preserved so spec §10.2 LWW semantics survive the
+  ///     queue→peer window, even across process death. The pre-allocated
+  ///     envelope_id MUST share a clock with this HLC (i.e., be generated
+  ///     at the same `_broadcast()` call) so envelope_id ↔ HLC ordering
+  ///     stays consistent across restart.
+  ///   • `deliveredTo` Set is INTENTIONALLY NOT persisted — after a
+  ///     restart we may re-send to peers we already reached, but with
+  ///     envelope_id now stable across the restart, receiver-side dedup
+  ///     on `envelope_id` PK makes re-delivery idempotent. A junction
+  ///     table tracking per-peer delivery would be cleaner but is
+  ///     overkill for wave 3F.
+  Future<void> _createOutboxV2Table(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS Outbox_V2 (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        envelope_id         BLOB NOT NULL UNIQUE,
+        event_type          INTEGER NOT NULL,
+        priority            INTEGER NOT NULL,
+        payload             BLOB NOT NULL,
+        created_at_hlc_ms   INTEGER NOT NULL,
+        created_at_hlc_ctr  INTEGER NOT NULL,
+        expires_at_hlc_ms   INTEGER NOT NULL,
+        expires_at_hlc_ctr  INTEGER NOT NULL,
+        max_hops            INTEGER NOT NULL,
+        enqueued_at_ms      INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_outbox_v2_enqueued ON Outbox_V2 (enqueued_at_ms)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_outbox_v2_expires ON Outbox_V2 (expires_at_hlc_ms)');
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -594,6 +674,8 @@ class DatabaseHelper {
     // v0.3 Stage 0c1 — new installs must get the additive Envelope v2 schema
     // too. Upgrades enter through _onUpgrade(oldVersion < 9).
     await _createEnvelopeV2Tables(db);
+    // v0.3 Stage 0c wave 3F — same for Outbox_V2.
+    await _createOutboxV2Table(db);
   }
 
   // --- DAO 方法 ---

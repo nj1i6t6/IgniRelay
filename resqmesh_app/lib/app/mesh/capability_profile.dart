@@ -35,6 +35,31 @@ class CapabilityProfileSpec {
   final bool supportsChunking;
 
   /// True if the peer participates in IBLT fast-path sync.
+  ///
+  /// Stage 0c wave 3E clarification: this is a CAPABILITY bit — it declares
+  /// the peer can RECEIVE an IBLT request and compute an IBLT response. It
+  /// does NOT promise that the response payload (≈513 B = 1 control byte +
+  /// 8 B watermark + 504 B bucket array) will fit single-notify at the
+  /// per-link negotiated MTU.
+  ///
+  /// Runtime constraint (native_transport_v1 §6.1.2 + §7.1):
+  /// the IBLT response is ≈513 B + 3 B ATT header = 516 B. Negotiated
+  /// MTU 247 (the §7.1 "common modern phone" baseline) cannot single-notify
+  /// it; the responder MUST chunk via [Chunker.split] (16-chunk cap is
+  /// reached at MTU=23, well below v0.3 MUST-support MTUs).
+  ///
+  /// Wave 3E-r2 — Android `IgniRelayForegroundService.handleIBLTRequest`
+  /// now CORRECTLY detects when the 513-byte response cannot single-notify
+  /// at the per-link MTU and falls back to a blind push of the outbox via
+  /// `pushOutboxToDevice`. The central still receives all events; the IBLT
+  /// fast-path's bandwidth optimization is lost at low MTU but correctness
+  /// is preserved. The wave 3E-r1 bug (`bloomReceivedDevices` was marked
+  /// even after the failed notify, which also suppressed the 10-second
+  /// blind-push timer fallback) is fixed. A chunked IBLT response (new
+  /// control byte + receiver-side reassembly) is still queued as a wave
+  /// 3F-or-later bandwidth improvement, but is no longer a correctness
+  /// gap. iOS BLE plugin parity work should land both the single-notify
+  /// path AND the low-MTU blind-push fallback from the start.
   final bool supportsIblt;
 
   /// True if the peer understands the v2 magic-headered Bloom bit-vector.

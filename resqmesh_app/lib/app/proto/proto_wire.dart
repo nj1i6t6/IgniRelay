@@ -88,6 +88,19 @@ class ProtoWriter {
     _bb.add(bytes);
   }
 
+  /// Like [writeBytes] but emits the tag + length-prefix EVEN when [bytes]
+  /// is empty. Used by EventEnvelopeV2.encode for the `payload` field, which
+  /// envelope_v2_spec §3.4 lists as a required field — the v0.3 decoder
+  /// distinguishes "payload field absent on wire" (throw) from "payload field
+  /// present with zero bytes" (allowed for event types that carry no payload,
+  /// e.g. HEARTBEAT). Standard proto3 would default-omit; this helper makes
+  /// the v0.3 spec semantics representable on the wire.
+  void writeBytesAlways(int fieldNumber, List<int> bytes) {
+    writeTag(fieldNumber, wireLengthDelimited);
+    writeVarint(bytes.length);
+    if (bytes.isNotEmpty) _bb.add(bytes);
+  }
+
   void writeString(int fieldNumber, String value) {
     if (value.isEmpty) return;
     final bytes = utf8.encode(value);

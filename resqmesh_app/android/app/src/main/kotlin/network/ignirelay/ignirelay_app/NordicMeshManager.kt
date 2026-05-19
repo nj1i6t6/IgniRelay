@@ -70,6 +70,12 @@ class NordicMeshManager(private val context: Context) {
 
         scanCallback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
+                // v0.3 Stage 0c wave 3E — every scan callback proves the
+                // BLE scanner is alive; refresh the adapter-health clock
+                // before we filter for our service. Spec §8.2.
+                IgniRelayForegroundService.emitAdapterTick(
+                    IgniRelayForegroundService.TICK_SCAN
+                )
                 // 軟體過濾：檢查廣播封包是否包含我們的 Service UUID
                 val serviceUuids = result.scanRecord?.serviceUuids
                 val hasOurService = serviceUuids?.any {
@@ -177,7 +183,18 @@ class NordicMeshManager(private val context: Context) {
                 // means MTU negotiation AND service discovery + notification
                 // setup are all done. This is the §5.2 trigger to start the
                 // 5 s fallback timer on the Dart side.
-                val mtu = client.negotiatedMtu
+                //
+                // Wave 3E — apply the debugForceTargetMtu clamp here so
+                // the central-side path reports the same effective MTU as
+                // the peripheral-side path (spec §7.4).
+                val rawMtu = client.negotiatedMtu
+                val mtu = IgniRelayForegroundService.applyMtuOverride(deviceAddress, rawMtu)
+                if (mtu != rawMtu) {
+                    Log.i(TAG, "Central MTU clamped: dev=$deviceAddress actual=$rawMtu effective=$mtu")
+                }
+                IgniRelayForegroundService.emitAdapterTick(
+                    IgniRelayForegroundService.TICK_GATT_OP
+                )
                 mainHandler.post {
                     MainActivity.sharedEventSink?.success(
                         mapOf(

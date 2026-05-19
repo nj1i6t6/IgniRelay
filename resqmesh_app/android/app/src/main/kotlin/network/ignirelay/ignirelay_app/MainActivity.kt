@@ -352,6 +352,61 @@ class MainActivity : FlutterFragmentActivity() {
                             "status" to IgniRelayForegroundService.gattServiceStatus
                         ))
                     }
+
+                    // ── v0.3 Stage 0c wave 3E — 0d acceptance-gate debug hooks ──
+                    //
+                    // Spec: docs/specs/native_transport_v1_2026-05-13.md §7.4
+                    // (force MTU) + §8.5 (force adapter idle).
+                    //
+                    // These two handlers are deliberately UNGATED on
+                    // BuildConfig.DEBUG so the QA agent can drive the 0d
+                    // gate against release-mode builds too (the gate exercises
+                    // the production binary, not the debug binary). The
+                    // impact of either hook is bounded: forceTargetMtu only
+                    // CLAMPS the negotiated value the upper layers see, and
+                    // forceAdapterIdle only SUPPRESSES the diagnostic ticks
+                    // (no production code path reads them). Neither alters
+                    // wire format or bypasses signature verification.
+
+                    "debugForceTargetMtu" -> {
+                        val deviceId = call.argument<String>("deviceId") ?: ""
+                        val targetMtu = call.argument<Int>("targetMtu")
+                        if (deviceId.isEmpty()) {
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+                        if (targetMtu == null) {
+                            // Clear override
+                            IgniRelayForegroundService.debugMtuOverrideByDevice.remove(deviceId)
+                            Log.i(TAG, "debugForceTargetMtu: cleared override for $deviceId")
+                            result.success(true)
+                            return@setMethodCallHandler
+                        }
+                        if (targetMtu < 23 || targetMtu > 512) {
+                            Log.w(TAG, "debugForceTargetMtu: rejected mtu=$targetMtu out of [23,512]")
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+                        IgniRelayForegroundService.debugMtuOverrideByDevice[deviceId] = targetMtu
+                        Log.i(TAG, "debugForceTargetMtu: dev=$deviceId targetMtu=$targetMtu")
+                        result.success(true)
+                    }
+
+                    "debugForceAdapterIdle" -> {
+                        val durationMs = (call.argument<Number>("durationMs"))?.toLong() ?: 0L
+                        if (durationMs <= 0L) {
+                            // Clear any active suppression.
+                            IgniRelayForegroundService.adapterIdleSuppressedUntilMs = 0L
+                            Log.i(TAG, "debugForceAdapterIdle: cleared")
+                            result.success(true)
+                            return@setMethodCallHandler
+                        }
+                        val until = System.currentTimeMillis() + durationMs
+                        IgniRelayForegroundService.adapterIdleSuppressedUntilMs = until
+                        Log.i(TAG, "debugForceAdapterIdle: suppress until=$until (durMs=$durationMs)")
+                        result.success(true)
+                    }
+
                     else -> result.notImplemented()
                 }
             }

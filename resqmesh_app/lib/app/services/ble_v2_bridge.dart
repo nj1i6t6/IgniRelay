@@ -225,6 +225,15 @@ class BleV2Bridge {
 
   /// Build, sign, and chunk-deliver an envelope to `peerId`. Honors the
   /// peer's capability profile (see [CapabilityProfileCatalog]).
+  ///
+  /// `envelopeId` (v0.3 Stage 0c wave 3F-r3) — caller MAY pre-allocate a
+  /// 16-byte UUIDv7 to make the envelope id stable across restart-driven
+  /// re-sends from `Outbox_V2`. When `null`, [MessagePublisherV2.send]
+  /// generates a fresh UUIDv7 per call (the historical behavior — fine
+  /// for immediate non-persisted publishes). Stability of the envelope id
+  /// is what makes receiver-side dedup idempotent across the queue → disk
+  /// → process-restart → re-drain window; see
+  /// `event_publisher_v2_facade.dart` PERSISTENCE block.
   Future<TxOutcome> sendEnvelope({
     required String peerId,
     required int eventType,
@@ -233,6 +242,7 @@ class BleV2Bridge {
     required HlcTimestampV2 createdAtHlc,
     required HlcTimestampV2 expiresAtHlc,
     required int maxHops,
+    Uint8List? envelopeId,
     bool isExperimental = false,
   }) async {
     final state = registry.stateFor(peerId);
@@ -267,6 +277,7 @@ class BleV2Bridge {
         expiresAtHlc: expiresAtHlc,
         maxHops: maxHops,
         negotiatedMtu: mtu,
+        envelopeId: envelopeId,
         isExperimental: isExperimental,
       );
     } on PublishRejected catch (e) {

@@ -29,7 +29,11 @@ void main() {
     await DatabaseHelper().resetForTest();
   });
 
-  Future<_PipelineHarness> makeHarness() async {
+  Future<_PipelineHarness> makeHarness({
+    bool enableMaxHopsOvercommit = false,
+    bool enableClockBasedExpiry = false,
+    Future<DateTime> Function()? now,
+  }) async {
     final db = DatabaseHelper();
     final store = EnvelopeStoreV2(db);
     final trace = MeshTraceWriter(db);
@@ -38,6 +42,9 @@ void main() {
       store: store,
       trace: trace,
       rateLimiter: rate,
+      enableMaxHopsOvercommit: enableMaxHopsOvercommit,
+      enableClockBasedExpiry: enableClockBasedExpiry,
+      now: now,
     );
     final keyPair = await Ed25519().newKeyPair();
     final pub = await keyPair.extractPublicKey();
@@ -228,6 +235,134 @@ void main() {
       final dropped = await dispatcher.onReceiveEnvelopeBytes(second.wireBytes);
       expect(dropped, isA<DispatchDropped>());
       expect((dropped as DispatchDropped).dropReason, 'author-rate-limited');
+    });
+  });
+
+  group('strict drop reasons', () {
+    Future<void> expectDroppedTrace(
+      _PipelineHarness h,
+      String reason,
+    ) async {
+      final db = await h.db.database;
+      final rows = await db.query(
+        'Mesh_Trace_Logs',
+        where: 'action = ? AND drop_reason = ?',
+        whereArgs: [TraceAction.dropped, reason],
+      );
+      expect(rows, isNotEmpty, reason: 'trace should include drop_reason=$reason');
+    }
+
+    test('unknown-protocol-version emits DispatchDropped + trace', () async {
+      final h = await makeHarness();
+      final published = await h.publisher.send(
+        eventType: EventTypeV2.statusUpdate,
+        priority: PriorityV2.status,
+        payload: Uint8List.fromList([1, 2, 3]),
+        createdAtHlc: HlcTimestampV2(msSinceEpoch: 1000, counter: 0),
+        expiresAtHlc: HlcTimestampV2(msSinceEpoch: 100000, counter: 0),
+        maxHops: 6,
+        negotiatedMtu: 247,
+      );
+      final env = EventEnvelopeV2.decode(published.wireBytes);
+      final tampered = EventEnvelopeV2(
+        protocolVersion: 3,
+        envelopeId: env.envelopeId,
+        eventType: env.eventType,
+        priority: env.priority,
+        createdAtHlc: env.createdAtHlc,
+        expiresAtHlc: env.expiresAtHlc,
+        maxHops: env.maxHops,
+        authorKey: env.authorKey,
+        sigAlgo: env.sigAlgo,
+        signature: env.signature,
+        payload: env.payload,
+        lastRelayId: env.lastRelayId,
+        isExperimental: env.isExperimental,
+      );
+      final outcome = await h.dispatcher.onReceiveEnvelopeBytes(tampered.encode());
+      expect(outcome, isA<DispatchDropped>());
+      expect((outcome as DispatchDropped).dropReason, 'unknown-protocol-version');
+      await expectDroppedTrace(h, 'unknown-protocol-version');
+    });
+
+    test('envelope-expired (logical branch) emits DispatchDropped + trace',
+        () async {
+      final h = await makeHarness();
+      final published = await h.publisher.send(
+        eventType: EventTypeV2.statusUpdate,
+        priority: PriorityV2.status,
+        payload: Uint8List.fromList([1, 2, 3]),
+        createdAtHlc: HlcTimestampV2(msSinceEpoch: 2000, counter: 0),
+        expiresAtHlc: HlcTimestampV2(msSinceEpoch: 1000, counter: 0),
+        maxHops: 6,
+        negotiatedMtu: 247,
+      );
+      final outcome =
+          await h.dispatcher.onReceiveEnvelopeBytes(published.wireBytes);
+      expect(outcome, isA<DispatchDropped>());
+      expect((outcome as DispatchDropped).dropReason, 'envelope-expired');
+      await expectDroppedTrace(h, 'envelope-expired');
+    });
+
+    test('envelope-expired (clock branch) emits DispatchDropped + trace',
+        () async {
+      final h = await makeHarness(
+        enableClockBasedExpiry: true,
+        now: () async => DateTime.fromMillisecondsSinceEpoch(5000),
+      );
+      final published = await h.publisher.send(
+        eventType: EventTypeV2.statusUpdate,
+        priority: PriorityV2.status,
+        payload: Uint8List.fromList([1, 2, 3]),
+        createdAtHlc: HlcTimestampV2(msSinceEpoch: 1000, counter: 0),
+        expiresAtHlc: HlcTimestampV2(msSinceEpoch: 2000, counter: 0),
+        maxHops: 6,
+        negotiatedMtu: 247,
+      );
+      final outcome =
+          await h.dispatcher.onReceiveEnvelopeBytes(published.wireBytes);
+      expect(outcome, isA<DispatchDropped>());
+      expect((outcome as DispatchDropped).dropReason, 'envelope-expired');
+      await expectDroppedTrace(h, 'envelope-expired');
+    });
+
+    test('dedupe-hit emits DispatchDropped + trace', () async {
+      final h = await makeHarness();
+      final published = await h.publisher.send(
+        eventType: EventTypeV2.statusUpdate,
+        priority: PriorityV2.status,
+        payload: Uint8List.fromList([1, 2, 3]),
+        createdAtHlc: HlcTimestampV2(msSinceEpoch: 1000, counter: 0),
+        expiresAtHlc: HlcTimestampV2(msSinceEpoch: 100000, counter: 0),
+        maxHops: 6,
+        negotiatedMtu: 247,
+      );
+      expect(
+        await h.dispatcher.onReceiveEnvelopeBytes(published.wireBytes),
+        isA<DispatchAccepted>(),
+      );
+      final dup = await h.dispatcher.onReceiveEnvelopeBytes(published.wireBytes);
+      expect(dup, isA<DispatchDropped>());
+      expect((dup as DispatchDropped).dropReason, 'dedupe-hit');
+      await expectDroppedTrace(h, 'dedupe-hit');
+    });
+
+    test('max-hops-overcommit emits DispatchDropped + trace', () async {
+      final h = await makeHarness(enableMaxHopsOvercommit: true);
+      final published = await h.publisher.send(
+        eventType: EventTypeV2.statusUpdate,
+        priority: PriorityV2.status,
+        payload: Uint8List.fromList([1, 2, 3]),
+        createdAtHlc: HlcTimestampV2(msSinceEpoch: 1000, counter: 0),
+        expiresAtHlc: HlcTimestampV2(msSinceEpoch: 100000, counter: 0),
+        maxHops: 7,
+        negotiatedMtu: 247,
+      );
+      final outcome =
+          await h.dispatcher.onReceiveEnvelopeBytes(published.wireBytes);
+      expect(outcome, isA<DispatchDropped>());
+      expect((outcome as DispatchDropped).dropReason, 'max-hops-overcommit');
+      await expectDroppedTrace(h, 'max-hops-overcommit');
     });
   });
 }

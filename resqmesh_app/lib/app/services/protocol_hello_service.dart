@@ -42,8 +42,20 @@ class ProtocolHelloService {
   final ProtocolHelloData Function() _selfHelloFactory;
   final NowMsFn _nowMs;
 
-  /// HELLO is per-link control traffic; never relay to other peers.
-  static const int _helloMaxHops = 1;
+  /// PROTOCOL_HELLO is zero-hop control traffic per spec
+  /// envelope_v2_spec §11.4 ("relays MUST NOT propagate it"). The §11.2
+  /// default table also pins `maxHopsDefault(protocolHello) == 0`.
+  ///
+  /// Wave 3E-r3 fix: was `1` in 3E-r2. The production
+  /// EnvelopeDispatcherV2 runs with `enableMaxHopsOvercommit: true`
+  /// (main.dart), so a received HELLO with `max_hops = 1` exceeds the
+  /// cap of 0 and is dropped with `drop_reason = max-hops-overcommit`
+  /// — the v0.3 HELLO handshake never completes, the peer never leaves
+  /// `pending`, and `EventPublisherV2Facade` never has a ready target
+  /// to drain its queue against. Pinning to 0 here is the spec-correct
+  /// value; defense in depth in `MeshRouter.shouldForwardPacket` still
+  /// blocks HELLO relay regardless.
+  static const int _helloMaxHops = 0;
 
   /// Spec doesn't pin a HELLO TTL; pick 60 s — generous enough to absorb
   /// any clock skew, short enough that a stale HELLO floating in the mesh

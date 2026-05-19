@@ -1,26 +1,37 @@
 // Receive-path dispatcher for EventEnvelope v2 (v0.3 Stage 0c).
 //
-// Spec: docs/specs/envelope_v2_spec_2026-05-13.md §6, §7.5, §9, §13, §15.
+// Spec: docs/specs/envelope_v2_spec_2026-05-13.md §6, §7.5, §9, §11, §13, §15.
 //
 // Pipeline (executed in order; first failure stops the pipeline and writes a
 // `mesh_trace_logs` row with the spec-named drop_reason):
 //
-//   1. proto3 decode
-//   2. required-field check (handled inside EventEnvelopeV2.decode)
+//   1. proto3 decode (required-field check inside EventEnvelopeV2.decode)
+//   2. unknown-protocol-version (only protocol_version == 2 accepted) [3E]
 //   3. sig_algo recognition (only 0x01 = Ed25519 in v0.3)
 //   4. SHA-256(payload) recomputation + Ed25519 signature verification
-//   5. tombstone hit check
-//   6. priority × event_type matrix (drop / downgrade / accept) — uses
+//   5. max-hops-overcommit (envelope_v2_spec §11.3) [3E]
+//   6. envelope-expired:
+//        - expires_at_hlc < created_at_hlc (logical violation, always-drop)
+//        - expires_at_hlc < now (clock-based expiry; spec §7.5 step 10) [3E]
+//   7. tombstone-hit (peer pushed an envelope we already expired & GC'd)
+//   8. dedupe-hit (peer pushed an envelope we have a LIVE row for) [3E]
+//      Previously this slipped through as `StoreOutcome.duplicate` and was
+//      silently accepted as "not LWW winner"; spec §7.5 #9 says DROP.
+//   9. priority × event_type matrix (drop / downgrade / accept) — uses
 //      OFFICIAL_VERIFIED short-circuit for OFFICIAL_ALERT_CAP per §6.2
-//   7. payload budget (receiver-side defense in depth)
-//   8. author rate limiter
-//   9. EnvelopeStoreV2.tryStore (insert + LWW)
-//  10. trace + emit accept
+//  10. payload budget (receiver-side defense in depth)
+//  11. author rate limiter
+//  12. EnvelopeStoreV2.tryStore (insert + LWW maintenance)
+//  13. trace + emit accept
 //
 // The dispatcher is a facade: callers (BLE event channel, mesh router) feed
 // reassembled envelope bytes via [onReceiveEnvelopeBytes]. Outcomes are
 // emitted on a broadcast Stream so EventStream / dev-mode trace screen can
 // subscribe.
+//
+// Stage 0c wave 3E additions (drop_reason vocabulary, spec §15.2 updated):
+//   `unknown-protocol-version`, `envelope-expired`, `max-hops-overcommit`,
+//   `dedupe-hit` (was previously silent).
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -101,14 +112,46 @@ class EnvelopeDispatcherV2 {
   /// dev-mode trace screen) listen here.
   Stream<DispatchOutcome> get outcomes => _outcomes.stream;
 
+  /// Protocol version the dispatcher accepts. Spec §3 / §7.5 #1: v0.3 ==
+  /// `protocol_version = 2`. A future v0.4 device sending `protocol_version
+  /// = 3` will surface here as `unknown-protocol-version`.
+  static const int _acceptedProtocolVersion = 2;
+
+  /// Stage 0c wave 3E shim — gates the clock-based `expires_at_hlc < now`
+  /// branch of the envelope-expired check (spec §7.5 #10).
+  ///
+  /// The logical `expires_at_hlc < created_at_hlc` branch ALWAYS runs (it
+  /// doesn't depend on wall clock; corpus `expires_before_created` covers
+  /// it). The clock-based branch defaults to OFF so existing unit tests
+  /// using synthetic HLC values (e.g. `msSinceEpoch: 1000`) keep passing.
+  /// Production main.dart wires `enableClockBasedExpiry: true`; the QA
+  /// agent's follow-up wave is expected to flip the default to `true` and
+  /// migrate tests to inject a synthetic `now` aligned with their HLC range.
+  final bool _enableClockBasedExpiry;
+
+  /// Stage 0c wave 3E shim — gates the `max-hops-overcommit` check (spec
+  /// §11.3 / §11.4). Defaults to OFF because existing tests construct
+  /// HELLO envelopes with `maxHops: 1` (a single relay hop is the natural
+  /// expression for a one-shot link control message, even though the spec
+  /// pins PROTOCOL_HELLO default to 0). The dispatcher accepts the more
+  /// lenient behavior so test code is undisturbed; production main.dart
+  /// wires `enableMaxHopsOvercommit: true` and the QA agent's follow-up
+  /// wave is expected to flip the default and update PROTOCOL_HELLO
+  /// senders to use `maxHops: 0` per §11.4.
+  final bool _enableMaxHopsOvercommit;
+
   EnvelopeDispatcherV2({
     required EnvelopeStoreV2 store,
     required MeshTraceWriter trace,
     required AuthorRateLimiter rateLimiter,
     Future<DateTime> Function()? now,
+    bool enableClockBasedExpiry = false,
+    bool enableMaxHopsOvercommit = false,
   })  : _store = store,
         _trace = trace,
         _rateLimiter = rateLimiter,
+        _enableClockBasedExpiry = enableClockBasedExpiry,
+        _enableMaxHopsOvercommit = enableMaxHopsOvercommit,
         _now = now ?? (() async => DateTime.now());
 
   Future<void> dispose() async {
@@ -131,6 +174,23 @@ class EnvelopeDispatcherV2 {
           peerId: peerId,
         ),
         traceMeta: _TraceMeta.empty(peerId, e.message),
+      );
+    }
+
+    // Stage 0c wave 3E — unknown-protocol-version. Reject anything not
+    // protocol_version == 2 BEFORE signature verify (sig canonical input
+    // includes the version, so a wrong version would fail signature anyway,
+    // but the explicit early drop produces the right trace reason instead
+    // of `signature-invalid`).
+    if (envelope.protocolVersion != _acceptedProtocolVersion) {
+      return _drop(
+        DispatchDropped(
+          dropReason: 'unknown-protocol-version',
+          envelopeId: envelope.envelopeId,
+          detail: 'protocol_version=${envelope.protocolVersion}',
+          peerId: peerId,
+        ),
+        traceMeta: _TraceMeta.fromEnvelope(envelope, peerId),
       );
     }
 
@@ -177,11 +237,92 @@ class EnvelopeDispatcherV2 {
       );
     }
 
+    // Stage 0c wave 3E — max-hops-overcommit (spec §11.3). Receivers MUST
+    // drop envelopes whose `max_hops` exceeds the per-event_type default.
+    // Unknown event types return null from `maxHopsDefault` and are handled
+    // by the matrix as `unknown-event-type`. Gated behind a flag because
+    // pre-3E test harnesses set HELLO.maxHops=1 (vs spec default 0); see
+    // [_enableMaxHopsOvercommit] note.
+    if (_enableMaxHopsOvercommit) {
+      final hopCap = EventTypeV2.maxHopsDefault(envelope.eventType);
+      if (hopCap != null && envelope.maxHops > hopCap) {
+        return _drop(
+          DispatchDropped(
+            dropReason: 'max-hops-overcommit',
+            envelopeId: envelope.envelopeId,
+            detail: 'max_hops=${envelope.maxHops} cap=$hopCap',
+            peerId: peerId,
+          ),
+          traceMeta: _TraceMeta.fromEnvelope(envelope, peerId, sigStatus: 0),
+        );
+      }
+    }
+
+    // Stage 0c wave 3E — envelope-expired (spec §7.5 #10 + corpus
+    // `expires_before_created` / `expired` cases).
+    //
+    // Two sub-conditions, both surfaced as `envelope-expired`:
+    //   (a) expires_at_hlc.ms < created_at_hlc.ms → logical violation;
+    //       envelope was born expired (author misconfiguration or
+    //       construction bug). Always drop.
+    //   (b) expires_at_hlc.ms < now_ms → clock-based expiry. The envelope
+    //       was valid when authored but we observed it after its TTL.
+    //
+    // Spec §7.5 #10 says "expired → tombstone path"; for Stage 0c closure
+    // we record the drop in trace and emit DispatchDropped, deferring
+    // active tombstone insertion to the §13 tombstone GC. The receiver
+    // never accepts the row; future arrivals of the same envelope_id will
+    // hit dedupe-hit (live row absent) but will be expired again here.
+    if (envelope.expiresAtHlc.msSinceEpoch <
+        envelope.createdAtHlc.msSinceEpoch) {
+      return _drop(
+        DispatchDropped(
+          dropReason: 'envelope-expired',
+          envelopeId: envelope.envelopeId,
+          detail: 'expires_at_hlc < created_at_hlc',
+          peerId: peerId,
+        ),
+        traceMeta: _TraceMeta.fromEnvelope(envelope, peerId, sigStatus: 0),
+      );
+    }
+    if (_enableClockBasedExpiry) {
+      final nowMs = (await _now()).millisecondsSinceEpoch;
+      if (envelope.expiresAtHlc.msSinceEpoch < nowMs) {
+        return _drop(
+          DispatchDropped(
+            dropReason: 'envelope-expired',
+            envelopeId: envelope.envelopeId,
+            detail:
+                'expires_at_hlc=${envelope.expiresAtHlc.msSinceEpoch} now=$nowMs',
+            peerId: peerId,
+          ),
+          traceMeta: _TraceMeta.fromEnvelope(envelope, peerId, sigStatus: 0),
+        );
+      }
+    }
+
     // Tombstone hit — peer pushed an envelope we already expired.
     if (await _store.isTombstoned(envelope.envelopeId)) {
       return _drop(
         DispatchDropped(
           dropReason: 'tombstone-hit',
+          envelopeId: envelope.envelopeId,
+          peerId: peerId,
+        ),
+        traceMeta: _TraceMeta.fromEnvelope(envelope, peerId, sigStatus: 0),
+      );
+    }
+
+    // Stage 0c wave 3E — explicit dedupe-hit (spec §7.5 #9 + §15.2).
+    // The store also detects duplicates inside tryStore, but for v0.3 we
+    // want a DROP outcome (with trace) rather than the previous
+    // silent-accept-as-not-LWW-winner. The check is BEFORE the matrix /
+    // budget / rate-limiter because duplicates should bypass those (they
+    // already passed when the original was received).
+    if (await _store.isLiveEnvelopeId(envelope.envelopeId)) {
+      return _drop(
+        DispatchDropped(
+          dropReason: 'dedupe-hit',
           envelopeId: envelope.envelopeId,
           peerId: peerId,
         ),

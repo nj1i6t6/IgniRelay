@@ -41,6 +41,26 @@ android {
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // v0.3 Stage 0c wave 3F — instrumentation test runner for the
+        // WireConformanceInstrumentationTest (reads the cross-platform
+        // corpus committed at <repo>/docs/specs/wire_conformance_v1.json
+        // and validates Kotlin Chunker.kt + IBLT.kt + Bloom builder
+        // against the Dart oracle). Run via:
+        //   ./gradlew :app:connectedDebugAndroidTest
+        // See android/app/src/androidTest/ for the consumer.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // v0.3 Stage 0c wave 3F — bundle the wire conformance corpus into
+    // the androidTest assets so the on-device test can read it via
+    // `InstrumentationRegistry.getInstrumentation().context.assets`. The
+    // .md specs in the same directory are bundled too (small text files,
+    // test APK only — never shipped to users). Path resolution:
+    //   rootProject.rootDir = <repo>/resqmesh_app/android/
+    //   ../../docs/specs    = <repo>/docs/specs/
+    sourceSets {
+        getByName("androidTest").assets.srcDir(rootProject.file("../../docs/specs"))
     }
 
     signingConfigs {
@@ -80,6 +100,13 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // Nordic BLE Library — 跨廠牌 Android BLE 相容性（取代 flutter_blue_plus Central 角色）
     implementation("no.nordicsemi.android:ble:2.7.4")
+
+    // v0.3 Stage 0c wave 3F — instrumentation test deps. Versions chosen
+    // to match a vanilla `flutter create` Android template circa 2026Q2;
+    // do not bump without verifying compileSdk=36 / minSdk=26 still works.
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
 }
 
 flutter {

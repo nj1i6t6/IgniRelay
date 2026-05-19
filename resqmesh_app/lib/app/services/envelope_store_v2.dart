@@ -6,6 +6,7 @@
 // `Official_Sources_V2` tables. UI / app code never touches the raw rows;
 // the dispatcher (EnvelopeDispatcherV2) calls into this facade.
 
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
@@ -172,6 +173,23 @@ class EnvelopeStoreV2 {
     return tomb.isNotEmpty;
   }
 
+  /// Stage 0c wave 3E — whether the envelope_id is already in the LIVE
+  /// envelopes table (but NOT yet tombstoned). Used by EnvelopeDispatcherV2
+  /// to surface `dedupe-hit` as an explicit DROP outcome (spec §7.5 #9)
+  /// instead of letting tryStore silently return `StoreOutcome.duplicate`
+  /// and accept-as-not-LWW-winner.
+  Future<bool> isLiveEnvelopeId(Uint8List envelopeId) async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'Envelopes_V2',
+      columns: const ['envelope_id'],
+      where: 'envelope_id = ? AND is_tombstoned = 0',
+      whereArgs: [envelopeId],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
   /// Whether the envelope_id is in the tombstone table.
   Future<bool> isTombstoned(Uint8List envelopeId) async {
     final db = await _db.database;
@@ -239,6 +257,16 @@ class EnvelopeStoreV2 {
 
   /// Per envelope_v2_spec §10.2, returns the LWW key component for an
   /// envelope, or null when this event_type is NOT LWW-tracked.
+  ///
+  /// Stage 0c wave 3E — payload-driven keys now use minimal payload decoders
+  /// from event_envelope_v2.dart (ShelterStatusData / OfficialAlertCapData /
+  /// OfficialAlertSummaryData / ProtocolNoticeData). When the payload key
+  /// field is empty or the decode throws, we fall back to author_key so the
+  /// row still ends up in some LWW bucket (correctness-preserving — narrows
+  /// the LWW namespace per-author rather than per-shelter/cap/notice). The
+  /// fallback also surfaces in trace logs because dispatcher records the
+  /// envelope as accepted-not-LWW-winner when this returns a different key
+  /// than the live winner.
   Uint8List? _lwwKeyComponentFor(EventEnvelopeV2 envelope) {
     switch (envelope.eventType) {
       case EventTypeV2.statusUpdate:
@@ -246,19 +274,56 @@ class EnvelopeStoreV2 {
       case EventTypeV2.heartbeat:
         return envelope.authorKey; // (author_key, event_type)
       case EventTypeV2.shelterStatus:
-        // (shelter_id, event_type) — shelter_id lives inside payload.
-        // Until the dispatcher decodes it, treat author_key as a fallback so
-        // history is still queryable; the proper component lands when the
-        // dedicated decoder is wired (Stage 0c third-wave punch list).
-        return envelope.authorKey;
+        return _payloadKeyOrAuthorFallback(
+          envelope: envelope,
+          decode: ShelterStatusData.decode,
+          extract: (d) => d.shelterId,
+        );
       case EventTypeV2.officialAlertCap:
+        return _payloadKeyOrAuthorFallback(
+          envelope: envelope,
+          decode: OfficialAlertCapData.decode,
+          extract: (d) => d.capIdentifier,
+        );
       case EventTypeV2.officialAlertSummary:
+        return _payloadKeyOrAuthorFallback(
+          envelope: envelope,
+          decode: OfficialAlertSummaryData.decode,
+          extract: (d) => d.capIdentifier,
+        );
       case EventTypeV2.protocolNotice:
-        // (cap_identifier / notice_id, event_type) — payload-driven; same
-        // fallback as SHELTER_STATUS until decoders land.
-        return envelope.authorKey;
+        return _payloadKeyOrAuthorFallback(
+          envelope: envelope,
+          decode: ProtocolNoticeData.decode,
+          extract: (d) => d.noticeId,
+        );
       default:
         return null;
+    }
+  }
+
+  /// Decode the payload via [decode], extract the LWW key component via
+  /// [extract], and return its UTF-8 bytes. On any decode error or empty
+  /// string, fall back to `envelope.authorKey`.
+  ///
+  /// The fallback path is deliberately silent (no exception, no log) because
+  /// the dispatcher has already accepted this envelope at signature-verify
+  /// time; a malformed payload here is a UI surface concern, not a security
+  /// boundary. If the QA wants to observe these fallbacks, the trace row
+  /// emitted by the dispatcher carries enough context (`event_type`,
+  /// `author_key` hash, `dedupe_outcome`) to flag them.
+  Uint8List _payloadKeyOrAuthorFallback<T>({
+    required EventEnvelopeV2 envelope,
+    required T Function(Uint8List) decode,
+    required String Function(T) extract,
+  }) {
+    try {
+      final data = decode(envelope.payload);
+      final id = extract(data);
+      if (id.isEmpty) return envelope.authorKey;
+      return Uint8List.fromList(utf8.encode(id));
+    } catch (_) {
+      return envelope.authorKey;
     }
   }
 

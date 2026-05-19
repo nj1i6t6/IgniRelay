@@ -48,6 +48,53 @@ class EventTypeV2 {
 
   // 1000+ experimental — out of tree
 
+  /// Per envelope_v2_spec §11.2, the maximum `max_hops` an author is
+  /// allowed to declare for each EventType. Receivers MUST drop envelopes
+  /// whose `max_hops` exceeds this value with `drop_reason =
+  /// max-hops-overcommit` (§11.3). The Stage 0c wave 3E dispatcher enforces
+  /// this via [maxHopsDefault]; unknown event types return null and are
+  /// handled by the matrix instead.
+  static int? maxHopsDefault(int eventType) {
+    switch (eventType) {
+      case statusUpdate:
+        return 6;
+      case batteryStatus:
+        return 4;
+      case supplyRequest:
+        return 8;
+      case supplyOffer:
+        return 8;
+      case matchIntent:
+      case negotiation:
+        return 4;
+      case relayToContact:
+        return 10;
+      case chatMessage:
+        return 6;
+      case hazardMarker:
+        return 10;
+      case disasterReport:
+        return 10;
+      case shelterStatus:
+        return 8;
+      case officialAlertCap:
+        return 12;
+      case officialAlertSummary:
+        return 8;
+      case protocolHello:
+        return 0; // §11.4 — never relayed
+      case protocolNotice:
+        return 12;
+      case heartbeat:
+        return 2;
+      case tracePing:
+      case traceAck:
+        return 6;
+      default:
+        return null;
+    }
+  }
+
   /// True if this value is one of the spec-known values.
   static bool isKnown(int v) {
     switch (v) {
@@ -212,9 +259,17 @@ class EventEnvelopeV2 {
     w.writeMessage(6, expiresAtHlc.encode());
     w.writeUint32(7, maxHops);
     w.writeBytes(8, authorKey);
+    // sig_algo MUST be present on the wire even when 0 — but Ed25519 == 0x01
+    // is the only legal value in v0.3, so the default-omit path never fires
+    // for valid envelopes. Use writeUint32 (default-omits 0) so a buggy
+    // sig_algo=0 still round-trips as a wire-violation rather than passing
+    // through.
     w.writeUint32(9, sigAlgo);
     w.writeBytes(10, signature);
-    w.writeBytes(11, payload);
+    // payload field MUST be present on the wire even when empty (spec §3.4).
+    // Standard writeBytes default-omits empty bytes; use writeBytesAlways
+    // so a HEARTBEAT-style empty-payload envelope still emits field 11.
+    w.writeBytesAlways(11, payload);
     w.writeString(12, lastRelayId);
     w.writeBool(13, isExperimental);
     return w.toBytes();
@@ -222,9 +277,23 @@ class EventEnvelopeV2 {
 
   /// Strict wire-decode. Drops on missing-required fields with the documented
   /// `decode-required-field-missing` `drop_reason` (envelope_v2_spec §3.4).
+  ///
+  /// Required fields (any missing → throw ProtoDecodeException):
+  ///   protocol_version (MUST be present and non-zero; dispatcher checks `== 2`),
+  ///   envelope_id (16 B), event_type (non-zero / not UNSPECIFIED),
+  ///   priority (non-zero / not UNSPECIFIED),
+  ///   created_at_hlc, expires_at_hlc, author_key (32 B),
+  ///   signature (64 B), payload (field MUST be present; bytes MAY be empty
+  ///   for event types that carry no payload, e.g. HEARTBEAT).
+  /// Optional: last_relay_id (defaults to ''), is_experimental (defaults to false),
+  ///   max_hops (defaults to 0; dispatcher enforces per-event_type cap).
+  ///
+  /// `sig_algo` is required PRESENT (must appear on the wire) since the
+  /// dispatcher uses it to pick the verifier; absent sig_algo throws here.
   static EventEnvelopeV2 decode(Uint8List bytes) {
     final r = ProtoReader(bytes);
     var protocolVersion = 0;
+    var protocolVersionSeen = false;
     Uint8List? envelopeId;
     var eventType = 0;
     var priority = 0;
@@ -233,6 +302,7 @@ class EventEnvelopeV2 {
     var maxHops = 0;
     Uint8List? authorKey;
     var sigAlgo = 0;
+    var sigAlgoSeen = false;
     Uint8List? signature;
     Uint8List? payload;
     var lastRelayId = '';
@@ -246,6 +316,7 @@ class EventEnvelopeV2 {
         case 1:
           if (wire != wireVarint) throw ProtoDecodeException('protocol_version wire-type');
           protocolVersion = r.readUint32();
+          protocolVersionSeen = true;
           break;
         case 2:
           if (wire != wireLengthDelimited) throw ProtoDecodeException('envelope_id wire-type');
@@ -278,6 +349,7 @@ class EventEnvelopeV2 {
         case 9:
           if (wire != wireVarint) throw ProtoDecodeException('sig_algo wire-type');
           sigAlgo = r.readUint32();
+          sigAlgoSeen = true;
           break;
         case 10:
           if (wire != wireLengthDelimited) throw ProtoDecodeException('signature wire-type');
@@ -300,14 +372,23 @@ class EventEnvelopeV2 {
       }
     }
 
+    // Required-field enforcement per envelope_v2_spec §3.4. Order is the
+    // §7.1 signed-field order so error messages map cleanly to spec.
+    if (!protocolVersionSeen || protocolVersion == 0) {
+      // Stage 0c wave 3E: decoder MUST reject missing/zero protocol_version.
+      // The dispatcher then enforces `== 2` and emits `unknown-protocol-version`
+      // for non-zero non-2 values, but `0` is a wire-format violation that
+      // never round-trips a valid envelope and is caught here.
+      throw ProtoDecodeException('protocol_version missing or zero');
+    }
     if (envelopeId == null || envelopeId.length != 16) {
       throw ProtoDecodeException('envelope_id missing or not 16 bytes');
     }
-    if (authorKey == null || authorKey.length != 32) {
-      throw ProtoDecodeException('author_key missing or not 32 bytes');
+    if (eventType == 0) {
+      throw ProtoDecodeException('event_type missing or UNSPECIFIED');
     }
-    if (signature == null || signature.length != 64) {
-      throw ProtoDecodeException('signature missing or not 64 bytes');
+    if (priority == 0) {
+      throw ProtoDecodeException('priority missing or UNSPECIFIED');
     }
     if (createdAtHlc == null) {
       throw ProtoDecodeException('created_at_hlc missing');
@@ -315,11 +396,25 @@ class EventEnvelopeV2 {
     if (expiresAtHlc == null) {
       throw ProtoDecodeException('expires_at_hlc missing');
     }
-    if (eventType == 0) {
-      throw ProtoDecodeException('event_type missing or UNSPECIFIED');
+    if (authorKey == null || authorKey.length != 32) {
+      throw ProtoDecodeException('author_key missing or not 32 bytes');
     }
-    if (priority == 0) {
-      throw ProtoDecodeException('priority missing or UNSPECIFIED');
+    if (!sigAlgoSeen) {
+      // sig_algo MUST be present on the wire (even though Ed25519 == 0x01 is
+      // currently the only legal value). Forward-compat: a v0.4 PQ envelope
+      // appearing on a v0.3 device should be REJECTED here as 'unknown-sig-algo'
+      // at the dispatcher rather than silently treated as Ed25519.
+      throw ProtoDecodeException('sig_algo missing');
+    }
+    if (signature == null || signature.length != 64) {
+      throw ProtoDecodeException('signature missing or not 64 bytes');
+    }
+    if (payload == null) {
+      // Stage 0c wave 3E: payload field MUST be present (spec §3.4 lists it as
+      // required). Empty bytes are allowed (some event types carry no
+      // payload), but a totally absent field is a wire-format violation.
+      // The prior "fallback to Uint8List(0)" hid this from the dispatcher.
+      throw ProtoDecodeException('payload field missing');
     }
     return EventEnvelopeV2(
       protocolVersion: protocolVersion,
@@ -332,7 +427,7 @@ class EventEnvelopeV2 {
       authorKey: authorKey,
       sigAlgo: sigAlgo,
       signature: signature,
-      payload: payload ?? Uint8List(0),
+      payload: payload,
       lastRelayId: lastRelayId,
       isExperimental: isExperimental,
     );
@@ -595,5 +690,217 @@ class ProtocolHelloData {
       capabilities: caps,
       bgState: bg,
     );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stage 0c wave 3E — minimal payload structs whose only purpose in v0.3 is to
+// expose the LWW key component named by envelope_v2_spec §10.2 (shelter_id,
+// cap_identifier, notice_id). The richer payload fields (capacity, severity,
+// CAP body, notice action) WILL be added when their UI surfaces land in
+// Stage 1 / v0.4. Until then, the dispatcher decodes ONLY the key field and
+// either uses it as the LWW key component or falls back to author_key if the
+// payload is malformed / the field is missing.
+//
+// Wire-format field numbers MUST stay stable across waves; they are reserved
+// here so a Stage 1 author who adds richer fields cannot accidentally reuse a
+// tag. Each struct's `decode` is intentionally lenient (skip unknowns, default
+// missing strings to '') because LWW failure is not a security boundary — the
+// fallback is author_key, which preserves correctness, just narrows the LWW
+// key namespace.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// ShelterStatusData — payload for EVENT_TYPE_SHELTER_STATUS.
+/// Spec: envelope_v2_spec §10.2 — LWW key is `(shelter_id, EVENT_TYPE_SHELTER_STATUS)`.
+class ShelterStatusData {
+  /// Stable identifier for the shelter (e.g. "tpe-da'an-001"). UTF-8 string.
+  /// The dispatcher's LWW key is computed from THIS field's bytes, not the
+  /// envelope's author_key.
+  final String shelterId;
+
+  // Reserved field tags (do not reuse on wave-to-wave additions):
+  //   2  capacity_total       (uint32)   — Stage 1
+  //   3  capacity_available   (uint32)   — Stage 1
+  //   4  has_water            (bool)     — Stage 1
+  //   5  has_power            (bool)     — Stage 1
+  //   6  has_medical          (bool)     — Stage 1
+  //   7  notes                (string)   — Stage 1 (must respect §15.4 privacy)
+  //   8..15 reserved          — v0.4
+
+  const ShelterStatusData({required this.shelterId});
+
+  Uint8List encode() {
+    final w = ProtoWriter();
+    w.writeString(1, shelterId);
+    return w.toBytes();
+  }
+
+  static ShelterStatusData decode(Uint8List bytes) {
+    final r = ProtoReader(bytes);
+    var id = '';
+    while (!r.isAtEnd) {
+      final tag = r.readTag();
+      final field = tagFieldNumber(tag);
+      final wire = tagWireType(tag);
+      switch (field) {
+        case 1:
+          if (wire != wireLengthDelimited) {
+            throw ProtoDecodeException('shelter_id wire-type');
+          }
+          id = r.readString();
+          break;
+        default:
+          r.skipValue(wire);
+      }
+    }
+    return ShelterStatusData(shelterId: id);
+  }
+}
+
+/// OfficialAlertCapData — payload for EVENT_TYPE_OFFICIAL_ALERT_CAP.
+/// Spec: envelope_v2_spec §10.2 — LWW key is
+/// `(cap_identifier, EVENT_TYPE_OFFICIAL_ALERT_CAP)`. `cap_sequence` breaks ties.
+class OfficialAlertCapData {
+  /// CAP "identifier" element (CAP 1.2 / RFC 6837 §3.1). Globally unique per
+  /// originating sender; the LWW key component.
+  final String capIdentifier;
+
+  /// Optional CAP sequence number. Tiebreaker for LWW (per §10.2).
+  /// 0 == absent (proto3 default).
+  final int capSequence;
+
+  // Reserved tags:
+  //   3  cap_body_b64    (string)  — full CAP XML/JSON; Stage 1
+  //   4  cap_expires_ms  (uint64)  — Stage 1 (used to clamp envelope expiry)
+  //   5..15 reserved     — v0.4
+
+  const OfficialAlertCapData({
+    required this.capIdentifier,
+    this.capSequence = 0,
+  });
+
+  Uint8List encode() {
+    final w = ProtoWriter();
+    w.writeString(1, capIdentifier);
+    w.writeUint32(2, capSequence);
+    return w.toBytes();
+  }
+
+  static OfficialAlertCapData decode(Uint8List bytes) {
+    final r = ProtoReader(bytes);
+    var id = '';
+    var seq = 0;
+    while (!r.isAtEnd) {
+      final tag = r.readTag();
+      final field = tagFieldNumber(tag);
+      final wire = tagWireType(tag);
+      switch (field) {
+        case 1:
+          if (wire != wireLengthDelimited) {
+            throw ProtoDecodeException('cap_identifier wire-type');
+          }
+          id = r.readString();
+          break;
+        case 2:
+          if (wire != wireVarint) {
+            throw ProtoDecodeException('cap_sequence wire-type');
+          }
+          seq = r.readUint32();
+          break;
+        default:
+          r.skipValue(wire);
+      }
+    }
+    return OfficialAlertCapData(capIdentifier: id, capSequence: seq);
+  }
+}
+
+/// OfficialAlertSummaryData — payload for EVENT_TYPE_OFFICIAL_ALERT_SUMMARY.
+/// Spec: envelope_v2_spec §10.2 — LWW key is
+/// `(cap_identifier, EVENT_TYPE_OFFICIAL_ALERT_SUMMARY)`.
+class OfficialAlertSummaryData {
+  /// Same `cap_identifier` as the CAP this summary references. Used as LWW
+  /// key component AND to join with OfficialAlertCapData rows in storage.
+  final String capIdentifier;
+
+  // Reserved tags:
+  //   2  brief_text       (string)  — short headline for UI; Stage 1
+  //   3  severity         (enum)    — Stage 1
+  //   4  cap_expires_ms   (uint64)  — Stage 1
+  //   5..15 reserved      — v0.4
+
+  const OfficialAlertSummaryData({required this.capIdentifier});
+
+  Uint8List encode() {
+    final w = ProtoWriter();
+    w.writeString(1, capIdentifier);
+    return w.toBytes();
+  }
+
+  static OfficialAlertSummaryData decode(Uint8List bytes) {
+    final r = ProtoReader(bytes);
+    var id = '';
+    while (!r.isAtEnd) {
+      final tag = r.readTag();
+      final field = tagFieldNumber(tag);
+      final wire = tagWireType(tag);
+      switch (field) {
+        case 1:
+          if (wire != wireLengthDelimited) {
+            throw ProtoDecodeException('cap_identifier wire-type');
+          }
+          id = r.readString();
+          break;
+        default:
+          r.skipValue(wire);
+      }
+    }
+    return OfficialAlertSummaryData(capIdentifier: id);
+  }
+}
+
+/// ProtocolNoticeData — payload for EVENT_TYPE_PROTOCOL_NOTICE (vendor kill
+/// switch / capability-pause envelope).
+/// Spec: envelope_v2_spec §10.2 — LWW key is
+/// `(notice_id, EVENT_TYPE_PROTOCOL_NOTICE)`.
+class ProtocolNoticeData {
+  /// Vendor-defined stable identifier for this notice. LWW key component.
+  /// e.g. "v0.3-pause-status_update-2026-06-01"; semantics are vendor policy,
+  /// not v0.3 protocol concern.
+  final String noticeId;
+
+  // Reserved tags:
+  //   2  action          (enum)    — Stage 1 (PAUSE_EVENT_TYPE / FORCE_UPGRADE / ...)
+  //   3  pause_event_type (uint32) — Stage 1
+  //   4  human_message    (string) — Stage 1 (banner copy; localized in vendor tooling)
+  //   5..15 reserved      — v0.4
+
+  const ProtocolNoticeData({required this.noticeId});
+
+  Uint8List encode() {
+    final w = ProtoWriter();
+    w.writeString(1, noticeId);
+    return w.toBytes();
+  }
+
+  static ProtocolNoticeData decode(Uint8List bytes) {
+    final r = ProtoReader(bytes);
+    var id = '';
+    while (!r.isAtEnd) {
+      final tag = r.readTag();
+      final field = tagFieldNumber(tag);
+      final wire = tagWireType(tag);
+      switch (field) {
+        case 1:
+          if (wire != wireLengthDelimited) {
+            throw ProtoDecodeException('notice_id wire-type');
+          }
+          id = r.readString();
+          break;
+        default:
+          r.skipValue(wire);
+      }
+    }
+    return ProtocolNoticeData(noticeId: id);
   }
 }

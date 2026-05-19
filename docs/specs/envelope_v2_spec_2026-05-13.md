@@ -971,23 +971,81 @@ CREATE INDEX idx_mesh_trace_drop_reason ON mesh_trace_logs (drop_reason);
 
 The 0c implementation MUST emit only these (defined as a Dart `enum DropReason` whose `.name` matches the string):
 
+Envelope-layer drop reasons (EnvelopeDispatcherV2):
+
 - `decode-required-field-missing`
+- `unknown-protocol-version` (Stage 0c wave 3E — `protocol_version != 2`)
 - `unknown-sig-algo`
 - `signature-invalid` (covers both forged signature AND payload tampering, since `SHA-256(payload)` mismatch surfaces as a signature failure)
+- `max-hops-overcommit` (§11.3 — `max_hops > default` per event type)
+- `envelope-expired` (Stage 0c wave 3E — covers BOTH `expires_at_hlc < created_at_hlc` (logical violation, always-checked) AND `expires_at_hlc < now` (clock-based; gated behind dispatcher `enableClockBasedExpiry` flag — production main.dart wires `true`))
+- `tombstone-hit` (peer pushed an envelope we have already tombstoned)
+- `dedupe-hit` (Stage 0c wave 3E — peer pushed an envelope we have a LIVE row for; previously this slipped through as silent-accept-not-LWW-winner, now an explicit DROP per §7.5 #9)
 - `priority-mismatch`
 - `priority-downgraded` (not a drop, but logged with `action = RECEIVED` and this annotation)
 - `over-budget-sos-rejected` (sender)
 - `over-budget-sos-received` (receiver defense in depth)
 - `over-budget-priority`
-- `dedupe-hit`
-- `ttl-zero` (hop count exhausted)
-- `expired` (HLC time expired)
-- `max-hops-overcommit`
 - `unknown-event-type`
 - `is-experimental-not-relayed`
 - `author-rate-limited`
+- `ttl-zero` (hop count exhausted; emitted by MeshRouter, not the dispatcher)
 - `tombstone-cap-evict`
-- `tombstone-hit` (peer pushed an envelope we have already tombstoned)
+
+Transport-layer drop reasons (Chunker / Reassembler):
+
+- `chunk-bad-header`
+- `invalid-envelope-id`
+- `mtu-below-minimum-for-chunked`
+- `over-max-chunks`
+- `over-max-envelope-bytes`
+- `reassembly-envelope-id-mismatch`
+- `reassembly-timeout`
+
+Sender / per-peer drop reasons (BleV2Bridge.sendEnvelope):
+
+- `peer-not-ready` (HELLO handshake still in progress)
+- `peer-hello-failed`
+- `peer-no-chunking` (peer profile cannot reassemble multi-chunk envelopes)
+- `native-write-failed`
+- `peer-mtu-too-low-for-sos` (SOS at MTU=23 — see 0b §7.2)
+
+DEPRECATED — DO NOT EMIT in v0.3:
+
+- `expired` — superseded by `envelope-expired` (more explicit name; corpus + Stage 0c wave 3E use `envelope-expired`).
+
+### 15.2.1 System events (Stage 0c wave 3E)
+
+Adapter-health + debug-hook observability writes rows to the same
+`Mesh_Trace_Logs` table with `drop_reason = '<category>:<action>'` so the
+dev-mode trace screen + 0d-gate test runner can read them with the same
+queries used for envelope drops. Currently emitted:
+
+- `adapter_health:adapter_idle_too_long`
+- `adapter_health:adapter_soft_recover`
+- `adapter_health:adapter_hard_recover`
+- `adapter_health:adapter_permanent_error`
+- `mesh_debug:force_target_mtu`
+- `mesh_debug:force_adapter_idle`
+
+In addition, the Android peripheral may emit a transient `iblt_low_mtu_fallback` event on the native channel (not the trace table) when an IBLT response cannot be single-noticed because the per-link MTU is below 517. Payload shape:
+
+```jsonc
+{
+  "type": "iblt_low_mtu_fallback",
+  "device": "<peer address>",
+  "response_size": 513,
+  "mtu_cap": <effective single-notify cap, e.g. 182 or 244>,
+  "event_count": <events in our outbox>
+}
+```
+
+The peripheral falls back to `pushOutboxToDevice` (blind push of all outbox events) in this case. Sync correctness is preserved; the IBLT delta optimization is lost at low MTU. A future wave introduces a chunked IBLT response with a new control byte; until then this fallback event is the canonical observation channel for "we hit the low-MTU IBLT degradation."
+
+System-event rows use a synthetic `envelope_id` of 16 bytes starting with
+ASCII `'SYS'` (0x53 0x59 0x53) followed by zero bytes — distinct from any
+real UUIDv7 (version nibble 0x7) and easy to filter out of envelope-flow
+queries (`WHERE envelope_id NOT LIKE X'535953%'`).
 
 ### 15.3 Retention
 

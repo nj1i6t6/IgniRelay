@@ -64,6 +64,97 @@ class IgniRelayForegroundService : Service() {
         const val BLOOM_SIZE_BYTES = 2048
         const val BLOOM_HASH_COUNT = 7
         val BLOOM_MAGIC = byteArrayOf(0xFF.toByte(), 0xBF.toByte(), 0x02, 0x00)
+
+        // ── v0.3 Stage 0c wave 3E — adapter health + debug hooks ─────────
+        //
+        // Spec: docs/specs/native_transport_v1_2026-05-13.md §8 (adapter
+        // recovery) + §7.4 (force MTU) + §8.5 (force idle).
+        //
+        // These are companion-level so MainActivity (MethodChannel handler)
+        // and NordicMeshManager (scan / central-side callbacks) can hit
+        // the same emit gate without holding a live service reference.
+
+        /** End time (epoch ms) of the current `debugForceAdapterIdle`
+         *  suppression window. 0 = no suppression. */
+        @Volatile
+        @JvmStatic
+        var adapterIdleSuppressedUntilMs: Long = 0L
+
+        /** Per-device MTU clamp set by `debugForceTargetMtu`. The clamp is
+         *  applied to BOTH peripheral-side onMtuChanged AND central-side
+         *  Nordic done{} reporting, so the higher layers behave as if the
+         *  link negotiated the lower value. */
+        @JvmStatic
+        val debugMtuOverrideByDevice: ConcurrentHashMap<String, Int> = ConcurrentHashMap()
+
+        /** Tick kinds the Dart-side AdapterHealthMonitor consumes. Must
+         *  match the strings in
+         *  `lib/app/services/adapter_health_monitor.dart` `_onNativeEvent`. */
+        const val TICK_SCAN = "scan"
+        const val TICK_ADVERTISE = "advertise"
+        const val TICK_GATT_OP = "gatt_op"
+
+        // v0.3 Stage 0c wave 3F — per-kind last-tick timestamps used by the
+        // native-side recovery watchdog (spec §8.3). emitAdapterTick keeps
+        // these fresh; the periodic adapterRecoveryRunnable inside the
+        // service instance reads them to decide soft/hard restart.
+        //
+        // 0L means "never observed" — startup is intentionally lenient so a
+        // freshly booted service doesn't trip the §8.2 stale gate before
+        // any BLE callbacks have had a chance to fire.
+        @Volatile @JvmStatic var lastScanTickAtMs: Long = 0L
+        @Volatile @JvmStatic var lastAdvertiseTickAtMs: Long = 0L
+        @Volatile @JvmStatic var lastGattOpTickAtMs: Long = 0L
+
+        /**
+         * Single source of truth for adapter health ticks. Sends an
+         * `adapter_health_tick` event into the shared Dart event sink
+         * UNLESS [debugForceAdapterIdle] has suppressed emissions.
+         *
+         * Public + static so callers outside the service (NordicMeshManager
+         * scan callback, MainActivity for diagnostic pings) can reach it
+         * without holding an instance reference.
+         *
+         * Wave 3F — also updates the per-kind `lastXxxTickAtMs` companion
+         * fields the recovery watchdog reads. Suppression skips BOTH the
+         * Dart event AND the timestamp update on purpose so that
+         * `debugForceAdapterIdle` exercises the §8.3 recovery path end to
+         * end (the watchdog sees the timestamps go stale exactly the way
+         * a real wedged adapter would).
+         */
+        @JvmStatic
+        fun emitAdapterTick(kind: String) {
+            val now = System.currentTimeMillis()
+            if (adapterIdleSuppressedUntilMs > now) return
+            when (kind) {
+                TICK_SCAN -> lastScanTickAtMs = now
+                TICK_ADVERTISE -> lastAdvertiseTickAtMs = now
+                TICK_GATT_OP -> lastGattOpTickAtMs = now
+            }
+            val sink = MainActivity.sharedEventSink ?: return
+            // Post to the main looper because EventSink.success() MUST be
+            // called from the main thread; many tick call sites are on
+            // BLE binder callback threads.
+            Handler(Looper.getMainLooper()).post {
+                sink.success(mapOf(
+                    "type" to "adapter_health_tick",
+                    "kind" to kind,
+                    "ts_ms" to now
+                ))
+            }
+        }
+
+        /**
+         * Apply the [debugForceTargetMtu] override (if any) to a freshly
+         * negotiated MTU. Pure function — no side effects. Returns the
+         * clamped value: `min(actual, override)` when an override exists,
+         * else the original value.
+         */
+        @JvmStatic
+        fun applyMtuOverride(deviceAddress: String, actualMtu: Int): Int {
+            val override = debugMtuOverrideByDevice[deviceAddress] ?: return actualMtu
+            return minOf(actualMtu, override)
+        }
     }
 
     private var bleAdvertiser: BluetoothLeAdvertiser? = null
@@ -101,6 +192,203 @@ class IgniRelayForegroundService : Service() {
             sweepStalePreparedWrites()
             mainHandler.postDelayed(this, PREPARED_WRITE_SWEEP_INTERVAL_MS)
         }
+    }
+
+    // v0.3 Stage 0c wave 3E — periodic adapter health emitter.
+    //
+    // Advertising on Android has no per-tick callback ("set and forget"),
+    // and scanning emits onScanResult only when peers are visible. To
+    // keep the Dart-side AdapterHealthMonitor honest, this runnable wakes
+    // every 30 s and emits a TICK_ADVERTISE while isAdvertising = true,
+    // plus a TICK_GATT_OP when GATT server has at least one notify
+    // subscriber (proxy for "GATT layer is healthy"). Both ticks are
+    // gated by `debugForceAdapterIdle` suppression.
+    //
+    // 30 s is half the spec §8.2 60 s evaluation cadence so the §8.2
+    // 5-minute "both stale" threshold has ~10 chances to refresh before
+    // tripping.
+    private val ADAPTER_HEALTH_TICK_INTERVAL_MS = 30_000L
+    private val adapterHealthTickRunnable = object : Runnable {
+        override fun run() {
+            try {
+                if (isAdvertising) {
+                    emitAdapterTick(TICK_ADVERTISE)
+                }
+                if (notifySubscribers.isNotEmpty()) {
+                    emitAdapterTick(TICK_GATT_OP)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "adapterHealthTick error: ${e.message}")
+            }
+            mainHandler.postDelayed(this, ADAPTER_HEALTH_TICK_INTERVAL_MS)
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // v0.3 Stage 0c wave 3F — native-side adapter recovery action.
+    //
+    // Spec: docs/specs/native_transport_v1_2026-05-13.md §8.3 (recovery
+    // story). Wave 3E only landed the OBSERVATION half (emitAdapterTick +
+    // per-kind timestamps). This wave adds the ACTION half so 0d gate
+    // scenario #11 ("mesh recovers within 60 s of automatic soft restart")
+    // can complete WITHOUT a manual reboot or BT-toggle.
+    //
+    // State machine (per §8.3 steps 1–4):
+    //
+    //   step 1  soft restart  — stop+restart BLE advertising. Cheap,
+    //                            non-disruptive to existing GATT connections.
+    //                            We attempt it up to 2 consecutive evaluation
+    //                            cycles before escalating.
+    //   step 2  hard restart  — full GATT server teardown + rebuild
+    //                            (stopBlePeripheral + startBlePeripheral).
+    //                            Existing connections are dropped; centrals
+    //                            reconnect via the normal scan path.
+    //   step 3  UI banner     — emitted as `adapter_native_*` events here;
+    //                            the actual banner is owned by the Dart
+    //                            AdapterHealthMonitor → UI provider chain
+    //                            (unchanged this wave).
+    //   step 4  permanent err — after 2 consecutive hard restart attempts
+    //                            also fail to refresh ticks, emit
+    //                            `adapter_native_permanent_error` and stop
+    //                            re-trying until a tick eventually arrives
+    //                            (which auto-resets the counters in
+    //                            evaluateAndRecover).
+    //
+    // Gate (§8.2): we only act when BOTH scan AND advertise are stale for
+    // more than kAdapterStaleThresholdMs AND we have at least one notify
+    // subscriber (proxy for "we have something to relay to"). gattOp ticks
+    // are informational only — they alone never prove the radio is healthy.
+    //
+    // Why advertise-only soft restart on the FS side (no scan restart):
+    //   BLE scan on Android is owned by NordicMeshManager (held by
+    //   MainActivity), NOT by this foreground service. If the Activity is
+    //   alive, the Dart-side AdapterHealthMonitor sees the same tick stream
+    //   and can call startNordicScan via NativeBridge. If the Activity is
+    //   dead, scan is already stopped — there is nothing for the FS to
+    //   restart. So advertise restart is the only action the FS can take
+    //   unilaterally. Cross-platform parity: iOS BlePlugin does the same.
+    private val ADAPTER_RECOVERY_CHECK_INTERVAL_MS = 60_000L
+    private val ADAPTER_STALE_THRESHOLD_MS = 5L * 60_000L
+    private val ADAPTER_SOFT_RESTART_DELAY_MS = 500L
+    private val ADAPTER_HARD_RESTART_DELAY_MS = 1_000L
+    private var consecutiveSoftRestartFailures = 0
+    private var consecutiveHardRestartFailures = 0
+
+    private val adapterRecoveryRunnable = object : Runnable {
+        override fun run() {
+            try {
+                evaluateAndRecover()
+            } catch (e: Exception) {
+                Log.w(TAG, "adapter recovery error: ${e.message}")
+            }
+            mainHandler.postDelayed(this, ADAPTER_RECOVERY_CHECK_INTERVAL_MS)
+        }
+    }
+
+    private fun evaluateAndRecover() {
+        val now = System.currentTimeMillis()
+        // §8.2 staleness gate. A 0L timestamp means "never observed" — treat
+        // as NOT stale during boot (lenient) rather than tripping on startup.
+        val scanStale = lastScanTickAtMs > 0L &&
+            (now - lastScanTickAtMs) > ADAPTER_STALE_THRESHOLD_MS
+        val advStale = lastAdvertiseTickAtMs > 0L &&
+            (now - lastAdvertiseTickAtMs) > ADAPTER_STALE_THRESHOLD_MS
+        if (!(scanStale && advStale)) {
+            // Healthy — reset escalation counters so a future failure
+            // restarts the soft → hard → permanent ladder from step 1.
+            if (consecutiveSoftRestartFailures > 0 ||
+                consecutiveHardRestartFailures > 0) {
+                Log.i(TAG, "adapter healthy; reset recovery counters")
+                consecutiveSoftRestartFailures = 0
+                consecutiveHardRestartFailures = 0
+            }
+            return
+        }
+        // §8.2: only act when we have a foreground service AND subscribed
+        // peers (there's a reason to be advertising / relaying).
+        if (!isAdvertising) return
+        if (notifySubscribers.isEmpty()) return
+
+        when {
+            consecutiveSoftRestartFailures < 2 -> attemptSoftRestart()
+            consecutiveHardRestartFailures < 2 -> attemptHardRestart()
+            else -> emitPermanentError()
+        }
+    }
+
+    private fun attemptSoftRestart() {
+        consecutiveSoftRestartFailures += 1
+        Log.w(TAG, "adapter soft restart (attempt $consecutiveSoftRestartFailures)")
+        mainHandler.post {
+            MainActivity.sharedEventSink?.success(mapOf(
+                "type" to "adapter_native_soft_restart",
+                "attempt" to consecutiveSoftRestartFailures
+            ))
+        }
+        try {
+            if (ContextCompat.checkSelfPermission(
+                    this, android.Manifest.permission.BLUETOOTH_ADVERTISE
+                ) == PackageManager.PERMISSION_GRANTED) {
+                advertiseCallback?.let { bleAdvertiser?.stopAdvertising(it) }
+            }
+            isAdvertising = false
+            advertiseCallback = null
+        } catch (e: Exception) {
+            Log.w(TAG, "soft restart stop failed: ${e.message}")
+        }
+        // Re-arm advertising after a short pause. The next periodic
+        // adapterHealthTickRunnable cycle (≤30 s) will pick up the fresh
+        // ADVERTISE tick; the next evaluateAndRecover (≤60 s) will see
+        // bothStale==false and reset the counters.
+        mainHandler.postDelayed({
+            try {
+                startAdvertisingInternal()
+            } catch (e: Exception) {
+                Log.w(TAG, "soft restart start failed: ${e.message}")
+            }
+        }, ADAPTER_SOFT_RESTART_DELAY_MS)
+    }
+
+    private fun attemptHardRestart() {
+        consecutiveHardRestartFailures += 1
+        Log.w(TAG, "adapter hard restart (attempt $consecutiveHardRestartFailures)")
+        mainHandler.post {
+            MainActivity.sharedEventSink?.success(mapOf(
+                "type" to "adapter_native_hard_restart",
+                "attempt" to consecutiveHardRestartFailures
+            ))
+        }
+        try {
+            stopBlePeripheral()
+        } catch (e: Exception) {
+            Log.w(TAG, "hard restart stop failed: ${e.message}")
+        }
+        // Allow the BLE stack a moment to settle before reopening the GATT
+        // server (some vendor stacks reject openGattServer if called
+        // immediately after close).
+        mainHandler.postDelayed({
+            try {
+                startBlePeripheral()
+            } catch (e: Exception) {
+                Log.e(TAG, "hard restart start failed: ${e.message}")
+            }
+        }, ADAPTER_HARD_RESTART_DELAY_MS)
+    }
+
+    private fun emitPermanentError() {
+        Log.e(TAG, "adapter permanent error after " +
+            "$consecutiveHardRestartFailures hard-restart attempts")
+        mainHandler.post {
+            MainActivity.sharedEventSink?.success(mapOf(
+                "type" to "adapter_native_permanent_error",
+                "failures" to consecutiveHardRestartFailures
+            ))
+        }
+        // Reset counters so a future recovered tick (real or via
+        // `debugForceAdapterIdle` window expiry) gives us another shot at
+        // the soft → hard ladder rather than wedging forever.
+        consecutiveSoftRestartFailures = 0
+        consecutiveHardRestartFailures = 0
     }
 
     private fun sweepStalePreparedWrites() {
@@ -141,6 +429,16 @@ class IgniRelayForegroundService : Service() {
             // 啟動 preparedWrite TTL 掃描（idempotent：onCreate 後只會生效一次）
             mainHandler.removeCallbacks(preparedWriteSweepRunnable)
             mainHandler.postDelayed(preparedWriteSweepRunnable, PREPARED_WRITE_SWEEP_INTERVAL_MS)
+            // v0.3 Stage 0c wave 3E — start periodic adapter_health_tick
+            // emitter. Idempotent.
+            mainHandler.removeCallbacks(adapterHealthTickRunnable)
+            mainHandler.postDelayed(adapterHealthTickRunnable, ADAPTER_HEALTH_TICK_INTERVAL_MS)
+            // v0.3 Stage 0c wave 3F — start native-side recovery watchdog
+            // (§8.3). Idempotent. First fire is one full interval out so the
+            // tick emitter has a chance to register a baseline tick before
+            // the watchdog reads the staleness clock.
+            mainHandler.removeCallbacks(adapterRecoveryRunnable)
+            mainHandler.postDelayed(adapterRecoveryRunnable, ADAPTER_RECOVERY_CHECK_INTERVAL_MS)
         } else {
             Log.d(TAG, "GATT Server already running, skip re-init")
         }
@@ -152,6 +450,8 @@ class IgniRelayForegroundService : Service() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(preparedWriteSweepRunnable)
+        mainHandler.removeCallbacks(adapterHealthTickRunnable)
+        mainHandler.removeCallbacks(adapterRecoveryRunnable)
         preparedWriteBuffers.clear()
         preparedWriteTimestamps.clear()
         stopBlePeripheral()
@@ -289,6 +589,9 @@ class IgniRelayForegroundService : Service() {
             override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
                 val stateStr = if (newState == BluetoothProfile.STATE_CONNECTED) "connected" else "disconnected"
                 Log.d(TAG, "GATT: ${device.address} -> $stateStr (status=$status)")
+                // Stage 0c wave 3E — connection state churn is a clear GATT
+                // op signal; refresh the adapter health clock.
+                emitAdapterTick(TICK_GATT_OP)
                 // 清除已斷線裝置的狀態
                 if (newState != BluetoothProfile.STATE_CONNECTED) {
                     notifySubscribers.remove(device.address)
@@ -316,6 +619,7 @@ class IgniRelayForegroundService : Service() {
                 offset: Int, value: ByteArray
             ) {
                 Log.d(TAG, "onWriteReq: dev=${device.address} char=${characteristic.uuid} prep=$preparedWrite resp=$responseNeeded off=$offset len=${value.size}")
+                emitAdapterTick(TICK_GATT_OP)
 
                 if (preparedWrite) {
                     // Buffer chunks for Execute Write (Long Write support)
@@ -354,6 +658,7 @@ class IgniRelayForegroundService : Service() {
                 offset: Int, characteristic: BluetoothGattCharacteristic
             ) {
                 Log.d(TAG, "onReadReq: dev=${device.address} char=${characteristic.uuid} off=$offset")
+                emitAdapterTick(TICK_GATT_OP)
                 val responseBytes = when (characteristic.uuid) {
                     IgniRelayConstants.BLOOM_CHAR_UUID -> {
                         val bloom = sharedBloomBytes
@@ -493,6 +798,7 @@ class IgniRelayForegroundService : Service() {
             override fun onNotificationSent(device: BluetoothDevice?, status: Int) {
                 val ok = status == BluetoothGatt.GATT_SUCCESS
                 Log.d(TAG, "onNotificationSent: dev=${device?.address} status=$status ok=$ok")
+                emitAdapterTick(TICK_GATT_OP)
                 mainHandler.post {
                     MainActivity.sharedEventSink?.success(mapOf(
                         "type" to "notify_sent",
@@ -505,17 +811,31 @@ class IgniRelayForegroundService : Service() {
 
             // 診斷: MTU 協商結果
             override fun onMtuChanged(device: BluetoothDevice?, mtu: Int) {
-                Log.d(TAG, "MTU changed: dev=${device?.address} mtu=$mtu")
+                // v0.3 Stage 0c wave 3E — apply debugForceTargetMtu clamp
+                // BEFORE storing / surfacing the value so all downstream
+                // sizing (safeSingleNotify, gatt_mtu Dart event,
+                // peer_ready_for_hello) sees the clamped MTU. Spec §7.4.
+                val effectiveMtu = if (device != null) {
+                    applyMtuOverride(device.address, mtu)
+                } else {
+                    mtu
+                }
+                if (effectiveMtu != mtu) {
+                    Log.i(TAG, "MTU clamped by debug override: dev=${device?.address} actual=$mtu effective=$effectiveMtu")
+                } else {
+                    Log.d(TAG, "MTU changed: dev=${device?.address} mtu=$mtu")
+                }
+                emitAdapterTick(TICK_GATT_OP)
                 // v0.3 Stage 0c2: track per-device MTU so safeSingleNotify() can
                 // size notify payloads dynamically rather than via a hard-coded cap.
                 if (device != null) {
-                    deviceMtuMap[device.address] = mtu
+                    deviceMtuMap[device.address] = effectiveMtu
                 }
                 mainHandler.post {
                     MainActivity.sharedEventSink?.success(mapOf(
                         "type" to "gatt_mtu",
                         "device" to (device?.address ?: ""),
-                        "mtu" to mtu
+                        "mtu" to effectiveMtu
                     ))
                 }
                 // v0.3 Stage 0c wave 3A — MTU side of the HELLO trigger.
@@ -847,8 +1167,50 @@ class IgniRelayForegroundService : Service() {
             // Fits any negotiated MTU >= 517 single-notify (MTU-3 ATT header). For
             // smaller MTU peers safeSingleNotify rejects with notify_push_error
             // rather than the legacy silent truncation. Spec: native_transport_v1 §2.
+            //
+            // v0.3 Stage 0c wave 3E-r2 — IBLT low-MTU fallback fix:
+            // At MTU=185 / MTU=247 (the §7.1 MUST-support baselines) the
+            // 513-byte response does NOT fit in one notify. Previously the
+            // code unconditionally added the device to `bloomReceivedDevices`
+            // AFTER the failed notify, which also suppressed the 10-second
+            // blind-push fallback in `onDescriptorWriteRequest` — net effect
+            // was the central learning about NOTHING. The fix below:
+            //   1. Only mark `bloomReceivedDevices` when the IBLT response
+            //      actually went out, OR when we ran the Bloom diff fallback
+            //      below (which itself answered the request fully).
+            //   2. When the response is too big, treat the IBLT payload as
+            //      a "device-has-something" hint and run pushOutboxToDevice
+            //      so the central still receives all our events the next
+            //      pass. Future wave: chunk the IBLT response via Chunker
+            //      with a new control byte; receiver-side support lands at
+            //      the same time. Tracked in CapabilityProfileSpec.
+            //      supportsIblt (capability_profile.dart) and
+            //      native_transport_v1 §6.1.2 note.
             val localIbltBytes = localIblt.toBytes()
-            val response = ByteArray(1 + 8 + minOf(localIbltBytes.size, IBLT.TOTAL_BYTES))
+            val responseLen = 1 + 8 + minOf(localIbltBytes.size, IBLT.TOTAL_BYTES)
+            val mtuCap = maxSingleNotifyBytes(device.address)
+            if (responseLen > mtuCap) {
+                Log.w(TAG, "IBLT response ${responseLen}B exceeds MTU cap ${mtuCap}B for ${device.address}; falling back to blind push")
+                mainHandler.post {
+                    MainActivity.sharedEventSink?.success(mapOf(
+                        "type" to "iblt_low_mtu_fallback",
+                        "device" to device.address,
+                        "response_size" to responseLen,
+                        "mtu_cap" to mtuCap,
+                        "event_count" to eventIds.size
+                    ))
+                }
+                // Run the existing blind push so the central receives all
+                // outbox events in this round-trip. This is bandwidth-suboptimal
+                // vs. a proper chunked IBLT response, but it is CORRECT —
+                // the central learns the full set, just without the IBLT
+                // delta optimization. Mark bloomReceived so the 10-s timer
+                // fallback in onDescriptorWriteRequest does not double-push.
+                bloomReceivedDevices.add(device.address)
+                pushOutboxToDevice(device)
+                return
+            }
+            val response = ByteArray(responseLen)
             response[0] = 0x01 // kControlIBLT
             // Watermark: use 0 (Kotlin side doesn't track chat watermark separately)
             System.arraycopy(localIbltBytes, 0, response, 9,
@@ -858,8 +1220,17 @@ class IgniRelayForegroundService : Service() {
             val ibltSent = safeSingleNotify(device, char, response, kind = "ibltResponse")
             Log.i(TAG, "IBLT response sent to ${device.address}: ${response.size}B, events=${eventIds.size}, ok=$ibltSent")
 
-            // Mark as bloom received to prevent fallback blind push
-            bloomReceivedDevices.add(device.address)
+            if (ibltSent) {
+                // Only mark as bloom received when the IBLT response actually
+                // went out; otherwise let the 10-s fallback path retry via
+                // blind push (the wave 3E-r1 unconditional mark caused
+                // silent sync stalls at low MTU).
+                bloomReceivedDevices.add(device.address)
+            } else {
+                Log.w(TAG, "IBLT notify rejected for ${device.address}; falling back to blind push")
+                bloomReceivedDevices.add(device.address)
+                pushOutboxToDevice(device)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "IBLT handling error: ${e.message}", e)
         }

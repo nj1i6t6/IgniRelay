@@ -100,6 +100,255 @@ class BlePlugin: NSObject, FlutterPlugin {
     private var handoffResourceId: String?
     private var handoffPinHash: String?
 
+    // ═══════════════════════════════════════════════════════════════════
+    // v0.3 Stage 0c wave 3F — iOS adapter health + 0d debug hooks
+    //
+    // Spec: docs/specs/native_transport_v1_2026-05-13.md §7.4 (force MTU)
+    //       + §8 (adapter recovery).
+    //
+    // Mirror of the Android-side state in IgniRelayForegroundService.kt
+    // companion. Lives at INSTANCE scope (not static) because the
+    // CoreBluetooth manager handles are instance-scoped too — there is one
+    // BlePlugin per FlutterEngine, created in `register`.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// Tick-kind strings — MUST match adapter_health_monitor.dart `_onNativeEvent`
+    /// AND IgniRelayForegroundService.kt companion constants.
+    static let TICK_SCAN = "scan"
+    static let TICK_ADVERTISE = "advertise"
+    static let TICK_GATT_OP = "gatt_op"
+
+    /// End time (epoch ms) of the current `debugForceAdapterIdle` suppression
+    /// window. 0 = no suppression. Matches Kotlin
+    /// `IgniRelayForegroundService.adapterIdleSuppressedUntilMs`.
+    private var adapterIdleSuppressedUntilMs: Int64 = 0
+
+    /// Per-device MTU clamp set by `debugForceTargetMtu`. Mirror of Kotlin
+    /// `debugMtuOverrideByDevice`. Applied to BOTH:
+    ///   - `gatt_mtu` events surfaced to Dart
+    ///   - the cap used inside `notifyEventChunk` for oversize rejection
+    /// so the higher layers behave as if the link negotiated the lower value.
+    private var debugMtuOverrideByDevice: [String: Int] = [:]
+
+    /// Per-kind last-tick timestamps consumed by the §8.3 recovery watchdog.
+    /// 0 = never observed (lenient startup — does not trip §8.2 staleness).
+    private var lastScanTickAtMs: Int64 = 0
+    private var lastAdvertiseTickAtMs: Int64 = 0
+    private var lastGattOpTickAtMs: Int64 = 0
+
+    /// Recovery escalation counters (spec §8.3 step 1 → step 2 → step 4).
+    /// Reset to 0 every time a fresh tick proves the adapter is healthy.
+    private var consecutiveSoftRestartFailures = 0
+    private var consecutiveHardRestartFailures = 0
+
+    /// Timer that periodically emits TICK_ADVERTISE while we're advertising
+    /// AND TICK_GATT_OP while we have notify subscribers. Matches Android's
+    /// `adapterHealthTickRunnable` (30 s — half of spec §8.2 60 s cadence).
+    private var advertiseHealthTickTimer: DispatchSourceTimer?
+
+    /// Watchdog timer that runs `evaluateAndRecover()` at spec §8.2 cadence.
+    private var adapterRecoveryTimer: DispatchSourceTimer?
+
+    /// 30 s — half of the spec §8.2 staleness evaluation interval, so the
+    /// 5-minute "both stale" threshold has ~10 chances to refresh first.
+    private static let ADAPTER_HEALTH_TICK_INTERVAL_MS = 30_000
+
+    /// 60 s — spec §8.2 staleness evaluation cadence.
+    private static let ADAPTER_RECOVERY_CHECK_INTERVAL_MS = 60_000
+
+    /// 5 minutes — spec §8.2 staleness threshold.
+    private static let ADAPTER_STALE_THRESHOLD_MS: Int64 = 5 * 60_000
+
+    private static let ADAPTER_SOFT_RESTART_DELAY_MS = 500
+    private static let ADAPTER_HARD_RESTART_DELAY_MS = 1_000
+
+    /// Wall-clock now in epoch milliseconds. Matches the Long timestamps
+    /// emitted by the Android tick path so cross-platform trace rows are
+    /// directly comparable.
+    private func nowMs() -> Int64 {
+        return Int64(Date().timeIntervalSince1970 * 1000)
+    }
+
+    /// Single source of truth for adapter health ticks. Suppression skips
+    /// BOTH the Dart event emission AND the per-kind timestamp update so
+    /// `debugForceAdapterIdle` exercises the §8.3 recovery path end to end
+    /// (the watchdog sees the timestamps go stale exactly the way a real
+    /// wedged adapter would). Mirror of Kotlin
+    /// `IgniRelayForegroundService.emitAdapterTick`.
+    fileprivate func emitAdapterTick(_ kind: String) {
+        let now = nowMs()
+        if adapterIdleSuppressedUntilMs > now { return }
+        switch kind {
+        case BlePlugin.TICK_SCAN: lastScanTickAtMs = now
+        case BlePlugin.TICK_ADVERTISE: lastAdvertiseTickAtMs = now
+        case BlePlugin.TICK_GATT_OP: lastGattOpTickAtMs = now
+        default: break
+        }
+        sendEvent([
+            "type": "adapter_health_tick",
+            "kind": kind,
+            "ts_ms": now,
+        ])
+    }
+
+    /// Apply the `debugForceTargetMtu` override (if any) to a freshly
+    /// negotiated MTU. Pure function — no side effects. Mirror of Kotlin
+    /// `IgniRelayForegroundService.applyMtuOverride`.
+    fileprivate func applyMtuOverride(_ deviceId: String, actualMtu: Int) -> Int {
+        guard let override = debugMtuOverrideByDevice[deviceId] else { return actualMtu }
+        return min(actualMtu, override)
+    }
+
+    /// Idempotent. Starts both the periodic tick emitter AND the recovery
+    /// watchdog. Called once from `register`; they run forever, gated by
+    /// their own internal checks (gattReady, subscribedCentrals, etc.).
+    private func startAdapterHealthTimers() {
+        if advertiseHealthTickTimer == nil {
+            let healthTimer = DispatchSource.makeTimerSource(queue: .main)
+            healthTimer.schedule(
+                deadline: .now() + .milliseconds(BlePlugin.ADAPTER_HEALTH_TICK_INTERVAL_MS),
+                repeating: .milliseconds(BlePlugin.ADAPTER_HEALTH_TICK_INTERVAL_MS)
+            )
+            healthTimer.setEventHandler { [weak self] in
+                guard let self = self else { return }
+                // Mirror Android: only emit TICK_ADVERTISE while the
+                // peripheral side is actually advertising. CoreBluetooth
+                // surfaces this as `CBPeripheralManager.isAdvertising`.
+                if self.peripheralManager?.isAdvertising == true {
+                    self.emitAdapterTick(BlePlugin.TICK_ADVERTISE)
+                }
+                if !self.subscribedCentrals.isEmpty {
+                    self.emitAdapterTick(BlePlugin.TICK_GATT_OP)
+                }
+            }
+            advertiseHealthTickTimer = healthTimer
+            healthTimer.resume()
+        }
+        if adapterRecoveryTimer == nil {
+            let recoveryTimer = DispatchSource.makeTimerSource(queue: .main)
+            recoveryTimer.schedule(
+                deadline: .now() + .milliseconds(BlePlugin.ADAPTER_RECOVERY_CHECK_INTERVAL_MS),
+                repeating: .milliseconds(BlePlugin.ADAPTER_RECOVERY_CHECK_INTERVAL_MS)
+            )
+            recoveryTimer.setEventHandler { [weak self] in
+                self?.evaluateAndRecover()
+            }
+            adapterRecoveryTimer = recoveryTimer
+            recoveryTimer.resume()
+        }
+    }
+
+    /// Spec §8.2 + §8.3. Mirror of Kotlin `evaluateAndRecover`.
+    private func evaluateAndRecover() {
+        let now = nowMs()
+        let scanStale = lastScanTickAtMs > 0 &&
+            (now - lastScanTickAtMs) > BlePlugin.ADAPTER_STALE_THRESHOLD_MS
+        let advStale = lastAdvertiseTickAtMs > 0 &&
+            (now - lastAdvertiseTickAtMs) > BlePlugin.ADAPTER_STALE_THRESHOLD_MS
+        if !(scanStale && advStale) {
+            if consecutiveSoftRestartFailures > 0 || consecutiveHardRestartFailures > 0 {
+                NSLog("[BLE-iOS] adapter healthy; reset recovery counters")
+                consecutiveSoftRestartFailures = 0
+                consecutiveHardRestartFailures = 0
+            }
+            return
+        }
+        // §8.2: only act when we have a peripheral up AND subscribed peers.
+        guard gattReady, !subscribedCentrals.isEmpty else { return }
+
+        if consecutiveSoftRestartFailures < 2 {
+            attemptSoftRestart()
+        } else if consecutiveHardRestartFailures < 2 {
+            attemptHardRestart()
+        } else {
+            emitPermanentError()
+        }
+    }
+
+    /// §8.3 step 1 — stop+restart advertising. Also restart scan if we own
+    /// the central manager (parity with Android's FS-owned advertise
+    /// restart; iOS happens to own both managers in one process so we can
+    /// nudge scan too).
+    private func attemptSoftRestart() {
+        consecutiveSoftRestartFailures += 1
+        NSLog("[BLE-iOS] adapter soft restart (attempt \(consecutiveSoftRestartFailures))")
+        sendEvent([
+            "type": "adapter_native_soft_restart",
+            "attempt": consecutiveSoftRestartFailures,
+        ])
+        // Stop + restart scan (if currently scanning).
+        if isScanning {
+            centralManager?.stopScan()
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(200)) { [weak self] in
+                guard let self = self, self.isScanning,
+                      self.centralManager?.state == .poweredOn else { return }
+                self.centralManager?.scanForPeripherals(
+                    withServices: [BlePlugin.SERVICE_UUID],
+                    options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
+                )
+            }
+        }
+        // Stop + restart advertising.
+        peripheralManager?.stopAdvertising()
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + .milliseconds(BlePlugin.ADAPTER_SOFT_RESTART_DELAY_MS)
+        ) { [weak self] in
+            guard let self = self,
+                  let pm = self.peripheralManager,
+                  pm.state == .poweredOn else { return }
+            pm.startAdvertising([
+                CBAdvertisementDataServiceUUIDsKey: [BlePlugin.SERVICE_UUID],
+                CBAdvertisementDataLocalNameKey: "IgniRelay",
+            ])
+        }
+    }
+
+    /// §8.3 step 2 — full GATT teardown + rebuild.
+    private func attemptHardRestart() {
+        consecutiveHardRestartFailures += 1
+        NSLog("[BLE-iOS] adapter hard restart (attempt \(consecutiveHardRestartFailures))")
+        sendEvent([
+            "type": "adapter_native_hard_restart",
+            "attempt": consecutiveHardRestartFailures,
+        ])
+        if let pm = peripheralManager {
+            if let svc = gattService { pm.remove(svc) }
+            pm.stopAdvertising()
+        }
+        peripheralManager = nil
+        gattService = nil
+        gattReady = false
+        bloomCharacteristic = nil
+        eventCharacteristic = nil
+        handshakeCharacteristic = nil
+        subscribedCentrals.removeAll()
+        bloomReceivedDevices.removeAll()
+        bloomFallbackTimers.values.forEach { $0.cancel() }
+        bloomFallbackTimers.removeAll()
+        // Recreate after a short pause (some CoreBluetooth state takes a
+        // moment to fully release; recreating immediately occasionally
+        // surfaces .poweredOff or .resetting on the new manager).
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + .milliseconds(BlePlugin.ADAPTER_HARD_RESTART_DELAY_MS)
+        ) { [weak self] in
+            self?.ensurePeripheralManager()
+        }
+    }
+
+    /// §8.3 step 4. Resets counters so a future recovered tick (real or
+    /// from suppression window expiry) gives us another shot at the
+    /// soft → hard ladder rather than wedging forever.
+    private func emitPermanentError() {
+        NSLog("[BLE-iOS] adapter permanent error after " +
+              "\(consecutiveHardRestartFailures) hard-restart attempts")
+        sendEvent([
+            "type": "adapter_native_permanent_error",
+            "failures": consecutiveHardRestartFailures,
+        ])
+        consecutiveSoftRestartFailures = 0
+        consecutiveHardRestartFailures = 0
+    }
+
     // ── SHA-256 helper（純 C API，避免引入 CryptoKit 提高 deployment target）──
     static func sha256Hex(_ input: String) -> String {
         let data = Data(input.utf8)
@@ -123,6 +372,10 @@ class BlePlugin: NSObject, FlutterPlugin {
         eventChannel.setStreamHandler(instance)
         instance.methodChannel = channel
         instance.eventChannel = eventChannel
+        // v0.3 Stage 0c wave 3F — start the adapter health tick emitter +
+        // recovery watchdog at plugin load. Both timers are idempotent and
+        // self-gated; they cost effectively nothing while BLE is idle.
+        instance.startAdapterHealthTimers()
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -334,6 +587,56 @@ class BlePlugin: NSObject, FlutterPlugin {
             }
             let hash = BlePlugin.sha256Hex(pin)
             result(hash == storedHash && resourceId == storedResId)
+
+        // ── v0.3 Stage 0c wave 3F — 0d acceptance-gate debug hooks ──────
+        //
+        // Spec: docs/specs/native_transport_v1_2026-05-13.md §7.4 (force
+        // MTU) + §8.5 (force adapter idle).
+        //
+        // Parity with MainActivity.kt "debugForceTargetMtu" /
+        // "debugForceAdapterIdle" — same arg shapes, same return semantics,
+        // same out-of-range rejection. Deliberately UNGATED on a DEBUG
+        // flag so the QA agent can drive the 0d gate against release-mode
+        // builds too; impact is bounded (MTU clamp + tick suppression
+        // only, no wire-format mutation, no signature bypass).
+
+        case "debugForceTargetMtu":
+            guard let args = call.arguments as? [String: Any],
+                  let deviceId = args["deviceId"] as? String,
+                  !deviceId.isEmpty else {
+                result(false)
+                return
+            }
+            // Note: an explicit `NSNull` for targetMtu arrives as `nil`
+            // after the `as? Int` cast — same effect as "clear override".
+            let targetMtu = args["targetMtu"] as? Int
+            if let target = targetMtu {
+                if target < 23 || target > 512 {
+                    NSLog("[BLE-iOS] debugForceTargetMtu rejected mtu=\(target) out of [23,512]")
+                    result(false)
+                    return
+                }
+                debugMtuOverrideByDevice[deviceId] = target
+                NSLog("[BLE-iOS] debugForceTargetMtu: dev=\(deviceId) targetMtu=\(target)")
+            } else {
+                debugMtuOverrideByDevice.removeValue(forKey: deviceId)
+                NSLog("[BLE-iOS] debugForceTargetMtu: cleared override for \(deviceId)")
+            }
+            result(true)
+
+        case "debugForceAdapterIdle":
+            let args = call.arguments as? [String: Any]
+            let durationMs = (args?["durationMs"] as? NSNumber)?.int64Value ?? 0
+            if durationMs <= 0 {
+                adapterIdleSuppressedUntilMs = 0
+                NSLog("[BLE-iOS] debugForceAdapterIdle: cleared")
+                result(true)
+                return
+            }
+            adapterIdleSuppressedUntilMs = nowMs() + durationMs
+            NSLog("[BLE-iOS] debugForceAdapterIdle: suppress until=" +
+                  "\(adapterIdleSuppressedUntilMs) durMs=\(durationMs)")
+            result(true)
 
         default:
             result(FlutterMethodNotImplemented)
@@ -749,6 +1052,11 @@ extension BlePlugin: CBCentralManagerDelegate {
         let deviceId = peripheral.identifier.uuidString
         discoveredPeripherals[deviceId] = peripheral
 
+        // v0.3 Stage 0c wave 3F — every scan callback proves the central is
+        // alive. Refresh the adapter-health clock BEFORE we filter / handle,
+        // so a peer-less scan stream still keeps §8.2 staleness at bay.
+        emitAdapterTick(BlePlugin.TICK_SCAN)
+
         sendEvent([
             "type": "nordic_found",
             "device": deviceId,
@@ -834,12 +1142,20 @@ extension BlePlugin: CBPeripheralManagerDelegate {
                 "kind": "advertising_failed",
                 "message": error.localizedDescription,
             ])
+        } else {
+            // v0.3 Stage 0c wave 3F — confirmed advertising start. The
+            // periodic timer also emits TICK_ADVERTISE every 30 s while
+            // peripheralManager.isAdvertising is true, so this one is just
+            // the "we've started" anchor.
+            emitAdapterTick(BlePlugin.TICK_ADVERTISE)
         }
     }
 
     // ── GATT Server: 處理 Central 的讀請求 ─────────────────────────────
     func peripheralManager(_ peripheral: CBPeripheralManager,
                            didReceiveRead request: CBATTRequest) {
+        // v0.3 Stage 0c wave 3F — read request is a clear GATT op signal.
+        emitAdapterTick(BlePlugin.TICK_GATT_OP)
         if request.characteristic.uuid == BlePlugin.BLOOM_CHAR_UUID {
             // 回傳本機 Bloom Filter
             if request.offset > localBloomBytes.count {
@@ -856,6 +1172,8 @@ extension BlePlugin: CBPeripheralManagerDelegate {
     // ── GATT Server: 處理 Central 的寫請求 ─────────────────────────────
     func peripheralManager(_ peripheral: CBPeripheralManager,
                            didReceiveWrite requests: [CBATTRequest]) {
+        // v0.3 Stage 0c wave 3F — write request is a clear GATT op signal.
+        emitAdapterTick(BlePlugin.TICK_GATT_OP)
         // v0.3 Stage 0c wave 3C — Long Write / Prepared Write incoming. The
         // requests array may contain MULTIPLE CBATTRequest objects for one
         // Long Write, each with its own offset. We group by (centralId,
@@ -1015,6 +1333,8 @@ extension BlePlugin: CBPeripheralManagerDelegate {
                            didSubscribeTo characteristic: CBCharacteristic) {
         let deviceId = central.identifier.uuidString
         NSLog("[BLE-iOS] \(deviceId) subscribed to \(characteristic.uuid)")
+        // v0.3 Stage 0c wave 3F — subscribe is a clear GATT op signal.
+        emitAdapterTick(BlePlugin.TICK_GATT_OP)
 
         if characteristic.uuid == BlePlugin.EVENT_CHAR_UUID {
             // v0.3 Stage 0c wave 3A — peripheral-role HELLO trigger. By the
@@ -1022,7 +1342,17 @@ extension BlePlugin: CBPeripheralManagerDelegate {
             // our service; the per-central MTU is exposed via
             // `central.maximumUpdateValueLength` plus the ATT header. This
             // satisfies §5.2 from the peripheral perspective.
-            let attMtu = central.maximumUpdateValueLength + IgniRelayConstants.ATT_HEADER_SIZE
+            //
+            // Wave 3F — apply the debugForceTargetMtu clamp BEFORE storing
+            // / surfacing the value so all downstream sizing (notifyEventChunk
+            // oversize cap, peer_ready_for_hello, gatt_mtu) sees the clamped
+            // MTU. Spec §7.4 + parity with Android `applyMtuOverride`.
+            let rawAttMtu = central.maximumUpdateValueLength +
+                IgniRelayConstants.ATT_HEADER_SIZE
+            let attMtu = applyMtuOverride(deviceId, actualMtu: rawAttMtu)
+            if attMtu != rawAttMtu {
+                NSLog("[BLE-iOS] MTU clamped by debug override: dev=\(deviceId) actual=\(rawAttMtu) effective=\(attMtu)")
+            }
             deviceMtuMap[deviceId] = attMtu
             // v0.3 Stage 0c wave 3B — track the CBCentral so notifyEventChunk
             // can target it directly via updateValue(_:for:onSubscribedCentrals:).
@@ -1051,6 +1381,8 @@ extension BlePlugin: CBPeripheralManagerDelegate {
                            didUnsubscribeFrom characteristic: CBCharacteristic) {
         let deviceId = central.identifier.uuidString
         NSLog("[BLE-iOS] \(deviceId) unsubscribed from \(characteristic.uuid)")
+        // v0.3 Stage 0c wave 3F — unsubscribe is a clear GATT op signal.
+        emitAdapterTick(BlePlugin.TICK_GATT_OP)
         if characteristic.uuid == BlePlugin.EVENT_CHAR_UUID {
             // v0.3 Stage 0c wave 3A — drop the ready-set entry so a reconnect
             // re-emits peer_ready_for_hello and re-arms the Dart-side timer.
@@ -1082,7 +1414,18 @@ extension BlePlugin: CBPeripheralManagerDelegate {
             NSLog("[BLE-iOS] notifyEventChunk: eventCharacteristic is nil")
             return false
         }
-        let cap = central.maximumUpdateValueLength
+        // v0.3 Stage 0c wave 3F — use the CLAMPED cap so debugForceTargetMtu
+        // (§7.4) rejections fire at the value we told Dart about. Without
+        // this clamp the 0d gate forced-MTU=185 scenarios would still let
+        // 247-byte payloads through because CoreBluetooth uses the real
+        // negotiated MTU, contradicting the MTU figure surfaced via
+        // `gatt_mtu` / `peer_ready_for_hello`.
+        //
+        // Falls back to `central.maximumUpdateValueLength` when no override
+        // is active so production code path stays exactly as before 3F.
+        let storedMtu = deviceMtuMap[deviceId]
+        let cap: Int = storedMtu.map { $0 - IgniRelayConstants.ATT_HEADER_SIZE }
+            ?? central.maximumUpdateValueLength
         if data.count > cap {
             NSLog("[BLE-iOS] notifyEventChunk: oversize \(data.count)B > cap \(cap) for \(deviceId)")
             sendEvent([
@@ -1100,7 +1443,14 @@ extension BlePlugin: CBPeripheralManagerDelegate {
             for: eventChar,
             onSubscribedCentrals: [central]
         ) ?? false
-        if !ok {
+        if ok {
+            // v0.3 Stage 0c wave 3F — successful notify is a clear GATT op
+            // signal. Android's `onNotificationSent` callback emits this
+            // tick too; iOS lacks an equivalent callback, so we emit it at
+            // send time. The trade-off (no transport-layer confirmation) is
+            // unchanged from existing iOS behavior.
+            emitAdapterTick(BlePlugin.TICK_GATT_OP)
+        } else {
             NSLog("[BLE-iOS] notifyEventChunk: updateValue back-pressured for \(deviceId)")
         }
         return ok
@@ -1209,14 +1559,25 @@ class PeripheralDelegate: NSObject, CBPeripheralDelegate {
         // completes. We add the chunk-header size + ATT header to derive the
         // ATT MTU value reported to Dart so the cross-platform `gatt_mtu` event
         // shape stays symmetric with Android.
+        //
+        // Wave 3F — apply the debugForceTargetMtu clamp here so the central-
+        // side path reports the same effective MTU as the peripheral-side
+        // path (spec §7.4 + parity with NordicMeshManager.connect done{}).
         let writeWithoutResponseLen = peripheral.maximumWriteValueLength(for: .withoutResponse)
-        let attMtu = writeWithoutResponseLen + IgniRelayConstants.ATT_HEADER_SIZE
+        let rawAttMtu = writeWithoutResponseLen + IgniRelayConstants.ATT_HEADER_SIZE
+        let attMtu = plugin?.applyMtuOverride(deviceId, actualMtu: rawAttMtu) ?? rawAttMtu
+        if attMtu != rawAttMtu {
+            NSLog("[BLE-iOS] Central MTU clamped: dev=\(deviceId) actual=\(rawAttMtu) effective=\(attMtu)")
+        }
         plugin?.deviceMtuMap[deviceId] = attMtu
         plugin?.sendEvent([
             "type": "gatt_mtu",
             "device": deviceId,
             "mtu": attMtu,
         ])
+        // v0.3 Stage 0c wave 3F — central-side connection settle is a clear
+        // GATT op signal; refresh the adapter-health clock.
+        plugin?.emitAdapterTick(BlePlugin.TICK_GATT_OP)
 
         // v0.3 Stage 0c wave 3A — central-role HELLO trigger. Service discovery
         // and MTU computation have both completed here, satisfying §5.2.
@@ -1236,6 +1597,9 @@ class PeripheralDelegate: NSObject, CBPeripheralDelegate {
                     didUpdateValueFor characteristic: CBCharacteristic,
                     error: Error?) {
         guard error == nil else { return }
+        // v0.3 Stage 0c wave 3F — incoming notify / read response proves the
+        // GATT layer is healthy from the central perspective.
+        plugin?.emitAdapterTick(BlePlugin.TICK_GATT_OP)
 
         if characteristic.uuid == BlePlugin.BLOOM_CHAR_UUID {
             // Read Bloom 回呼
@@ -1256,6 +1620,8 @@ class PeripheralDelegate: NSObject, CBPeripheralDelegate {
                     didWriteValueFor characteristic: CBCharacteristic,
                     error: Error?) {
         let success = error == nil
+        // v0.3 Stage 0c wave 3F — write-ack is a clear GATT op signal.
+        plugin?.emitAdapterTick(BlePlugin.TICK_GATT_OP)
         if characteristic.uuid == BlePlugin.BLOOM_CHAR_UUID {
             plugin?.writeBloomCallbacks.removeValue(forKey: deviceId)?(success)
         } else if characteristic.uuid == BlePlugin.EVENT_CHAR_UUID {
