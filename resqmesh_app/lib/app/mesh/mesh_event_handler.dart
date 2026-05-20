@@ -65,6 +65,13 @@ class MeshEventHandler {
 
   final NegotiationManager _negotiationManager = NegotiationManager();
 
+  /// v0.3 Stage 0c — `V2InboundProjector` 寫進 `Event_Logs` 的投影列一律以此
+  /// 為 event_id 前綴。這些列**只是 read-model**（給 EventStream/UI 看），它們
+  /// 沒有合法 v1 簽章，**絕不可進入 v1 wire 送出/同步路徑**（直送 outbox、
+  /// bloom 廣告、IBLT 對帳），否則對端會 no-sig/sig-fail 拒收、污染 log、浪費
+  /// BLE 流量、並讓 0D 判讀困難。所有 v1 對外查詢都以 `NOT LIKE '$v2ProjectionIdPrefix%'` 排除。
+  static const String v2ProjectionIdPrefix = 'v2-';
+
   // 已看過的 event_id（去重，上限 10000 條 LRU）
   static const int _maxSeenEvents = 10000;
   final LinkedHashSet<String> _seenEvents = LinkedHashSet<String>();
@@ -189,126 +196,194 @@ class MeshEventHandler {
         }
       }
 
-      // 合併 HLC（確保時間同步）
-      if (decoded.hlcTimestamp > 0) {
-        HLC.merge(HLC(decoded.hlcTimestamp, decoded.hlcCounter));
-      } else {
-        HLC.merge(HLC(DateTime.now().millisecondsSinceEpoch, 0));
-      }
-
-      // 存入本地資料庫
-      try {
-        await db.insert('Event_Logs', {
-          'event_id': evtId,
-          'sender_pub_key': decoded.senderPubKey != null
-              ? Uint8List.fromList(decoded.senderPubKey!)
-              : Uint8List.fromList(utf8.encode(sourceNodeId)),
-          'identity_level': 0,
-          'event_type': decoded.eventType,
-          'urgency': decoded.urgency,
-          'hlc_timestamp': decoded.hlcTimestamp > 0
-              ? decoded.hlcTimestamp
-              : DateTime.now().millisecondsSinceEpoch,
-          'hlc_counter': decoded.hlcCounter,
-          'ttl': decoded.ttl > 0 ? decoded.ttl - 1 : 9,
-          'received_lat': decoded.lat,
-          'received_lng': decoded.lng,
-          'origin_lat': decoded.originLat,
-          'origin_lng': decoded.originLng,
-          'node_tier': 2,
-          'chunk_index': 0,
-          'total_chunks': 1,
-          'payload': Uint8List.fromList(payload),
-          'signature': decoded.signature != null
-              ? Uint8List.fromList(decoded.signature!)
-              : Uint8List(0),
-          'is_synced': 0,
-        });
-        // DB insert 成功後才加入去重快取
-        markSeen(evtId);
-      } catch (e) {
-        // UNIQUE constraint 失敗代表已有此事件，忽略
-        markSeen(evtId); // 既然 DB 有了，也加入快取
-        debugPrint('[MeshEvt] DB insert skipped (duplicate): $evtId');
-        return; // DB 已有此事件，不需要重複處理
-      }
-
-      // ── Event dispatch ─────────────────────────────────────────
-      final eventType = decoded.eventType;
-      final senderPubKey = decoded.senderPubKey ?? <int>[];
-      final payloadBytes = Uint8List.fromList(payload);
-
-      switch (eventType) {
-        // ── Infrastructure events → handle locally ──
-        case EventType.resourceRegister:
-          if (payload.isNotEmpty) {
-            await _handleResourceRegisterEvent(decoded, payload, evtId, db);
-          }
-          break;
-        case EventType.requestBroadcast:
-          if (payload.isNotEmpty) {
-            await _handleRequestBroadcastEvent(decoded, payload, evtId, db);
-          }
-          break;
-        case EventType.physicalHandshake:
-          // Slot 3 kept for backward compat
-          if (payload.isNotEmpty) {
-            await _handlePhysicalHandshakeEvent({'raw': payload});
-          }
-          break;
-        case EventType.hazardMarker:
-          if (payload.isNotEmpty) {
-            await _handleHazardEvent(decoded, payload, sourceNodeId, db);
-          }
-          break;
-        case EventType.quarantineVote:
-          // existing quarantine vote handling (no-op in current codebase)
-          break;
-        case EventType.fireAlarmRf:
-          // existing fire alarm RF handling (no-op in current codebase)
-          break;
-        case EventType.chatMessage:
-          if (payload.isNotEmpty) {
-            await _handleChatEvent(decoded, payload, sourceNodeId, db);
-          }
-          break;
-
-        // ── Deprecated slots → silently ignore ──
-        case EventType.matchInquiry:  // 10
-        case EventType.matchAvailable: // 11
-        case EventType.matchGone:      // 12
-          break;
-
-        // ── Negotiation events → delegate to Application Layer ──
-        case EventType.matchIntent:       // 2 (matchOffer)
-        case EventType.matchRequest:      // 15
-        case EventType.matchConfirm:      // 8 (matchAccept)
-        case EventType.matchReject:       // 9 (matchDecline)
-        case EventType.matchCancel:       // 6
-        case EventType.handshakeComplete: // 16
-          await _negotiationManager.handleRemoteEvent(
-            eventType, payloadBytes, senderPubKey);
-          break;
-
-        case EventType.locationUpdate: // 14 — negotiation-related
-          await _negotiationManager.handleRemoteEvent(
-            eventType, payloadBytes, senderPubKey);
-          break;
-
-        default:
-          _dlog('RECV unknown eventType=$eventType');
-          break;
-      }
-
-      receivedEventCount++;
-      _eventStreamController.add(
-        MeshDataReceived(sourceNodeId, Uint8List.fromList(payload)),
+      // 落庫 + 投影 + 發訊號（與 v2 收進來共用同一條 ingest）
+      await ingestVerifiedEvent(
+        eventId: evtId,
+        eventType: decoded.eventType,
+        urgency: decoded.urgency,
+        payload: payload,
+        senderPubKey: decoded.senderPubKey,
+        hlcTimestamp: decoded.hlcTimestamp,
+        hlcCounter: decoded.hlcCounter,
+        ttl: decoded.ttl,
+        lat: decoded.lat,
+        lng: decoded.lng,
+        originLat: decoded.originLat,
+        originLng: decoded.originLng,
+        signature: decoded.signature,
+        sourceNodeId: sourceNodeId,
       );
-      debugPrint(
-          '[MeshEvt] Stored event $evtId (${payload.length} bytes) from $sourceNodeId');
     } catch (e) {
       debugPrint('[MeshEvt] Parse error: $e');
     }
+  }
+
+  /// 共用 ingest：把「已驗證、已解碼」的事件落庫、投影到業務表、emit UI 訊號。
+  ///
+  /// v1 收進來路徑 ([handleIncomingData]) 在 wire 解碼 + 簽章驗證 + 地理圍欄
+  /// 路由判斷之後呼叫本方法；v2 收進來路徑 (`V2InboundProjector`) 在 envelope
+  /// dispatcher 接受後，把 v2 payload 翻成 v1 格式再呼叫本方法。兩條路因此共用
+  /// 同一個「事件 → Event_Logs → 投影 → EventStream」出口，避免 read-model 分裂。
+  ///
+  /// 呼叫端必須保證事件已通過簽章/信任驗證；本方法只負責去重、落庫、投影、發訊號。
+  Future<void> ingestVerifiedEvent({
+    required String eventId,
+    required int eventType,
+    required int urgency,
+    required List<int> payload,
+    List<int>? senderPubKey,
+    int hlcTimestamp = 0,
+    int hlcCounter = 0,
+    int ttl = 10,
+    double? lat,
+    double? lng,
+    double? originLat,
+    double? originLng,
+    List<int>? signature,
+    String sourceNodeId = 'v2',
+  }) async {
+    if (_seenEvents.contains(eventId)) return;
+    final db = await DatabaseHelper().database;
+    final existingEvt = await db.query('Event_Logs',
+        columns: ['event_id'],
+        where: 'event_id = ?',
+        whereArgs: [eventId],
+        limit: 1);
+    if (existingEvt.isNotEmpty) {
+      markSeen(eventId);
+      return;
+    }
+
+    // 合併 HLC（確保時間同步）
+    if (hlcTimestamp > 0) {
+      HLC.merge(HLC(hlcTimestamp, hlcCounter));
+    } else {
+      HLC.merge(HLC(DateTime.now().millisecondsSinceEpoch, 0));
+    }
+
+    final decoded = WirePayload(
+      eventId,
+      payload,
+      urgency: urgency,
+      eventType: eventType,
+      hlcTimestamp: hlcTimestamp,
+      hlcCounter: hlcCounter,
+      ttl: ttl,
+      lat: lat,
+      lng: lng,
+      originLat: originLat,
+      originLng: originLng,
+      signature: signature,
+      senderPubKey: senderPubKey,
+    );
+
+    // 存入本地資料庫
+    try {
+      await db.insert('Event_Logs', {
+        'event_id': eventId,
+        'sender_pub_key': senderPubKey != null
+            ? Uint8List.fromList(senderPubKey)
+            : Uint8List.fromList(utf8.encode(sourceNodeId)),
+        'identity_level': 0,
+        'event_type': eventType,
+        'urgency': urgency,
+        'hlc_timestamp':
+            hlcTimestamp > 0 ? hlcTimestamp : DateTime.now().millisecondsSinceEpoch,
+        'hlc_counter': hlcCounter,
+        'ttl': ttl > 0 ? ttl - 1 : 9,
+        'received_lat': lat,
+        'received_lng': lng,
+        'origin_lat': originLat,
+        'origin_lng': originLng,
+        'node_tier': 2,
+        'chunk_index': 0,
+        'total_chunks': 1,
+        'payload': Uint8List.fromList(payload),
+        'signature':
+            signature != null ? Uint8List.fromList(signature) : Uint8List(0),
+        'is_synced': 0,
+      });
+      // DB insert 成功後才加入去重快取
+      markSeen(eventId);
+    } catch (e) {
+      // UNIQUE constraint 失敗代表已有此事件，忽略
+      markSeen(eventId); // 既然 DB 有了，也加入快取
+      debugPrint('[MeshEvt] DB insert skipped (duplicate): $eventId');
+      return; // DB 已有此事件，不需要重複處理
+    }
+
+    // ── Event dispatch ─────────────────────────────────────────
+    final senderPubKeyList = senderPubKey ?? <int>[];
+    final payloadBytes = Uint8List.fromList(payload);
+
+    switch (eventType) {
+      // ── Infrastructure events → handle locally ──
+      case EventType.resourceRegister:
+        if (payload.isNotEmpty) {
+          await _handleResourceRegisterEvent(decoded, payload, eventId, db);
+        }
+        break;
+      case EventType.requestBroadcast:
+        if (payload.isNotEmpty) {
+          await _handleRequestBroadcastEvent(decoded, payload, eventId, db);
+        }
+        break;
+      case EventType.physicalHandshake:
+        // Slot 3 kept for backward compat
+        if (payload.isNotEmpty) {
+          await _handlePhysicalHandshakeEvent({'raw': payload});
+        }
+        break;
+      case EventType.hazardMarker:
+        if (payload.isNotEmpty) {
+          await _handleHazardEvent(decoded, payload, sourceNodeId, db);
+        }
+        break;
+      case EventType.quarantineVote:
+        // existing quarantine vote handling (no-op in current codebase)
+        break;
+      case EventType.fireAlarmRf:
+        // existing fire alarm RF handling (no-op in current codebase)
+        break;
+      case EventType.chatMessage:
+        if (payload.isNotEmpty) {
+          await _handleChatEvent(decoded, payload, sourceNodeId, db);
+        }
+        break;
+
+      // ── Deprecated slots → silently ignore ──
+      case EventType.matchInquiry:  // 10
+      case EventType.matchAvailable: // 11
+      case EventType.matchGone:      // 12
+        break;
+
+      // ── Negotiation events → delegate to Application Layer ──
+      case EventType.matchIntent:       // 2 (matchOffer)
+      case EventType.matchRequest:      // 15
+      case EventType.matchConfirm:      // 8 (matchAccept)
+      case EventType.matchReject:       // 9 (matchDecline)
+      case EventType.matchCancel:       // 6
+      case EventType.handshakeComplete: // 16
+        await _negotiationManager.handleRemoteEvent(
+          eventType, payloadBytes, senderPubKeyList);
+        break;
+
+      case EventType.locationUpdate: // 14 — negotiation-related
+        await _negotiationManager.handleRemoteEvent(
+          eventType, payloadBytes, senderPubKeyList);
+        break;
+
+      default:
+        _dlog('RECV unknown eventType=$eventType');
+        break;
+    }
+
+    receivedEventCount++;
+    _eventStreamController.add(
+      MeshDataReceived(sourceNodeId, payloadBytes),
+    );
+    debugPrint(
+        '[MeshEvt] Stored event $eventId (${payload.length} bytes) from $sourceNodeId');
   }
 
   /// 處理遠端物資登記：投影到 Materials_State
@@ -663,6 +738,9 @@ class MeshEventHandler {
     final rows = await db.query(
       'Event_Logs',
       columns: ['event_id'],
+      // 排除 v2 投影列：它們無 v1 簽章，不可進 v1 wire 廣告/同步。
+      where: 'event_id NOT LIKE ?',
+      whereArgs: ['$v2ProjectionIdPrefix%'],
       orderBy: 'hlc_timestamp DESC',
       limit: limit,
     );
@@ -674,8 +752,10 @@ class MeshEventHandler {
   /// [excludeChat] 為 true 時排除聊天訊息事件
   Future<Set<String>> getLocalEventIds({bool excludeChat = true}) async {
     final db = await DatabaseHelper().database;
-    String where = '';
-    if (excludeChat) where = 'WHERE event_type != ${EventType.chatMessage}';
+    // 排除 v2 投影列（無 v1 簽章，不可進 IBLT 對帳/送出）。
+    final clauses = <String>["event_id NOT LIKE '$v2ProjectionIdPrefix%'"];
+    if (excludeChat) clauses.add('event_type != ${EventType.chatMessage}');
+    final where = 'WHERE ${clauses.join(' AND ')}';
     final rows = await db.rawQuery('SELECT event_id FROM Event_Logs $where');
     return rows.map((r) => r['event_id'] as String).toSet();
   }
@@ -703,7 +783,9 @@ class MeshEventHandler {
         'origin_lat',
         'origin_lng',
       ],
-      where: 'hlc_timestamp > ? AND event_type != ${EventType.chatMessage}',
+      // 排除 v2 投影列（無 v1 簽章，不可被 IBLT fast-path 當原始事件送出）。
+      where: 'hlc_timestamp > ? AND event_type != ${EventType.chatMessage} '
+          "AND event_id NOT LIKE '$v2ProjectionIdPrefix%'",
       whereArgs: [cutoff24h],
       orderBy: 'urgency DESC, hlc_timestamp DESC',
     );

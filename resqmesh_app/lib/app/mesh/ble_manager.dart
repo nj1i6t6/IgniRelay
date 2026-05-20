@@ -579,8 +579,9 @@ class BleManager {
           'origin_lat',
           'origin_lng',
         ],
-        where: 'hlc_timestamp > ?',
-        whereArgs: [cutoff24h],
+        // 排除 v2 投影列：它們無 v1 簽章，送出去對端只會拒收。
+        where: 'hlc_timestamp > ? AND event_id NOT LIKE ?',
+        whereArgs: [cutoff24h, '${MeshEventHandler.v2ProjectionIdPrefix}%'],
         orderBy: 'urgency DESC, hlc_timestamp DESC',
         limit: 50,
       );
@@ -693,8 +694,9 @@ class BleManager {
         'origin_lat',
         'origin_lng',
       ],
-      where: 'hlc_timestamp > ?',
-      whereArgs: [cutoff24h],
+      // 排除 v2 投影列：它們無 v1 簽章，不可進 native Notify outbox。
+      where: 'hlc_timestamp > ? AND event_id NOT LIKE ?',
+      whereArgs: [cutoff24h, '${MeshEventHandler.v2ProjectionIdPrefix}%'],
       orderBy: 'urgency DESC, hlc_timestamp DESC',
       limit: 50,
     );

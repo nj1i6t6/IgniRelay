@@ -34,6 +34,7 @@ import 'package:ignirelay_app/app/services/mesh_debug_controller.dart';
 import 'package:ignirelay_app/app/services/mesh_trace_writer.dart';
 import 'package:ignirelay_app/app/services/peer_capability_registry.dart';
 import 'package:ignirelay_app/app/services/protocol_hello_service.dart';
+import 'package:ignirelay_app/app/services/v2_inbound_projector.dart';
 import 'package:ignirelay_app/app/controllers/event_publisher.dart';
 import 'package:ignirelay_app/app/controllers/event_stream.dart';
 import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
@@ -113,6 +114,12 @@ BleV2Bridge? _v2Bridge;
 AdapterHealthMonitor? _adapterHealthMonitor;
 MeshDebugController? _meshDebugController;
 
+/// v0.3 Stage 0c — projects v2-received envelopes (post-dispatcher accept)
+/// into the v1 `Event_Logs` read-model so `EventStream` / UI sees them.
+/// Closes the "v2 inbound dead-ends in Envelopes_V2" gap. Retained at module
+/// scope so its dispatcher subscription survives.
+V2InboundProjector? _v2InboundProjector;
+
 /// v0.3 Stage 0c wave 3E — shared PeerCapabilityRegistry. Created eagerly
 /// at app startup so the v2 publish facade can hold a non-null reference
 /// from the first frame (Stage 0c wave 3E-r2 Provider-lifecycle fix). The
@@ -147,6 +154,8 @@ final EventPublisherV2Facade _eventPublisherV2 = EventPublisherV2Facade(
 AdapterHealthMonitor? get debugAdapterHealthMonitor => _adapterHealthMonitor;
 @visibleForTesting
 MeshDebugController? get debugMeshDebugController => _meshDebugController;
+@visibleForTesting
+V2InboundProjector? get debugV2InboundProjector => _v2InboundProjector;
 
 Future<void> _startV2Bridge() async {
   if (_v2Bridge != null) return;
@@ -241,6 +250,17 @@ Future<void> _startV2Bridge() async {
     healthMonitor.start();
     _adapterHealthMonitor = healthMonitor;
     _meshDebugController = MeshDebugController(trace: trace);
+
+    // v0.3 Stage 0c — project accepted v2 envelopes into the v1 Event_Logs
+    // read-model. Without this, anything received over the v0.3 wire lands in
+    // Envelopes_V2 and never reaches EventStream / the UI. Shares the same
+    // MeshEventHandler singleton whose `.events` stream EventStream listens to.
+    final projector = V2InboundProjector(
+      outcomes: dispatcher.outcomes,
+      handler: MeshEventHandler(),
+    );
+    projector.start();
+    _v2InboundProjector = projector;
     // Stage 0c wave 3E-r2 — attach the bridge to the EAGERLY-constructed
     // facade. Any sends issued before now have been buffered in the
     // facade's in-memory pending queue; attachBridge schedules a drain
