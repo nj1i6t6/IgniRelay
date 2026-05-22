@@ -90,6 +90,53 @@ This preflight uses two phones, so it cannot validate 3-hop SOS p95. It validate
 | A8 | Adapter idle recovery | Trigger `debugForceAdapterIdle` for 6 minutes. | Logs show `adapter_native_soft_restart` and Dart `adapter_soft_recover`/fresh ticks within 60s after suppression ends; no crash. |
 | A9 | Kotlin conformance | Run `connectedDebugAndroidTest`. | `WireConformanceInstrumentationTest` passes. |
 
+## 2026-05-21 Two-Phone Execution Plan
+
+This run is intended to extract as much BLE evidence as possible while the two Android devices are physically available. It is still an Android-pair preflight, not the full 0d gate.
+
+### Actual Devices
+
+| Field | Device A | Device B |
+|---|---|---|
+| `adb serial` | `94067a07` | `LNZ5TKY5NRNVQ4K7` |
+| Model | Xiaomi `25102PCBEG` | Xiaomi `2311DRK48G` |
+| Android version | 16 / SDK 36 | 15 / SDK 35 |
+| App branch | `V0.2.5` | `V0.2.5` |
+
+### Today Priority Order
+
+1. **Smoke the host path**: `adb devices`, `logcat`, runtime permissions, Bluetooth enabled, app foreground, `IgniRelayForegroundService` foreground.
+2. **Build and install the exact APK** from the current workspace.
+3. **Cold BLE discovery**: clear logs, relaunch both apps, wait 60-90 seconds, verify `FOUND`, `NORDIC CONNECTED`, `GATT_MTU`, `peer_ready_for_hello`, and debug panel `connected peers`.
+4. **IBLT/Bloom sync health**: verify IBLT does not throw platform exceptions; if IBLT is unavailable, verify Bloom fallback completes with `NOTIFY_END`.
+5. **Wire conformance on devices**: run `:app:connectedDebugAndroidTest` on both attached phones and preserve XML result counts.
+6. **Event transfer**: if the build exposes a debug publish trigger, publish one minimal `STATUS_UPDATE` or `SOS_RED` on A and verify B receives it. If no trigger exists, record this as tooling unavailable and add a follow-up to expose an adb-callable 0d publish trigger.
+7. **Low-MTU behavior**: if `debugForceTargetMtu` is callable from an exposed app path, clamp to 185 and repeat event transfer. Otherwise record as tooling unavailable.
+8. **Reconnect**: toggle Bluetooth on B or force-stop/relaunch B, then verify rediscovery and sync after cooldown.
+9. **Collect artifacts**: save app-pid logcat for both devices, screenshots/debug panels, instrumentation XML, and a concise result table.
+
+### Known Findings To Verify In This Run
+
+- Android `notifyCharacteristicChanged` rejects BLE characteristic values above 512 B even when MTU=517. Single-notify payload cap must therefore be `min(MTU - 3, 512)`, not only `MTU - 3`.
+- IBLT response is 513 B (`control` 1 B + `watermark` 8 B + IBLT 504 B), so until chunked IBLT exists it must explicitly fall back to Bloom instead of entering the Android platform notify path.
+- Bloom payload packets are larger than a single notify and may be rejected by the single-notify path; the current pass criterion is correctness via fallback / end marker, not IBLT bandwidth efficiency.
+- `Invalid wire payload` from the legacy `MeshEventHandler` can appear when v2 chunks also reach the legacy receive path. Treat it as a warning unless v2 dispatcher/projector fails to accept/display an actual v2 event.
+
+### Result Table Template
+
+| Scenario | Result | Evidence |
+|---|---|---|
+| Host/device permissions |  |  |
+| APK build/install |  |  |
+| Cold discovery |  |  |
+| GATT connect + MTU |  |  |
+| PROTOCOL_HELLO / peer ready |  |  |
+| IBLT no platform exception |  |  |
+| Bloom fallback |  |  |
+| Event A to B |  |  |
+| Reconnect |  |  |
+| Instrumentation conformance |  |  |
+
 ## Required Evidence
 
 For each failed scenario, save:

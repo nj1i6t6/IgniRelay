@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:ignirelay_app/app/mesh/event_manager.dart';
+import 'package:ignirelay_app/app/mesh/event_types.dart';
 import 'package:ignirelay_app/app/mesh/iblt.dart';
 import 'package:ignirelay_app/app/mesh/mesh_constants.dart';
 import 'package:ignirelay_app/app/mesh/mesh_event_handler.dart';
@@ -580,8 +581,14 @@ class BleManager {
           'origin_lng',
         ],
         // 排除 v2 投影列：它們無 v1 簽章，送出去對端只會拒收。
-        where: 'hlc_timestamp > ? AND event_id NOT LIKE ?',
-        whereArgs: [cutoff24h, '${MeshEventHandler.v2ProjectionIdPrefix}%'],
+        // 排除 CHAT_MESSAGE：聊天已遷移成 v2-only（走 chunked BLE bridge），
+        // 不再經 v1 wire，避免收件端 v1+v2 雙顯。
+        where: 'hlc_timestamp > ? AND event_id NOT LIKE ? AND event_type != ?',
+        whereArgs: [
+          cutoff24h,
+          '${MeshEventHandler.v2ProjectionIdPrefix}%',
+          EventType.chatMessage,
+        ],
         orderBy: 'urgency DESC, hlc_timestamp DESC',
         limit: 50,
       );
@@ -695,8 +702,13 @@ class BleManager {
         'origin_lng',
       ],
       // 排除 v2 投影列：它們無 v1 簽章，不可進 native Notify outbox。
-      where: 'hlc_timestamp > ? AND event_id NOT LIKE ?',
-      whereArgs: [cutoff24h, '${MeshEventHandler.v2ProjectionIdPrefix}%'],
+      // 排除 CHAT_MESSAGE：聊天已遷移成 v2-only，不再經 v1 wire。
+      where: 'hlc_timestamp > ? AND event_id NOT LIKE ? AND event_type != ?',
+      whereArgs: [
+        cutoff24h,
+        '${MeshEventHandler.v2ProjectionIdPrefix}%',
+        EventType.chatMessage,
+      ],
       orderBy: 'urgency DESC, hlc_timestamp DESC',
       limit: 50,
     );

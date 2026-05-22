@@ -485,6 +485,8 @@ class MatchRepository {
           results.add(CommunityItem(
             eventId: (row['event_id'] as String?) ?? '',
             isSupply: true,
+            resourceId: rd.resourceId,
+            senderPubKey: (row['sender_pub_key'] as Uint8List?)?.toList(),
             resourceType: rd.resourceType,
             quantity: rd.quantity,
             description: rd.description,
@@ -511,6 +513,8 @@ class MatchRepository {
           results.add(CommunityItem(
             eventId: (row['event_id'] as String?) ?? '',
             isSupply: false,
+            requestId: rd.requestId,
+            senderPubKey: (row['sender_pub_key'] as Uint8List?)?.toList(),
             resourceType: rd.resourceType,
             quantity: rd.quantityNeeded,
             description: note,
@@ -615,6 +619,9 @@ class MyPublish {
 class CommunityItem {
   final String eventId;
   final bool isSupply;
+  final String resourceId;
+  final String requestId;
+  final List<int>? senderPubKey;
   final String resourceType;
   final double quantity;
   final String description;
@@ -627,6 +634,9 @@ class CommunityItem {
   const CommunityItem({
     required this.eventId,
     required this.isSupply,
+    this.resourceId = '',
+    this.requestId = '',
+    this.senderPubKey,
     required this.resourceType,
     required this.quantity,
     required this.description,

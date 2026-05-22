@@ -739,8 +739,10 @@ class MeshEventHandler {
       'Event_Logs',
       columns: ['event_id'],
       // 排除 v2 投影列：它們無 v1 簽章，不可進 v1 wire 廣告/同步。
-      where: 'event_id NOT LIKE ?',
-      whereArgs: ['$v2ProjectionIdPrefix%'],
+      // 排除 CHAT_MESSAGE：聊天已遷移成 v2-only，不參與 v1 Bloom 對帳
+      // （IBLT getLocalEventIds / getEventsByKeyHashes 也同樣排除）。
+      where: 'event_id NOT LIKE ? AND event_type != ?',
+      whereArgs: ['$v2ProjectionIdPrefix%', EventType.chatMessage],
       orderBy: 'hlc_timestamp DESC',
       limit: limit,
     );

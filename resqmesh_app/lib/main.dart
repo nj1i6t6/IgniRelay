@@ -293,9 +293,7 @@ class IgniRelayApp extends StatefulWidget {
   }
 
   static IgniTextScale textScaleOf(BuildContext context) {
-    return context
-            .findAncestorStateOfType<_IgniRelayAppState>()
-            ?._textScale ??
+    return context.findAncestorStateOfType<_IgniRelayAppState>()?._textScale ??
         IgniTextScale.standard;
   }
 
@@ -407,7 +405,7 @@ class _IgniRelayAppState extends State<IgniRelayApp> {
           create: (_) => IdentityManager(),
         ),
         Provider<ChatService>(
-          create: (_) => ChatService(),
+          create: (_) => ChatService()..attachV2Facade(_eventPublisherV2),
         ),
         Provider<LocationService>(
           create: (_) => LocationService(),
@@ -628,7 +626,8 @@ class _StartupRouterState extends State<_StartupRouter> {
           children: [
             const Icon(Icons.bluetooth_disabled, color: Colors.orangeAccent),
             const SizedBox(width: 8),
-            Text(ctx.l10n.mainBluetoothDialogTitle, style: const TextStyle(color: Colors.white)),
+            Text(ctx.l10n.mainBluetoothDialogTitle,
+                style: const TextStyle(color: Colors.white)),
           ],
         ),
         content: Text(
@@ -638,7 +637,8 @@ class _StartupRouterState extends State<_StartupRouter> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(ctx.l10n.mainBluetoothDialogCancel, style: const TextStyle(color: Colors.white38)),
+            child: Text(ctx.l10n.mainBluetoothDialogCancel,
+                style: const TextStyle(color: Colors.white38)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(

@@ -57,7 +57,8 @@ class MatchScreenController extends ChangeNotifier {
   String? get error => _error;
   String? get gpsWarning => _gpsWarning;
   Uint8List? get myPubKey => _myPubKey;
-  Set<String> get staleNegotiationIds => _negotiationManager.staleNegotiationIds;
+  Set<String> get staleNegotiationIds =>
+      _negotiationManager.staleNegotiationIds;
   LocationService get locationService => _locService;
 
   // ── Outcome events (widget 端訂閱以顯示 snackbar / navigation) ──
@@ -161,7 +162,8 @@ class MatchScreenController extends ChangeNotifier {
     }
   }
 
-  Future<void> cancelSupply(DecodedSupply supply, MyPublish? pub, {required String resourceName}) async {
+  Future<void> cancelSupply(DecodedSupply supply, MyPublish? pub,
+      {required String resourceName}) async {
     if (pub == null) return;
     try {
       await _publisher.cancelSupply(pub.eventId);
@@ -177,7 +179,8 @@ class MatchScreenController extends ChangeNotifier {
     final resourceId = neg['resource_id'] as String? ?? '';
     final requestId = neg['request_id'] as String? ?? '';
     final agreedQty = (neg['offered_qty'] as num?)?.toDouble() ??
-        (neg['requested_qty'] as num?)?.toDouble() ?? 0;
+        (neg['requested_qty'] as num?)?.toDouble() ??
+        0;
 
     try {
       await _publisher.publishMatchAccept(
@@ -193,7 +196,8 @@ class MatchScreenController extends ChangeNotifier {
     }
   }
 
-  Future<void> declineNegotiation(String negId, Map<String, dynamic> neg) async {
+  Future<void> declineNegotiation(
+      String negId, Map<String, dynamic> neg) async {
     final resourceId = neg['resource_id'] as String? ?? '';
     final requestId = neg['request_id'] as String? ?? '';
     try {
@@ -210,7 +214,8 @@ class MatchScreenController extends ChangeNotifier {
     }
   }
 
-  Future<void> cancelRequest(DecodedRequest request, {required String resourceName}) async {
+  Future<void> cancelRequest(DecodedRequest request,
+      {required String resourceName}) async {
     try {
       await _publisher.cancelRequest(request.eventId);
       _outcomes.add(MatchOutcome.cancelRequestOk(resourceName));
@@ -247,7 +252,14 @@ class MatchScreenController extends ChangeNotifier {
     final loc = _locService.currentLocation;
     try {
       if (item.isSupply) {
-        await _publisher.publishRequest(
+        final providerPubKey = item.senderPubKey;
+        if (item.resourceId.isEmpty ||
+            providerPubKey == null ||
+            providerPubKey.isEmpty) {
+          throw StateError(
+              'remote supply is missing resource id or provider key');
+        }
+        final requestId = await _publisher.publishRequest(
           resourceType: item.resourceType,
           quantity: qty,
           note: communityNote,
@@ -256,15 +268,35 @@ class MatchScreenController extends ChangeNotifier {
           lat: loc?.latitude,
           lng: loc?.longitude,
         );
+        await _publisher.publishMatchRequest(
+          resourceId: item.resourceId,
+          requestId: requestId,
+          providerPubKey: providerPubKey,
+          requestedQty: qty.toDouble(),
+        );
         _outcomes.add(MatchOutcome.communityRequestOk(qty, resourceName));
       } else {
-        await _publisher.publishSupply(
+        final requesterPubKey = item.senderPubKey;
+        if (item.requestId.isEmpty ||
+            requesterPubKey == null ||
+            requesterPubKey.isEmpty) {
+          throw StateError(
+              'remote request is missing request id or requester key');
+        }
+        final resourceId = await _publisher.publishSupply(
           resourceType: item.resourceType,
           quantity: qty,
           maxRangeMeters: 5000,
           deliveryMode: 'PICKUP',
           lat: loc?.latitude,
           lng: loc?.longitude,
+        );
+        await _publisher.publishMatchOffer(
+          resourceId: resourceId,
+          requestId: item.requestId,
+          requesterPubKey: requesterPubKey,
+          offeredQty: qty.toDouble(),
+          matchScore: 100.0,
         );
         _outcomes.add(MatchOutcome.communitySupplyOk(qty, resourceName));
       }
@@ -306,32 +338,93 @@ sealed class MatchOutcome {
   const factory MatchOutcome.oversoldDetected() = _OutOversoldDetected;
   const factory MatchOutcome.acceptOk() = _OutAcceptOk;
   const factory MatchOutcome.declineOk() = _OutDeclineOk;
-  const factory MatchOutcome.cancelSupplyOk(String resourceName) = _OutCancelSupplyOk;
-  const factory MatchOutcome.cancelRequestOk(String resourceName) = _OutCancelRequestOk;
+  const factory MatchOutcome.cancelSupplyOk(String resourceName) =
+      _OutCancelSupplyOk;
+  const factory MatchOutcome.cancelRequestOk(String resourceName) =
+      _OutCancelRequestOk;
   const factory MatchOutcome.acceptFail(String error) = _OutAcceptFail;
   const factory MatchOutcome.declineFail(String error) = _OutDeclineFail;
   const factory MatchOutcome.cancelFail(String error) = _OutCancelFail;
-  const factory MatchOutcome.communityRequestOk(int qty, String resourceName) = _OutCommunityRequestOk;
-  const factory MatchOutcome.communitySupplyOk(int qty, String resourceName) = _OutCommunitySupplyOk;
+  const factory MatchOutcome.communityRequestOk(int qty, String resourceName) =
+      _OutCommunityRequestOk;
+  const factory MatchOutcome.communitySupplyOk(int qty, String resourceName) =
+      _OutCommunitySupplyOk;
   const factory MatchOutcome.communityFail(String error) = _OutCommunityFail;
 }
 
-class _OutNegotiationAccepted extends MatchOutcome { const _OutNegotiationAccepted(); }
-class _OutNegotiationDeclined extends MatchOutcome { const _OutNegotiationDeclined(); }
-class _OutNegotiationCancelled extends MatchOutcome { const _OutNegotiationCancelled(); }
-class _OutHandoffComplete extends MatchOutcome { const _OutHandoffComplete(); }
-class _OutNegotiationExpired extends MatchOutcome { const _OutNegotiationExpired(); }
-class _OutOversoldDetected extends MatchOutcome { const _OutOversoldDetected(); }
-class _OutAcceptOk extends MatchOutcome { const _OutAcceptOk(); }
-class _OutDeclineOk extends MatchOutcome { const _OutDeclineOk(); }
-class _OutCancelSupplyOk extends MatchOutcome { const _OutCancelSupplyOk(this.resourceName); final String resourceName; }
-class _OutCancelRequestOk extends MatchOutcome { const _OutCancelRequestOk(this.resourceName); final String resourceName; }
-class _OutAcceptFail extends MatchOutcome { const _OutAcceptFail(this.error); final String error; }
-class _OutDeclineFail extends MatchOutcome { const _OutDeclineFail(this.error); final String error; }
-class _OutCancelFail extends MatchOutcome { const _OutCancelFail(this.error); final String error; }
-class _OutCommunityRequestOk extends MatchOutcome { const _OutCommunityRequestOk(this.qty, this.resourceName); final int qty; final String resourceName; }
-class _OutCommunitySupplyOk extends MatchOutcome { const _OutCommunitySupplyOk(this.qty, this.resourceName); final int qty; final String resourceName; }
-class _OutCommunityFail extends MatchOutcome { const _OutCommunityFail(this.error); final String error; }
+class _OutNegotiationAccepted extends MatchOutcome {
+  const _OutNegotiationAccepted();
+}
+
+class _OutNegotiationDeclined extends MatchOutcome {
+  const _OutNegotiationDeclined();
+}
+
+class _OutNegotiationCancelled extends MatchOutcome {
+  const _OutNegotiationCancelled();
+}
+
+class _OutHandoffComplete extends MatchOutcome {
+  const _OutHandoffComplete();
+}
+
+class _OutNegotiationExpired extends MatchOutcome {
+  const _OutNegotiationExpired();
+}
+
+class _OutOversoldDetected extends MatchOutcome {
+  const _OutOversoldDetected();
+}
+
+class _OutAcceptOk extends MatchOutcome {
+  const _OutAcceptOk();
+}
+
+class _OutDeclineOk extends MatchOutcome {
+  const _OutDeclineOk();
+}
+
+class _OutCancelSupplyOk extends MatchOutcome {
+  const _OutCancelSupplyOk(this.resourceName);
+  final String resourceName;
+}
+
+class _OutCancelRequestOk extends MatchOutcome {
+  const _OutCancelRequestOk(this.resourceName);
+  final String resourceName;
+}
+
+class _OutAcceptFail extends MatchOutcome {
+  const _OutAcceptFail(this.error);
+  final String error;
+}
+
+class _OutDeclineFail extends MatchOutcome {
+  const _OutDeclineFail(this.error);
+  final String error;
+}
+
+class _OutCancelFail extends MatchOutcome {
+  const _OutCancelFail(this.error);
+  final String error;
+}
+
+class _OutCommunityRequestOk extends MatchOutcome {
+  const _OutCommunityRequestOk(this.qty, this.resourceName);
+  final int qty;
+  final String resourceName;
+}
+
+class _OutCommunitySupplyOk extends MatchOutcome {
+  const _OutCommunitySupplyOk(this.qty, this.resourceName);
+  final int qty;
+  final String resourceName;
+}
+
+class _OutCommunityFail extends MatchOutcome {
+  const _OutCommunityFail(this.error);
+  final String error;
+}
 
 T whenMatchOutcome<T>(
   MatchOutcome o, {
@@ -366,8 +459,10 @@ T whenMatchOutcome<T>(
     _OutAcceptFail(:final error) => acceptFail(error),
     _OutDeclineFail(:final error) => declineFail(error),
     _OutCancelFail(:final error) => cancelFail(error),
-    _OutCommunityRequestOk(:final qty, :final resourceName) => communityRequestOk(qty, resourceName),
-    _OutCommunitySupplyOk(:final qty, :final resourceName) => communitySupplyOk(qty, resourceName),
+    _OutCommunityRequestOk(:final qty, :final resourceName) =>
+      communityRequestOk(qty, resourceName),
+    _OutCommunitySupplyOk(:final qty, :final resourceName) =>
+      communitySupplyOk(qty, resourceName),
     _OutCommunityFail(:final error) => communityFail(error),
   };
 }

@@ -12,6 +12,7 @@ class SosAlert {
   final String description;
   final double? lat;
   final double? lng;
+  final Uint8List? senderPubKey;
   final DateTime timestamp;
   SosAlert(
       {required this.eventId,
@@ -19,6 +20,7 @@ class SosAlert {
       required this.description,
       this.lat,
       this.lng,
+      this.senderPubKey,
       required this.timestamp});
 }
 
@@ -181,6 +183,7 @@ class EventStream {
               description: data?.note ?? '',
               lat: row['lat'] as double?,
               lng: row['lng'] as double?,
+              senderPubKey: row['sender_pub_key'] as Uint8List?,
               timestamp: timestamp,
             ));
           } else if (data != null) {

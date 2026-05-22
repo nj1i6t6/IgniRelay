@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -8,9 +9,8 @@ import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/crypto/signer.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
 import 'package:ignirelay_app/app/geo/village_geofence.dart';
-import 'package:ignirelay_app/app/mesh/event_manager.dart';
 import 'package:ignirelay_app/app/mesh/event_types.dart';
-import 'package:ignirelay_app/app/mesh/triage_queue.dart';
+import 'package:ignirelay_app/app/services/event_publisher_v2_facade.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 
 /// Chat service handling room management, message CRUD, and rate limiting.
@@ -21,10 +21,23 @@ class ChatService {
 
   final DatabaseHelper _dbHelper = DatabaseHelper();
   final _uuid = const Uuid();
+  EventPublisherV2Facade? _v2Facade;
 
   // ── Rate Limiting ──
   final Map<String, int> _lastSendTime = {}; // roomId → epoch ms
   static const int defaultRateLimitSeconds = 180;
+
+  /// Attach the v0.3 envelope publisher. Chat UI intentionally keeps using
+  /// ChatService as its single entry point; the service mirrors each send to
+  /// the v2 mesh path so chat can traverse the chunked BLE bridge.
+  void attachV2Facade(EventPublisherV2Facade facade) {
+    _v2Facade = facade;
+  }
+
+  @visibleForTesting
+  void clearV2FacadeForTest() {
+    _v2Facade = null;
+  }
 
   /// Check if user can send message in this room
   bool canSendMessage(String roomId, {int? rateLimitSeconds}) {
@@ -72,7 +85,10 @@ class ChatService {
       };
       final payload = Uint8List.fromList(utf8.encode(jsonEncode(payloadMap)));
       final signature = await Signer.signEvent(
-        eventId: eventId, eventType: EventType.chatMessage, ttl: 5, payload: payload,
+        eventId: eventId,
+        eventType: EventType.chatMessage,
+        ttl: 5,
+        payload: payload,
       );
 
       final loc = LocationService().currentLocation;
@@ -111,10 +127,16 @@ class ChatService {
         'hlc_timestamp': hlc.timestamp,
       });
 
-      // Enqueue for mesh broadcast
-      EventManager().queue.enqueue(
-        MeshTask(eventId, 0, payload, eventType: EventType.chatMessage),
-      );
+      // CHAT_MESSAGE is v2-only: it travels exclusively over the v0.3 chunked
+      // BLE bridge via the v2 facade. We deliberately do NOT enqueue a v1
+      // MeshTask here, and the v1 outbound/Bloom/IBLT/DB-sync queries exclude
+      // EventType.chatMessage, so chat never crosses on the legacy wire (which
+      // would otherwise double-display on the receiver). The Event_Logs row is
+      // still written above for local event-sourcing + EventStream emission.
+      final v2 = _v2Facade;
+      if (v2 != null) {
+        unawaited(_publishV2Chat(v2, payload));
+      }
 
       _lastSendTime[roomId] = DateTime.now().millisecondsSinceEpoch;
 
@@ -125,6 +147,15 @@ class ChatService {
     } catch (e) {
       debugPrint('[ChatService] Send failed: $e');
       return false;
+    }
+  }
+
+  Future<void> _publishV2Chat(
+      EventPublisherV2Facade facade, Uint8List payload) async {
+    try {
+      await facade.publishChatMessage(payload: payload);
+    } catch (e, st) {
+      debugPrint('[ChatService] v2 publishChatMessage failed: $e\n$st');
     }
   }
 
@@ -211,8 +242,7 @@ class ChatService {
   Future<void> leaveRoom(String roomId) async {
     final db = await _dbHelper.database;
     await db.delete('Chat_Rooms', where: 'room_id = ?', whereArgs: [roomId]);
-    await db
-        .delete('Chat_Messages', where: 'room_id = ?', whereArgs: [roomId]);
+    await db.delete('Chat_Messages', where: 'room_id = ?', whereArgs: [roomId]);
     // 清掉 rate-limit 紀錄，避免 Map 在頻繁進出聊天室時無限累積
     _lastSendTime.remove(roomId);
   }
@@ -223,8 +253,7 @@ class ChatService {
       final loc = LocationService().currentLocation;
       if (loc == null) return null;
 
-      final villages =
-          await VillageGeofence.query(loc.latitude, loc.longitude);
+      final villages = await VillageGeofence.query(loc.latitude, loc.longitude);
       if (villages.isEmpty) return null;
 
       final village = villages.first;

@@ -59,7 +59,8 @@ void main() {
   });
 
   group('EventStream — typed stream exposure', () {
-    test('sosAlerts / matchUpdates / hazardEvents / supplyChanges / '
+    test(
+        'sosAlerts / matchUpdates / hazardEvents / supplyChanges / '
         'chatMessages / anyEventChanges are broadcast streams', () {
       expect(stream.sosAlerts.isBroadcast, isTrue);
       expect(stream.matchUpdates.isBroadcast, isTrue);
@@ -95,6 +96,33 @@ void main() {
       expect(d!.note, 'help me');
     });
 
+    test('sosAlerts carry sender public key for self-alert filtering',
+        () async {
+      stream.start();
+      final sender = List<int>.generate(32, (i) => i + 11);
+      final eventId = 'sos-sender-${DateTime.now().microsecondsSinceEpoch}';
+      final payload = pb.RequestData(
+        resourceType: 'SOS',
+        quantityNeeded: 1,
+        note: 'remote sos',
+        mobilityMode: 'NEED_DELIVER',
+      ).writeToBuffer();
+
+      final alertFuture = stream.sosAlerts.first;
+      await MeshEventHandler().ingestVerifiedEvent(
+        eventId: eventId,
+        eventType: EventType.requestBroadcast,
+        urgency: 3,
+        payload: payload,
+        senderPubKey: sender,
+        hlcTimestamp: DateTime.now().millisecondsSinceEpoch,
+      );
+
+      final alert = await alertFuture.timeout(const Duration(seconds: 2));
+      expect(alert.eventId, eventId);
+      expect(alert.senderPubKey, sender);
+    });
+
     test('matchOffer/matchRequest/handshakeComplete go through decodeByType',
         () {
       final decoder = EventDecoder();
@@ -105,8 +133,8 @@ void main() {
         offeredQty: 1,
         matchScore: 0.9,
       ).writeToBuffer();
-      expect(
-          decoder.decodeByType(EventType.matchOffer, offer), isA<MatchOfferData>());
+      expect(decoder.decodeByType(EventType.matchOffer, offer),
+          isA<MatchOfferData>());
 
       final req = pb.MatchRequestData(
         resourceId: 'r1',
@@ -131,12 +159,14 @@ void main() {
           isA<HazardDataDecoded>());
     });
 
-    test('chatMessage is NOT covered by EventDecoder.decodeByType (parsed inline)',
+    test(
+        'chatMessage is NOT covered by EventDecoder.decodeByType (parsed inline)',
         () {
       final decoder = EventDecoder();
       // chat 不走 protobuf；EventStream 內部用 jsonDecode(utf8.decode(payload))
       // 自己處理。decodeByType 對 chat 應 return null。
-      expect(decoder.decodeByType(EventType.chatMessage, const <int>[]), isNull);
+      expect(
+          decoder.decodeByType(EventType.chatMessage, const <int>[]), isNull);
     });
   });
 

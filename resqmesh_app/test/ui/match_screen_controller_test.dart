@@ -7,6 +7,7 @@
 //     + EventPublisher 連網路徑，留 widget integration / 實機測。
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -46,10 +47,13 @@ void main() {
     databaseFactory = databaseFactoryFfiNoIsolate;
     DatabaseHelper.testDatabasePathOverride = inMemoryDatabasePath;
     SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+    await IdentityManager().initialize();
   });
 
   setUp(() async {
     await DatabaseHelper().resetForTest();
+    EventManager().resetRateLimit();
   });
 
   group('MatchScreenController', () {
@@ -66,6 +70,146 @@ void main() {
       expect(c.error, isNull);
       expect(c.gpsWarning, isNull);
       expect(c.myPubKey, isNull);
+    });
+
+    test(
+        'community action on remote supply creates local request and MATCH_REQUEST negotiation',
+        () async {
+      final c = _makeController();
+      addTearDown(c.dispose);
+
+      const remoteProviderKey = <int>[
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+      ];
+      const item = CommunityItem(
+        eventId: 'remote-supply-event',
+        isSupply: true,
+        resourceId: 'remote-resource-id',
+        senderPubKey: remoteProviderKey,
+        resourceType: 'WATER/BOTTLED',
+        quantity: 5,
+        description: '',
+        urgency: 1,
+        identityLevel: 0,
+        timestamp: 1,
+      );
+
+      await c.communityAction(
+        item,
+        2,
+        resourceName: 'water',
+        communityNote: 'need water',
+      );
+
+      final rows =
+          await (await DatabaseHelper().database).query('Match_Negotiations');
+      expect(rows, hasLength(1));
+      final neg = rows.single;
+      expect(neg['resource_id'], 'remote-resource-id');
+      expect(neg['initiator_role'], 'REQUESTER');
+      expect(neg['status'], 'PENDING');
+      expect((neg['requested_qty'] as num).toDouble(), 2);
+    });
+
+    test(
+        'community action on remote request creates local supply and MATCH_OFFER negotiation',
+        () async {
+      final c = _makeController();
+      addTearDown(c.dispose);
+
+      const remoteRequesterKey = <int>[
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+      ];
+      const item = CommunityItem(
+        eventId: 'remote-request-event',
+        isSupply: false,
+        requestId: 'remote-request-id',
+        senderPubKey: remoteRequesterKey,
+        resourceType: 'WATER/BOTTLED',
+        quantity: 3,
+        description: '',
+        urgency: 1,
+        identityLevel: 0,
+        timestamp: 1,
+      );
+
+      await c.communityAction(
+        item,
+        2,
+        resourceName: 'water',
+        communityNote: 'can help',
+      );
+
+      final rows =
+          await (await DatabaseHelper().database).query('Match_Negotiations');
+      expect(rows, hasLength(1));
+      final neg = rows.single;
+      expect(neg['request_id'], 'remote-request-id');
+      expect(neg['initiator_role'], 'PROVIDER');
+      expect(neg['status'], 'PENDING');
+      expect((neg['offered_qty'] as num).toDouble(), 2);
     });
   });
 
@@ -105,8 +249,10 @@ void main() {
     });
 
     test('帶 qty + resourceName 的 community outcome 分支', () {
-      expect(label(const MatchOutcome.communityRequestOk(3, '水')), 'commReq:3:水');
-      expect(label(const MatchOutcome.communitySupplyOk(5, '米')), 'commSup:5:米');
+      expect(
+          label(const MatchOutcome.communityRequestOk(3, '水')), 'commReq:3:水');
+      expect(
+          label(const MatchOutcome.communitySupplyOk(5, '米')), 'commSup:5:米');
       expect(label(const MatchOutcome.communityFail('x')), 'commFail:x');
     });
   });

@@ -6,7 +6,6 @@ import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:provider/provider.dart';
 import 'package:ignirelay_app/app/controllers/event_stream.dart';
 import 'package:ignirelay_app/app/services/event_decoder.dart';
-import 'package:ignirelay_app/app/emergency/emergency_mode_controller.dart';
 import 'package:ignirelay_app/ui/screens/chat/chat_list_screen.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/ui/theme/igni_tokens.dart';
@@ -41,7 +40,6 @@ class _MainShellState extends State<MainShell> {
   // 保留插入順序，所以超過上限時直接 remove first（最早插入）即可 FIFO。
   final Set<String> _alertedEventIds = <String>{};
   static const int _kAlertedIdsCap = 256;
-  Timer? _nearbyRedClear;
   bool _eventStreamSubscribed = false;
   late final IdentityManager _identity = context.read<IdentityManager>();
 
@@ -79,7 +77,6 @@ class _MainShellState extends State<MainShell> {
   void dispose() {
     _sosSub?.cancel();
     _matchSub?.cancel();
-    _nearbyRedClear?.cancel();
     super.dispose();
   }
 
@@ -90,19 +87,37 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _onSosAlert(SosAlert alert) {
+    unawaited(_handleSosAlert(alert));
+  }
+
+  Future<void> _handleSosAlert(SosAlert alert) async {
     if (!mounted) return;
     if (_alertedEventIds.contains(alert.eventId)) return;
+    if (await _isSelfAuthored(alert.senderPubKey)) return;
     _markAlerted(alert.eventId);
 
     var desc = alert.description;
     if (desc.length > 80) desc = '${desc.substring(0, 80)}...';
 
     if (alert.urgency >= 3) {
-      _triggerNearbyRed();
+      // 0d Android-pair testing: keep the SOS dialog but do not force the
+      // app-wide emergency theme. The forced theme made it hard to tell
+      // whether BLE/data-flow bugs were fixed, and self-authored SOS echo
+      // previously looked like a random dark-mode switch.
       _showSosRedAlert(desc);
     } else if (alert.urgency >= 2) {
       _showSosYellowSnack(desc);
     }
+  }
+
+  Future<bool> _isSelfAuthored(List<int>? senderPubKey) async {
+    if (senderPubKey == null || senderPubKey.isEmpty) return false;
+    final myPubKey = await _identity.getPublicKeyBytes();
+    if (senderPubKey.length != myPubKey.length) return false;
+    for (var i = 0; i < myPubKey.length; i++) {
+      if (senderPubKey[i] != myPubKey[i]) return false;
+    }
+    return true;
   }
 
   Future<void> _onMatchUpdate(MatchUpdate update) async {
@@ -140,15 +155,6 @@ class _MainShellState extends State<MainShell> {
   }
 
   /// 觸發附近紅色事件的急難模式；2 分鐘後自動解除。
-  void _triggerNearbyRed() {
-    context.read<EmergencyModeController>().set(EmergencyTrigger.nearbyRed, true);
-    _nearbyRedClear?.cancel();
-    _nearbyRedClear = Timer(const Duration(minutes: 2), () {
-      context.read<EmergencyModeController>()
-          .set(EmergencyTrigger.nearbyRed, false);
-    });
-  }
-
   void _showSosYellowSnack(String desc) {
     final p = context.igni;
     ScaffoldMessenger.of(context).showSnackBar(

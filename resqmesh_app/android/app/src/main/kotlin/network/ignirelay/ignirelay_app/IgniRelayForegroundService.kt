@@ -1450,11 +1450,18 @@ class IgniRelayForegroundService : Service() {
     // `notify_push_error` event — never silently truncated.
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** Single-notify ATT cap for a peer. Falls back to the conservative MTU=185
-     *  baseline when the peer's MTU has not been negotiated yet. */
+    /** Single-notify ATT cap for a peer.
+     *
+     * Android also enforces the BLE attribute-value ceiling. Even when the
+     * negotiated ATT payload budget is larger than the IBLT response, notifying
+     * 513 B can still throw `IllegalArgumentException: notification should not
+     * be longer than max length of an attribute value`. Clamp both limits so
+     * callers fall back before entering the platform stack.
+     */
     private fun maxSingleNotifyBytes(deviceAddress: String): Int {
         val mtu = deviceMtuMap[deviceAddress] ?: defaultMtuFallback
-        return mtu - IgniRelayConstants.ATT_HEADER_SIZE
+        val attPayloadCap = mtu - IgniRelayConstants.ATT_HEADER_SIZE
+        return minOf(attPayloadCap, 512)
     }
 
     /**
@@ -1486,13 +1493,29 @@ class IgniRelayForegroundService : Service() {
             }
             return false
         }
-        val result: Any = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            gattServer?.notifyCharacteristicChanged(device, char, false, payload) ?: -1
-        } else {
-            @Suppress("DEPRECATION")
-            char.value = payload
-            @Suppress("DEPRECATION")
-            gattServer?.notifyCharacteristicChanged(device, char, false) ?: false
+        val result: Any = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gattServer?.notifyCharacteristicChanged(device, char, false, payload) ?: -1
+            } else {
+                @Suppress("DEPRECATION")
+                char.value = payload
+                @Suppress("DEPRECATION")
+                gattServer?.notifyCharacteristicChanged(device, char, false) ?: false
+            }
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "$kind: platform rejected notify (${payload.size}B, cap=$cap) for ${device.address}: ${e.message}")
+            mainHandler.post {
+                MainActivity.sharedEventSink?.success(mapOf(
+                    "type" to "notify_push_error",
+                    "device" to device.address,
+                    "error" to "platform-rejected-payload",
+                    "kind" to kind,
+                    "size" to payload.size,
+                    "cap" to cap,
+                    "message" to (e.message ?: ""),
+                ))
+            }
+            return false
         }
         Log.d(TAG, "$kind: notify → ${device.address} size=${payload.size} cap=$cap result=$result")
         return result == 0 || result == true

@@ -105,6 +105,11 @@
 //       priority-hinted wrapper for direct callers that already know.)
 //     - EventPublisher.publishHazard             → publishHazardMarker
 //     - EventPublisher.publishChatMessage        → publishChatMessage
+//     - ChatService.sendMessage                  → publishChatMessage
+//       (the production chat UI calls ChatService directly, bypassing
+//       EventPublisher, so ChatService also attaches this facade at
+//       startup. Without that mirror path, local chat rows never traverse
+//       the v0.3 chunked BLE bridge.)
 //
 //   Still on legacy path only (NOT 0d-eligible; legacy EventPublisher → v0.2):
 //     - SUPPLY_REQUEST / SUPPLY_OFFER       (existing match/supply flow)
@@ -290,8 +295,7 @@ class EventPublisherV2Facade {
         _bridge = bridge,
         _now = now ?? DateTime.now,
         _db = db,
-        _newEnvelopeId =
-            envelopeIdFactory ?? MessagePublisherV2.newEnvelopeId {
+        _newEnvelopeId = envelopeIdFactory ?? MessagePublisherV2.newEnvelopeId {
     _registrySub = _registry.changes.listen(_onPeerStateChange);
     _hydration = _hydrateFromOutbox();
   }
@@ -576,20 +580,18 @@ class EventPublisherV2Facade {
       for (final row in rows) {
         final enqueuedAtMs = row['enqueued_at_ms'] as int;
         final expiresAtMs = row['expires_at_hlc_ms'] as int;
-        final enqueuedAt =
-            DateTime.fromMillisecondsSinceEpoch(enqueuedAtMs);
+        final enqueuedAt = DateTime.fromMillisecondsSinceEpoch(enqueuedAtMs);
         // Drop stale-on-load entries up front so we don't hydrate
         // already-expired rows just to drop them on the next drain.
         if (now.difference(enqueuedAt) > kPendingEntryMaxAge ||
             expiresAtMs < now.millisecondsSinceEpoch) {
           final id = row['id'] as int;
-          await (await db.database).delete('Outbox_V2',
-              where: 'id = ?', whereArgs: [id]);
+          await (await db.database)
+              .delete('Outbox_V2', where: 'id = ?', whereArgs: [id]);
           continue;
         }
         final entry = _PendingPublish(
-          envelopeId:
-              Uint8List.fromList(row['envelope_id'] as List<int>),
+          envelopeId: Uint8List.fromList(row['envelope_id'] as List<int>),
           eventType: row['event_type'] as int,
           priority: row['priority'] as int,
           payload: Uint8List.fromList(row['payload'] as List<int>),
@@ -679,8 +681,8 @@ class EventPublisherV2Facade {
       while (_pending.isNotEmpty) {
         final head = _pending.first;
         final tooOld = now.difference(head.enqueuedAt) > kPendingEntryMaxAge;
-        final ttlExpired = head.expiresAtHlc.msSinceEpoch <
-            now.millisecondsSinceEpoch;
+        final ttlExpired =
+            head.expiresAtHlc.msSinceEpoch < now.millisecondsSinceEpoch;
         if (tooOld || ttlExpired) {
           final dropped = _pending.removeFirst();
           unawaited(_deleteOutboxRow(dropped));
