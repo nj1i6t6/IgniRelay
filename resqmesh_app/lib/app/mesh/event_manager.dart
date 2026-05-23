@@ -169,7 +169,7 @@ class EventManager {
     final payload = Uint8List.fromList(requestData.writeToBuffer());
 
     final signature = await Signer.signEvent(
-      eventId: eventId, eventType: EventType.requestBroadcast, ttl: 10, payload: payload,
+      eventId: eventId, eventType: EventType.requestBroadcast, payload: payload,
     );
 
     final db = await _db.database;
@@ -227,7 +227,7 @@ class EventManager {
     if (lng != null) resourceData.lng = lng;
     final payload = Uint8List.fromList(resourceData.writeToBuffer());
     final signature = await Signer.signEvent(
-      eventId: eventId, eventType: EventType.resourceRegister, ttl: 10, payload: payload,
+      eventId: eventId, eventType: EventType.resourceRegister, payload: payload,
     );
 
     final db = await _db.database;
@@ -301,7 +301,7 @@ class EventManager {
 
     final payload = Uint8List.fromList(requestData.writeToBuffer());
     final signature = await Signer.signEvent(
-      eventId: eventId, eventType: EventType.requestBroadcast, ttl: 10, payload: payload,
+      eventId: eventId, eventType: EventType.requestBroadcast, payload: payload,
     );
 
     final db = await _db.database;
@@ -383,7 +383,7 @@ class EventManager {
     };
     final payload = Uint8List.fromList(utf8.encode(jsonEncode(payloadMap)));
     final signature = await Signer.signEvent(
-      eventId: eventId, eventType: EventType.chatMessage, ttl: 5, payload: payload,
+      eventId: eventId, eventType: EventType.chatMessage, payload: payload,
     );
 
     final db = await _db.database;
@@ -761,7 +761,7 @@ class EventManager {
     final hlc = HLC.now();
     final pubKeyBytes = await _identity.getPublicKeyBytes();
     final signature = await Signer.signEvent(
-      eventId: cancelId, eventType: EventType.matchCancel, ttl: 8, payload: cancelPayload,
+      eventId: cancelId, eventType: EventType.matchCancel, payload: cancelPayload,
     );
     final pos = LocationService().currentLocation;
     final cLat = pos?.latitude;
@@ -810,7 +810,7 @@ class EventManager {
     final hlc = HLC.now();
     final pubKeyBytes = await _identity.getPublicKeyBytes();
     final signature = await Signer.signEvent(
-      eventId: cancelId, eventType: EventType.matchCancel, ttl: 8, payload: cancelPayload,
+      eventId: cancelId, eventType: EventType.matchCancel, payload: cancelPayload,
     );
     final pos = LocationService().currentLocation;
     final cLat = pos?.latitude;
@@ -858,7 +858,7 @@ class EventManager {
     final pubKey = await _identity.getPublicKeyBytes();
     final idLevel = _identity.getIdentityLevel();
     final sig = await Signer.signEvent(
-      eventId: eventId, eventType: eventType, ttl: ttl, payload: payload,
+      eventId: eventId, eventType: eventType, payload: payload,
     );
 
     // 取得座標：caller 顯式提供 > LocationService > null（無座標，跳過地理圍欄）

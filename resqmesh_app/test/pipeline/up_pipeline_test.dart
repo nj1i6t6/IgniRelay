@@ -24,6 +24,19 @@ int _seq = 0;
 String _uid(String prefix) =>
     '$prefix-${DateTime.now().microsecondsSinceEpoch}-${++_seq}';
 
+/// Mirrors MeshEventHandler._crc32EventId so tests can target the IBLT
+/// fast-path with the exact key hash a real peer would request.
+int _crc32(String s) {
+  int crc = 0xFFFFFFFF;
+  for (final b in s.codeUnits) {
+    crc ^= b;
+    for (int j = 0; j < 8; j++) {
+      crc = (crc & 1) == 1 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
+    }
+  }
+  return crc ^ 0xFFFFFFFF;
+}
+
 /// 取得本機公鑰 bytes（用於測試簽章）
 Future<List<int>> _getLocalPubKey() async {
   final keyPair = await IdentityManager().getOrCreateKeyPair();
@@ -42,7 +55,6 @@ Future<Uint8List> _makeSignedWire(
   final signature = await Signer.signEvent(
     eventId: id,
     eventType: eventType,
-    ttl: ttl,
     payload: payload,
   );
   final pubKey = await _getLocalPubKey();
@@ -204,7 +216,6 @@ void main() {
       final signature = await Signer.signEvent(
         eventId: eventId,
         eventType: 4,
-        ttl: 10,
         payload: payload,
       );
 
@@ -249,7 +260,6 @@ void main() {
       final signature = await Signer.signEvent(
         eventId: id,
         eventType: 0,
-        ttl: 10,
         payload: originalPayload,
       );
       final pubKey = await _getLocalPubKey();
@@ -265,6 +275,43 @@ void main() {
       final before = handler.receivedEventCount;
       await handler.handleIncomingData(tamperedWire, 'device-tamper');
       expect(handler.receivedEventCount, equals(before));
+    });
+
+    test('ttl excluded from signature: wire ttl ≠ sign-time ttl still verifies '
+        '(match/negotiation v1 cross-device fix)', () async {
+      // Regression for the 0d two-phone finding: match/negotiation events were
+      // signed with ttl=5/8 but the v1 transmit path normalizes the wire ttl to
+      // 10 (encodeWirePayload default) and relays decrement it per hop. While
+      // ttl was part of the signed canonical bytes this flipped the signature →
+      // RECV REJECT(sig-fail) → match never reached the peer (Match_Negotiations
+      // stayed 0). ttl is now excluded from the signature, so a packet whose
+      // wire ttl differs from anything must still verify.
+      final id = _uid('up-ttl-indep');
+      final payload = [7, 7, 7];
+      final pubKey = await _getLocalPubKey();
+      final signature = await Signer.signEvent(
+        eventId: id,
+        eventType: 2, // matchOffer — historically signed with ttl=5
+        payload: payload,
+      );
+      final wire = Uint8List.fromList(MeshEventHandler.encodeWirePayload(
+        id,
+        payload,
+        urgency: 1,
+        eventType: 2,
+        ttl: 10, // deliberately != any sign-time ttl
+        signature: signature.toList(),
+        senderPubKey: pubKey,
+      ));
+
+      final before = handler.receivedEventCount;
+      await handler.handleIncomingData(wire, 'device-ttl');
+      expect(handler.receivedEventCount, equals(before + 1));
+      final db = await DatabaseHelper().database;
+      final rows = await db
+          .query('Event_Logs', where: 'event_id = ?', whereArgs: [id]);
+      expect(rows.length, equals(1));
+      expect(rows.first['event_type'], equals(2));
     });
   });
 
@@ -304,6 +351,82 @@ void main() {
 
       // Legacy 格式無簽章 → 被拒絕
       expect(handler.receivedEventCount, equals(before));
+    });
+  });
+
+  group('Up Pipeline — TTL hop-limit', () {
+    test('received event stored with ttl-1, served by IBLT with that ttl',
+        () async {
+      final id = _uid('ttl-dec');
+      final payload = [1, 2, 3];
+      final pubKey = await _getLocalPubKey();
+      final signature =
+          await Signer.signEvent(eventId: id, eventType: 0, payload: payload);
+      // wire ttl=2 → 收件端消耗一跳 → 落庫 ttl=1
+      final wire = Uint8List.fromList(MeshEventHandler.encodeWirePayload(
+        id,
+        payload,
+        urgency: 0,
+        eventType: 0,
+        ttl: 2,
+        signature: signature.toList(),
+        senderPubKey: pubKey,
+      ));
+      await handler.handleIncomingData(wire, 'device-ttl2');
+
+      final db = await DatabaseHelper().database;
+      final rows = await db.query('Event_Logs',
+          columns: ['ttl'], where: 'event_id = ?', whereArgs: [id]);
+      expect(rows.length, equals(1));
+      expect(rows.first['ttl'], equals(1)); // 2 → 1，未被重設成 10/9
+
+      // 出件路徑（IBLT fast-path）必須帶 stored ttl（=1），不可回到預設 10。
+      final served = await handler.getEventsByKeyHashes({_crc32(id)});
+      expect(served.length, equals(1));
+      expect(served.first['ttl'], equals(1));
+    });
+
+    test('received event with ttl<=0 is dropped (no DB row, not revived to 9)',
+        () async {
+      final id = _uid('ttl-zero');
+      final payload = [4, 5, 6];
+      final pubKey = await _getLocalPubKey();
+      final signature =
+          await Signer.signEvent(eventId: id, eventType: 0, payload: payload);
+      final wire = Uint8List.fromList(MeshEventHandler.encodeWirePayload(
+        id,
+        payload,
+        urgency: 0,
+        eventType: 0,
+        ttl: 0, // 已耗盡 hop budget
+        signature: signature.toList(),
+        senderPubKey: pubKey,
+      ));
+      final before = handler.receivedEventCount;
+      await handler.handleIncomingData(wire, 'device-ttl0');
+
+      expect(handler.receivedEventCount, equals(before)); // 未處理
+      final db = await DatabaseHelper().database;
+      final rows =
+          await db.query('Event_Logs', where: 'event_id = ?', whereArgs: [id]);
+      expect(rows, isEmpty); // drop，不落庫、不復活成 9
+    });
+
+    test('IBLT fast-path (getEventsByKeyHashes) excludes ttl<=0 events',
+        () async {
+      final live = _uid('ttl-live');
+      final dead = _uid('ttl-dead');
+      // ingestVerifiedEvent 存 ttl-1：ttl:5 → 4（live），ttl:1 → 0（dead）。
+      await handler.ingestVerifiedEvent(
+          eventId: live, eventType: 0, urgency: 0, payload: const [1], ttl: 5);
+      await handler.ingestVerifiedEvent(
+          eventId: dead, eventType: 0, urgency: 0, payload: const [1], ttl: 1);
+
+      final served =
+          await handler.getEventsByKeyHashes({_crc32(live), _crc32(dead)});
+      final ids = served.map((e) => e['event_id']).toSet();
+      expect(ids, contains(live));
+      expect(ids, isNot(contains(dead)));
     });
   });
 }

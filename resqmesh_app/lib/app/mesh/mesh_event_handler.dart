@@ -162,13 +162,21 @@ class MeshEventHandler {
       final verified = await Signer.verifyEvent(
         eventId: evtId,
         eventType: decoded.eventType,
-        ttl: decoded.ttl,
         payload: decoded.payload,
         signatureBytes: decoded.signature!,
         publicKeyBytes: decoded.senderPubKey!,
       );
       if (!verified) {
         _dlog('RECV REJECT(sig-fail) ${evtId.substring(0, 8)}..');
+        return;
+      }
+
+      // ── Hop-limit（TTL）─────────────────────────────────────────
+      // ttl<=0 代表已耗盡 hop budget：直接 drop，不落庫、不投影、不轉發。
+      // 送出端（DB-sync / outbox / IBLT fast-path）也會過濾 ttl<=0，正常不會
+      // 收到；此處為防呆，並避免「ttl 用盡後又被存活」。
+      if (decoded.ttl <= 0) {
+        _dlog('RECV TTL_EXPIRED ${evtId.substring(0, 8)}.. ttl=${decoded.ttl}');
         return;
       }
 
@@ -290,7 +298,10 @@ class MeshEventHandler {
         'hlc_timestamp':
             hlcTimestamp > 0 ? hlcTimestamp : DateTime.now().millisecondsSinceEpoch,
         'hlc_counter': hlcCounter,
-        'ttl': ttl > 0 ? ttl - 1 : 9,
+        // ttl-1（消耗一跳）。收件端已在 handleIncomingData drop 掉 ttl<=0，
+        // 故此處 ttl 必 >0；保留 :0 floor 給 v2 投影路徑（maxHops 可能為 0），
+        // 不再復活成 9。
+        'ttl': ttl > 0 ? ttl - 1 : 0,
         'received_lat': lat,
         'received_lng': lng,
         'origin_lat': originLat,
@@ -784,9 +795,12 @@ class MeshEventHandler {
         'received_lng',
         'origin_lat',
         'origin_lng',
+        'ttl',
       ],
       // 排除 v2 投影列（無 v1 簽章，不可被 IBLT fast-path 當原始事件送出）。
-      where: 'hlc_timestamp > ? AND event_type != ${EventType.chatMessage} '
+      // 排除 ttl<=0：已耗盡 hop budget 的事件不再被 fast-path 當原始事件送出。
+      where: 'hlc_timestamp > ? AND ttl > 0 '
+          'AND event_type != ${EventType.chatMessage} '
           "AND event_id NOT LIKE '$v2ProjectionIdPrefix%'",
       whereArgs: [cutoff24h],
       orderBy: 'urgency DESC, hlc_timestamp DESC',

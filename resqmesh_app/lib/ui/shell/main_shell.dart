@@ -41,6 +41,8 @@ class _MainShellState extends State<MainShell> {
   final Set<String> _alertedEventIds = <String>{};
   static const int _kAlertedIdsCap = 256;
   bool _eventStreamSubscribed = false;
+  // 頂部提示（MaterialBanner）的自動關閉計時器。
+  Timer? _bannerTimer;
   late final IdentityManager _identity = context.read<IdentityManager>();
 
   /// 記錄一個 event id 已 alert 過；若超過上限則丟掉最早的，避免無界成長。
@@ -77,6 +79,7 @@ class _MainShellState extends State<MainShell> {
   void dispose() {
     _sosSub?.cancel();
     _matchSub?.cancel();
+    _bannerTimer?.cancel();
     super.dispose();
   }
 
@@ -106,7 +109,7 @@ class _MainShellState extends State<MainShell> {
       // previously looked like a random dark-mode switch.
       _showSosRedAlert(desc);
     } else if (alert.urgency >= 2) {
-      _showSosYellowSnack(desc);
+      _showSosYellowAlert(desc);
     }
   }
 
@@ -151,45 +154,74 @@ class _MainShellState extends State<MainShell> {
     if (!isMe) return;
     _markAlerted(update.eventId);
     if (!mounted) return;
-    _showMatchSnack(update.eventType);
+    _showMatchAlert(update.eventType);
   }
 
-  /// 觸發附近紅色事件的急難模式；2 分鐘後自動解除。
-  void _showSosYellowSnack(String desc) {
-    final p = context.igni;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          context.l10n.mainTabSosYellowSnack(desc),
-          style: IgniTypography.bodyMedium(Colors.white),
-        ),
-        backgroundColor: p.warn,
-        duration: const Duration(seconds: 6),
-        action: SnackBarAction(
-          label: context.l10n.mainTabSosYellowAction,
-          textColor: Colors.black,
-          onPressed: () => setState(() => _index = 0),
-        ),
+  /// 在畫面「頂部」顯示提示（MaterialBanner），約 [seconds] 秒後自動關閉，
+  /// 使用者也可點 × 立即關。
+  ///
+  /// 0d 實測發現：原本 SOS-yellow / match 用底部 SnackBar，會蓋住聊天室輸入框
+  /// 與物資需求發布按鈕（兩者都在畫面底部），干擾後續操作。改用頂部 banner
+  /// 後不會覆蓋底部輸入/送出區。
+  void _showTopAlert({
+    required String message,
+    required Color background,
+    required String actionLabel,
+    required VoidCallback onAction,
+    int seconds = 6,
+  }) {
+    final messenger = ScaffoldMessenger.of(context);
+    // 不堆疊：先清掉現有 banner，避免多則提示接力佔住頂部。
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        backgroundColor: background,
+        content: Text(message, style: IgniTypography.bodyMedium(Colors.white)),
+        actions: [
+          TextButton(
+            onPressed: () {
+              messenger.hideCurrentMaterialBanner();
+              onAction();
+            },
+            child: Text(
+              actionLabel,
+              style: IgniTypography.bodyMedium(Colors.white),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.white),
+            onPressed: messenger.hideCurrentMaterialBanner,
+          ),
+        ],
       ),
+    );
+    _bannerTimer?.cancel();
+    _bannerTimer = Timer(Duration(seconds: seconds), () {
+      if (mounted) ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+    });
+  }
+
+  void _showSosYellowAlert(String desc) {
+    final p = context.igni;
+    _showTopAlert(
+      message: context.l10n.mainTabSosYellowSnack(desc),
+      background: p.warn,
+      actionLabel: context.l10n.mainTabSosYellowAction,
+      onAction: () => setState(() => _index = 0),
     );
   }
 
-  void _showMatchSnack(int eventType) {
+  void _showMatchAlert(int eventType) {
     final p = context.igni;
     final msg = eventType == 2
         ? context.l10n.mainTabMatchNotifProvider
         : context.l10n.mainTabMatchNotifRequester;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: IgniTypography.bodyMedium(Colors.white)),
-        backgroundColor: p.ok,
-        duration: const Duration(seconds: 8),
-        action: SnackBarAction(
-          label: context.l10n.mainTabMatchNotifAction,
-          textColor: Colors.white,
-          onPressed: () => setState(() => _index = 2),
-        ),
-      ),
+    _showTopAlert(
+      message: msg,
+      background: p.ok,
+      actionLabel: context.l10n.mainTabMatchNotifAction,
+      onAction: () => setState(() => _index = 2),
+      seconds: 8,
     );
   }
 

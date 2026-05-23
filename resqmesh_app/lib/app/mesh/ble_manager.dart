@@ -393,6 +393,9 @@ class BleManager {
               payload.toList(),
               urgency: (evt['urgency'] as int?) ?? 0,
               eventType: (evt['event_type'] as int?) ?? 0,
+              // 保留 stored ttl（getEventsByKeyHashes 已過濾 ttl<=0），不要回到
+              // encodeWirePayload 預設 10。
+              ttl: (evt['ttl'] as int?) ?? 10,
               signature: (evt['signature'] as Uint8List?)?.toList(),
               senderPubKey: (evt['sender_pub_key'] as Uint8List?)?.toList(),
               hlcTimestamp: (evt['hlc_timestamp'] as int?) ?? 0,
@@ -532,15 +535,18 @@ class BleManager {
         if (remoteEventIds.contains(task.eventId)) continue;
 
         try {
-          final wireData = MeshEventHandler.encodeWirePayload(
-            task.eventId,
-            task.payload,
-            urgency: task.urgency,
-            eventType: task.eventType,
-          );
+          // The MeshTask carries only the raw payload (no signature /
+          // senderPubKey), so sending it directly makes the receiver reject it
+          // as no-sig. Rebuild the fully-signed wire packet from Event_Logs
+          // (same shape as the DB-sync path below).
+          final wireData = await _signedWireForEventId(task.eventId);
+          if (wireData == null) {
+            // Event_Logs row gone (cancelled / expired) — drop the task.
+            continue;
+          }
           final success = await NativeBridge.nordicWriteEvent(
             deviceId,
-            Uint8List.fromList(wireData),
+            wireData,
           );
           if (_isCancelled(deviceId)) { queue.enqueue(task); return; }
           if (success) {
@@ -579,11 +585,14 @@ class BleManager {
           'received_lng',
           'origin_lat',
           'origin_lng',
+          'ttl',
         ],
         // 排除 v2 投影列：它們無 v1 簽章，送出去對端只會拒收。
         // 排除 CHAT_MESSAGE：聊天已遷移成 v2-only（走 chunked BLE bridge），
         // 不再經 v1 wire，避免收件端 v1+v2 雙顯。
-        where: 'hlc_timestamp > ? AND event_id NOT LIKE ? AND event_type != ?',
+        // 排除 ttl<=0：已耗盡 hop budget 的事件不再轉發（hop-limit 收尾）。
+        where:
+            'hlc_timestamp > ? AND ttl > 0 AND event_id NOT LIKE ? AND event_type != ?',
         whereArgs: [
           cutoff24h,
           '${MeshEventHandler.v2ProjectionIdPrefix}%',
@@ -614,6 +623,9 @@ class BleManager {
               payload.toList(),
               urgency: (evt['urgency'] as int?) ?? 0,
               eventType: (evt['event_type'] as int?) ?? 0,
+              // 保留 stored ttl（已逐跳遞減），不要回到 encodeWirePayload 預設 10，
+              // 否則中繼會把 hop budget 灌滿、傳播比預期更遠。
+              ttl: (evt['ttl'] as int?) ?? 10,
               signature: (evt['signature'] as Uint8List?)?.toList(),
               senderPubKey:
                   (evt['sender_pub_key'] as Uint8List?)?.toList(),
@@ -680,6 +692,58 @@ class BleManager {
     }
   }
 
+  /// 從 Event_Logs 以 [eventId] 重建「帶簽章」的 v1 wire 封包。
+  ///
+  /// TriageQueue 的 MeshTask 只帶原始 payload（沒有 signature / senderPubKey），
+  /// 即時送出若直接送原始 payload，收件端會以 no-sig 拒收。即時路徑因此必須回讀
+  /// 已簽章的 Event_Logs row 重新編碼。row 不存在（已取消／過期）時回傳 null。
+  Future<Uint8List?> _signedWireForEventId(String eventId) async {
+    final db = await DatabaseHelper().database;
+    final rows = await db.query(
+      'Event_Logs',
+      columns: [
+        'event_id',
+        'payload',
+        'signature',
+        'urgency',
+        'event_type',
+        'sender_pub_key',
+        'hlc_timestamp',
+        'hlc_counter',
+        'received_lat',
+        'received_lng',
+        'origin_lat',
+        'origin_lng',
+        'ttl',
+      ],
+      where: 'event_id = ?',
+      whereArgs: [eventId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final evt = rows.first;
+    final payload = evt['payload'] as Uint8List?;
+    if (payload == null) return null;
+    final ttl = (evt['ttl'] as int?) ?? 10;
+    if (ttl <= 0) return null; // 已耗盡 hop budget，不再送出（hop-limit 收尾）
+    final wireData = MeshEventHandler.encodeWirePayload(
+      eventId,
+      payload.toList(),
+      urgency: (evt['urgency'] as int?) ?? 0,
+      eventType: (evt['event_type'] as int?) ?? 0,
+      signature: (evt['signature'] as Uint8List?)?.toList(),
+      senderPubKey: (evt['sender_pub_key'] as Uint8List?)?.toList(),
+      hlcTimestamp: (evt['hlc_timestamp'] as int?) ?? 0,
+      hlcCounter: (evt['hlc_counter'] as int?) ?? 0,
+      ttl: ttl,
+      lat: (evt['received_lat'] as num?)?.toDouble(),
+      lng: (evt['received_lng'] as num?)?.toDouble(),
+      originLat: (evt['origin_lat'] as num?)?.toDouble(),
+      originLng: (evt['origin_lng'] as num?)?.toDouble(),
+    );
+    return Uint8List.fromList(wireData);
+  }
+
   /// Bug 7: 建構事件 outbox（最近 24h 的事件，供 Notify 反向推送）
   Future<List<Uint8List>> _buildEventOutbox() async {
     final db = await DatabaseHelper().database;
@@ -700,10 +764,13 @@ class BleManager {
         'received_lng',
         'origin_lat',
         'origin_lng',
+        'ttl',
       ],
       // 排除 v2 投影列：它們無 v1 簽章，不可進 native Notify outbox。
       // 排除 CHAT_MESSAGE：聊天已遷移成 v2-only，不再經 v1 wire。
-      where: 'hlc_timestamp > ? AND event_id NOT LIKE ? AND event_type != ?',
+      // 排除 ttl<=0：已耗盡 hop budget 的事件不再轉發（hop-limit 收尾）。
+      where:
+          'hlc_timestamp > ? AND ttl > 0 AND event_id NOT LIKE ? AND event_type != ?',
       whereArgs: [
         cutoff24h,
         '${MeshEventHandler.v2ProjectionIdPrefix}%',
@@ -723,6 +790,8 @@ class BleManager {
           payload.toList(),
           urgency: (evt['urgency'] as int?) ?? 0,
           eventType: (evt['event_type'] as int?) ?? 0,
+          // 保留 stored ttl（已逐跳遞減），不要回到 encodeWirePayload 預設 10。
+          ttl: (evt['ttl'] as int?) ?? 10,
           signature: (evt['signature'] as Uint8List?)?.toList(),
           senderPubKey: (evt['sender_pub_key'] as Uint8List?)?.toList(),
           hlcTimestamp: (evt['hlc_timestamp'] as int?) ?? 0,

@@ -87,7 +87,6 @@ class ChatService {
       final signature = await Signer.signEvent(
         eventId: eventId,
         eventType: EventType.chatMessage,
-        ttl: 5,
         payload: payload,
       );
 
