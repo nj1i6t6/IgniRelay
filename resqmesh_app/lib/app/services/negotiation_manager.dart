@@ -480,12 +480,97 @@ class NegotiationManager {
     try {
       final data = pb.HandshakeCompleteData.fromBuffer(payload);
       if (data.negotiationId.isEmpty) return;
+
+      // 第三方節點視角 (bystander):本機沒對應 Match_Negotiations,或仍是
+      // PENDING (錯過 matchAccept 事件)。直接寫一筆 COMPLETED + reconcile,
+      // 讓本機 Materials_State / Requests_State 正確核銷,避免社區頁仍顯示
+      // 已交接物資、別人重複媒合。
+      //
+      // 條件:HandshakeCompleteData 必須帶 resource_id + request_id
+      // (schema_version >= 1)。舊 client 沒帶 → 退回原本 completeHandshake 路徑。
+      //
+      // 安全:sender 必須是 payload 聲稱的 provider 或 requester。比照
+      // [completeHandshake] 的 `_isParticipant` 檢查,避免任意節點偽造核銷。
+      if (data.resourceId.isNotEmpty && data.requestId.isNotEmpty) {
+        final senderIsClaimedParticipant =
+            bytesEqual(senderPubKey, data.providerPubKey) ||
+                bytesEqual(senderPubKey, data.requesterPubKey);
+        if (!senderIsClaimedParticipant) {
+          debugPrint(
+              '[NegotiationManager] Ignoring handshakeComplete: sender not in claimed participants');
+          return;
+        }
+        final existing = await _repo.getById(data.negotiationId);
+        final status = existing?['status'] as String?;
+        if (existing == null ||
+            status == 'PENDING' ||
+            status == 'EXPIRED' ||
+            status == 'DECLINED') {
+          await _applyRemoteHandshakeForBystander(data);
+          return;
+        }
+      }
+
       await completeHandshake(
           data.negotiationId, senderPubKey, data.actualDeliveredQty);
     } catch (e) {
       debugPrint(
           '[NegotiationManager] Failed to decode HandshakeCompleteData: $e');
     }
+  }
+
+  /// 第三方節點:寫一筆 COMPLETED Match_Negotiations(若已存在則升級狀態),
+  /// 之後跑 reconcile 讓 Materials_State / Requests_State 正確進入終態。
+  ///
+  /// 用 synthetic row + 既有 reconcile 機制是為了:
+  /// 1. 沿用 [_reconcileMaterialStatus] 已驗證過的 multi-unit 邏輯
+  ///    (部分交付時不會誤判 CONSUMED)
+  /// 2. 不需新增欄位 / migration
+  /// 3. UNIQUE index `idx_active_negotiation` 排除 COMPLETED,不會撞索引
+  Future<void> _applyRemoteHandshakeForBystander(
+      pb.HandshakeCompleteData data) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final existing = await _repo.getById(data.negotiationId);
+    if (existing == null) {
+      // 寫一筆 synthetic COMPLETED row (insert 用 ignore;重複收到不會炸)
+      await _repo.insert({
+        'negotiation_id': data.negotiationId,
+        'resource_id': data.resourceId,
+        'request_id': data.requestId,
+        'initiator_role': 'PROVIDER', // bystander 不知道真實 role,此欄不影響 reconcile
+        'provider_pub_key': Uint8List.fromList(data.providerPubKey),
+        'requester_pub_key': Uint8List.fromList(data.requesterPubKey),
+        'offered_qty': data.actualDeliveredQty,
+        'requested_qty': data.actualDeliveredQty,
+        'agreed_qty': data.actualDeliveredQty,
+        'actual_delivered_qty': data.actualDeliveredQty,
+        'status': 'COMPLETED',
+        'created_at': now,
+        'expires_at': now,
+        'responded_at': now,
+        'completed_at': now,
+      });
+    } else {
+      // 既有 PENDING/EXPIRED/DECLINED row:強制升級為 COMPLETED,寫入交付量
+      final db = await _db.database;
+      await db.update(
+        'Match_Negotiations',
+        {
+          'status': 'COMPLETED',
+          'agreed_qty': data.actualDeliveredQty,
+          'actual_delivered_qty': data.actualDeliveredQty,
+          'completed_at': now,
+        },
+        where: 'negotiation_id = ?',
+        whereArgs: [data.negotiationId],
+      );
+    }
+    await _reconcileMaterialStatus(data.resourceId);
+    await _reconcileRequestStatus(data.requestId);
+    _controller.add(NegotiationCompleted(
+      negotiationId: data.negotiationId,
+      actualQty: data.actualDeliveredQty,
+    ));
   }
 
   Future<void> _handleRemoteLocationUpdate(
@@ -555,6 +640,18 @@ class NegotiationManager {
 
   Future<double> getRemainingNeed(String requestId) =>
       _repo.computeRemainingNeed(requestId);
+
+  /// 對外公開的 reconcile 入口 — 給 mesh handler 在 Materials_State /
+  /// Requests_State 投影寫入後呼叫,處理「handshakeComplete 先到、supply/request
+  /// 事件後到」的亂序場景。若沒有對應的 COMPLETED Match_Negotiations,reconcile
+  /// 是 no-op,不會誤改狀態。
+  ///
+  /// 設計理由:不發 mesh 事件、純本機 DB 查詢 + 至多一次 UPDATE,無網路風暴風險。
+  Future<void> reconcileMaterialStatus(String resourceId) =>
+      _reconcileMaterialStatus(resourceId);
+
+  Future<void> reconcileRequestStatus(String requestId) =>
+      _reconcileRequestStatus(requestId);
 
   Future<Map<String, dynamic>?> getNegotiation(String negotiationId) =>
       _repo.getById(negotiationId);

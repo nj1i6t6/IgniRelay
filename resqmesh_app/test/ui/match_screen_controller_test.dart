@@ -213,6 +213,69 @@ void main() {
     });
   });
 
+  group('MatchRepository.enrichNegotiations（進行中資訊補全）', () {
+    test('空輸入回空', () async {
+      final enriched = await MatchRepository().enrichNegotiations([]);
+      expect(enriched, isEmpty);
+    });
+
+    test('遠端供給路徑：resourceType 由 Requests_State fallback 補上', () async {
+      final c = _makeController();
+      addTearDown(c.dispose);
+
+      final item = CommunityItem(
+        eventId: 'remote-supply-event',
+        isSupply: true,
+        resourceId: 'remote-resource-id',
+        senderPubKey: List<int>.filled(32, 7),
+        resourceType: 'WATER/BOTTLED',
+        quantity: 5,
+        description: '',
+        urgency: 1,
+        identityLevel: 0,
+        timestamp: 1,
+      );
+      await c.communityAction(item, 2,
+          resourceName: 'water', communityNote: 'need water');
+
+      final rows =
+          await (await DatabaseHelper().database).query('Match_Negotiations');
+      final enriched = await MatchRepository().enrichNegotiations(rows);
+      expect(enriched, hasLength(1));
+      // 本機沒有該物資的 Materials_State，resourceType 從本機需求 Requests_State 補。
+      expect(enriched.single['resource_type'], 'WATER/BOTTLED');
+      expect(enriched.single['request_event_id'], isNotEmpty);
+    });
+
+    test('遠端需求路徑：resourceType + delivery_mode 由 Materials_State 補上',
+        () async {
+      final c = _makeController();
+      addTearDown(c.dispose);
+
+      final item = CommunityItem(
+        eventId: 'remote-request-event',
+        isSupply: false,
+        requestId: 'remote-request-id',
+        senderPubKey: List<int>.filled(32, 8),
+        resourceType: 'WATER/BOTTLED',
+        quantity: 3,
+        description: '',
+        urgency: 1,
+        identityLevel: 0,
+        timestamp: 1,
+      );
+      await c.communityAction(item, 2,
+          resourceName: 'water', communityNote: 'can help');
+
+      final rows =
+          await (await DatabaseHelper().database).query('Match_Negotiations');
+      final enriched = await MatchRepository().enrichNegotiations(rows);
+      expect(enriched, hasLength(1));
+      expect(enriched.single['resource_type'], 'WATER/BOTTLED');
+      expect(enriched.single['delivery_mode'], 'PICKUP');
+    });
+  });
+
   group('whenMatchOutcome pattern-match helper', () {
     String label(MatchOutcome o) => whenMatchOutcome<String>(
           o,

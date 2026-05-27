@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/db/database_helper.dart';
+import 'package:ignirelay_app/app/proto/mesh_protocol.pb.dart' as pb;
 import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 import 'package:ignirelay_app/app/services/negotiation_events.dart';
 
@@ -682,6 +683,270 @@ void main() {
   // ═══════════════════════════════════════════════════════════════════
   // REQUESTER-initiated negotiation (bidirectional matching)
   // ═══════════════════════════════════════════════════════════════════
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Supply write-off (Issue 1): Materials_State CONSUMED transition
+  // — 對稱於 Requests_State FULFILLED;之前 computeAvailableQty 漏扣
+  // COMPLETED 導致 A 的 Materials_State 永遠停在 AVAILABLE。
+  // ═══════════════════════════════════════════════════════════════════
+
+  group('NegotiationManager — Materials_State CONSUMED after handshake', () {
+    test('full single-unit transfer: Materials_State → CONSUMED', () async {
+      final resId = await _seedMaterial(_uid('res'), totalQty: 5.0);
+      final reqId = await _seedRequest(_uid('req'), quantityNeeded: 5.0);
+      final negId = await _createNeg(nm,
+          resourceId: resId,
+          requestId: reqId,
+          offeredQty: 5.0,
+          requestedQty: 5.0);
+
+      await nm.acceptNegotiation(negId, _requesterKey);
+      await nm.completeHandshake(negId, _providerKey, 5.0);
+
+      final db = await DatabaseHelper().database;
+      final mat = await db.query('Materials_State',
+          where: 'resource_id = ?', whereArgs: [resId]);
+      expect(mat.first['status'], equals('CONSUMED'),
+          reason:
+              '全量交付後 Materials_State 應轉 CONSUMED (對稱 Requests FULFILLED)');
+
+      final req = await db.query('Requests_State',
+          where: 'request_id = ?', whereArgs: [reqId]);
+      expect(req.first['status'], equals('FULFILLED'));
+    });
+
+    test('partial transfer keeps Materials_State AVAILABLE with reduced qty',
+        () async {
+      final resId = await _seedMaterial(_uid('res'), totalQty: 10.0);
+      final reqId = await _seedRequest(_uid('req'), quantityNeeded: 5.0);
+      final negId = await _createNeg(nm,
+          resourceId: resId,
+          requestId: reqId,
+          offeredQty: 5.0,
+          requestedQty: 5.0);
+
+      await nm.acceptNegotiation(negId, _requesterKey);
+      await nm.completeHandshake(negId, _providerKey, 5.0);
+
+      final db = await DatabaseHelper().database;
+      final mat = await db.query('Materials_State',
+          where: 'resource_id = ?', whereArgs: [resId]);
+      expect(mat.first['status'], equals('AVAILABLE'),
+          reason: '只交付一半,Materials_State 仍可繼續媒合');
+
+      final avail = await nm.getAvailableQty(resId);
+      expect(avail, closeTo(5.0, 0.01),
+          reason: 'computeAvailableQty 必須扣 COMPLETED (Fix 1)');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Supply write-off (Issue 2): bystander mesh propagation
+  // — handshakeComplete 抵達第三方節點時,寫 synthetic COMPLETED row +
+  // reconcile,讓 Materials_State / Requests_State 正確核銷。
+  // ═══════════════════════════════════════════════════════════════════
+
+  group('NegotiationManager — bystander handshakeComplete propagation', () {
+    test(
+        'no local negotiation + matching projection → CONSUMED + FULFILLED',
+        () async {
+      final resId = _uid('res');
+      final reqId = _uid('req');
+      await _seedMaterial(resId, totalQty: 3.0);
+      await _seedRequest(reqId, quantityNeeded: 3.0);
+      // 不建立 Match_Negotiations:模擬第三方 C 從未見過協商
+
+      final payload = pb.HandshakeCompleteData(
+        negotiationId: _uid('neg'),
+        resourceId: resId,
+        requestId: reqId,
+        providerPubKey: _providerKey,
+        requesterPubKey: _requesterKey,
+        actualDeliveredQty: 3.0,
+        schemaVersion: 1,
+      ).writeToBuffer();
+
+      await nm.handleRemoteEvent(
+          NegotiationManager.handshakeComplete, payload, _providerKey);
+
+      final db = await DatabaseHelper().database;
+      final mat = await db.query('Materials_State',
+          where: 'resource_id = ?', whereArgs: [resId]);
+      expect(mat.first['status'], equals('CONSUMED'));
+      final req = await db.query('Requests_State',
+          where: 'request_id = ?', whereArgs: [reqId]);
+      expect(req.first['status'], equals('FULFILLED'));
+
+      // synthetic Match_Negotiations row 應存在
+      final negs = await db.query('Match_Negotiations',
+          where: 'resource_id = ?', whereArgs: [resId]);
+      expect(negs, hasLength(1));
+      expect(negs.first['status'], equals('COMPLETED'));
+    });
+
+    test('ignores handshakeComplete from non-participant sender', () async {
+      final resId = _uid('res');
+      final reqId = _uid('req');
+      await _seedMaterial(resId, totalQty: 3.0);
+      await _seedRequest(reqId, quantityNeeded: 3.0);
+
+      final payload = pb.HandshakeCompleteData(
+        negotiationId: _uid('neg'),
+        resourceId: resId,
+        requestId: reqId,
+        providerPubKey: _providerKey,
+        requesterPubKey: _requesterKey,
+        actualDeliveredQty: 3.0,
+        schemaVersion: 1,
+      ).writeToBuffer();
+
+      // sender 不是聲稱的 provider/requester
+      await nm.handleRemoteEvent(
+          NegotiationManager.handshakeComplete, payload, _unknownKey);
+
+      final db = await DatabaseHelper().database;
+      final mat = await db.query('Materials_State',
+          where: 'resource_id = ?', whereArgs: [resId]);
+      expect(mat.first['status'], equals('AVAILABLE'),
+          reason: '非參與者廣播 → 應拒絕,不污染本機投影');
+      final negs = await db.query('Match_Negotiations');
+      expect(negs, isEmpty,
+          reason: '非參與者廣播 → 不應留下 synthetic row');
+    });
+
+    test('PENDING negotiation gets upgraded to COMPLETED + Materials CONSUMED',
+        () async {
+      final resId = _uid('res');
+      final reqId = _uid('req');
+      await _seedMaterial(resId, totalQty: 3.0);
+      await _seedRequest(reqId, quantityNeeded: 3.0);
+
+      final negId = _uid('neg');
+      // 模擬第三方 C 收過 matchOffer 但漏掉 matchAccept → 仍 PENDING
+      await nm.createNegotiation(
+        negotiationId: negId,
+        resourceId: resId,
+        requestId: reqId,
+        initiatorRole: 'PROVIDER',
+        providerPubKey: _providerKey,
+        requesterPubKey: _requesterKey,
+        offeredQty: 3.0,
+        requestedQty: 3.0,
+        expiresAt: DateTime.now().millisecondsSinceEpoch + 2700000,
+      );
+
+      final payload = pb.HandshakeCompleteData(
+        negotiationId: negId,
+        resourceId: resId,
+        requestId: reqId,
+        providerPubKey: _providerKey,
+        requesterPubKey: _requesterKey,
+        actualDeliveredQty: 3.0,
+        schemaVersion: 1,
+      ).writeToBuffer();
+
+      await nm.handleRemoteEvent(
+          NegotiationManager.handshakeComplete, payload, _providerKey);
+
+      final db = await DatabaseHelper().database;
+      final negAfter = await db.query('Match_Negotiations',
+          where: 'negotiation_id = ?', whereArgs: [negId]);
+      expect(negAfter.first['status'], equals('COMPLETED'));
+      final mat = await db.query('Materials_State',
+          where: 'resource_id = ?', whereArgs: [resId]);
+      expect(mat.first['status'], equals('CONSUMED'));
+    });
+
+    test(
+        'OUT-OF-ORDER: handshakeComplete arrives before supply/request — '
+        'reconcileMaterialStatus/RequestStatus catches it later',
+        () async {
+      // 模擬第三方 C 收到亂序事件:handshakeComplete 先到、supply/request 後到。
+      // 此情境下 _applyRemoteHandshakeForBystander 寫了 synthetic COMPLETED row,
+      // 但 _reconcileMaterialStatus / _reconcileRequestStatus 因為 Materials_State /
+      // Requests_State 還不存在而 no-op。
+      //
+      // 之後 supply / request 事件抵達 mesh handler,handler 在 insert 投影後呼叫
+      // reconcileMaterialStatus / reconcileRequestStatus,這一刻才會把投影標記為
+      // CONSUMED / FULFILLED。
+      final resId = _uid('res');
+      final reqId = _uid('req');
+
+      // Step 1: handshakeComplete 先到,Materials_State / Requests_State 都還沒
+      final payload = pb.HandshakeCompleteData(
+        negotiationId: _uid('neg'),
+        resourceId: resId,
+        requestId: reqId,
+        providerPubKey: _providerKey,
+        requesterPubKey: _requesterKey,
+        actualDeliveredQty: 3.0,
+        schemaVersion: 1,
+      ).writeToBuffer();
+      await nm.handleRemoteEvent(
+          NegotiationManager.handshakeComplete, payload, _providerKey);
+
+      // synthetic row 存在,但投影還沒有 → 此時投影查不到也無法核銷
+      final db = await DatabaseHelper().database;
+      final negs0 = await db.query('Match_Negotiations',
+          where: 'resource_id = ?', whereArgs: [resId]);
+      expect(negs0, hasLength(1));
+      expect(negs0.first['status'], equals('COMPLETED'));
+      final mat0 = await db.query('Materials_State',
+          where: 'resource_id = ?', whereArgs: [resId]);
+      expect(mat0, isEmpty);
+      final req0 = await db.query('Requests_State',
+          where: 'request_id = ?', whereArgs: [reqId]);
+      expect(req0, isEmpty);
+
+      // Step 2: supply 事件後到 → 直接 seed 投影 (模擬 mesh handler 的 insert),
+      // 接著呼叫 mesh handler 對外的 reconcile 入口。
+      await _seedMaterial(resId, totalQty: 3.0);
+      await nm.reconcileMaterialStatus(resId);
+
+      final mat = await db.query('Materials_State',
+          where: 'resource_id = ?', whereArgs: [resId]);
+      expect(mat.first['status'], equals('CONSUMED'),
+          reason:
+              'supply 事件後到、reconcile 看到 synthetic COMPLETED 應立刻標 CONSUMED');
+
+      // Step 3: request 事件後到 → 同樣對稱
+      await _seedRequest(reqId, quantityNeeded: 3.0);
+      await nm.reconcileRequestStatus(reqId);
+
+      final req = await db.query('Requests_State',
+          where: 'request_id = ?', whereArgs: [reqId]);
+      expect(req.first['status'], equals('FULFILLED'));
+    });
+
+    test('reconcileMaterialStatus is no-op when projection missing', () async {
+      // 純防呆:projection 不存在時不該炸、也不該寫任何東西
+      await nm.reconcileMaterialStatus(_uid('res-not-exists'));
+      await nm.reconcileRequestStatus(_uid('req-not-exists'));
+      // 沒有 expect 任何 throw 即通過
+    });
+
+    test('payload without resource_id/request_id falls back to legacy path',
+        () async {
+      final negId = _uid('neg');
+      final payload = pb.HandshakeCompleteData(
+        negotiationId: negId,
+        // 沒帶 resource_id / request_id (舊 schema)
+        providerPubKey: _providerKey,
+        requesterPubKey: _requesterKey,
+        actualDeliveredQty: 3.0,
+      ).writeToBuffer();
+
+      // 不應炸;走原本 completeHandshake → neg==null → orphan buffer
+      await nm.handleRemoteEvent(
+          NegotiationManager.handshakeComplete, payload, _providerKey);
+
+      final db = await DatabaseHelper().database;
+      final negs = await db.query('Match_Negotiations',
+          where: 'negotiation_id = ?', whereArgs: [negId]);
+      expect(negs, isEmpty,
+          reason: '舊 schema 不該觸發 synthetic insert');
+    });
+  });
 
   group('NegotiationManager — requester-initiated flow', () {
     test('REQUESTER initiator: provider is the responder', () async {

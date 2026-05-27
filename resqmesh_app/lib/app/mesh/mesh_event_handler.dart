@@ -429,6 +429,10 @@ class MeshEventHandler {
         'payload': Uint8List.fromList(payload),
       });
       _dlog('SUPPLY_SYNC ${rd.resourceId.substring(0, 8)}.. to Materials_State');
+      // 亂序保險:若先前有 bystander 寫過 COMPLETED Match_Negotiations
+      // (handshakeComplete 比 supply 先到),這裡 reconcile 讓 Materials_State
+      // 立刻轉 CONSUMED,避免社區頁仍顯示已交接物資。
+      await _negotiationManager.reconcileMaterialStatus(rd.resourceId);
     } catch (e) {
       // UNIQUE constraint = 已有此物資，忽略
       debugPrint('[MeshEvt] Materials_State insert skipped: $e');
@@ -475,6 +479,8 @@ class MeshEventHandler {
         'payload': Uint8List.fromList(payload),
       });
       _dlog('REQUEST_SYNC ${rd.requestId.substring(0, 8)}.. to Requests_State');
+      // 亂序保險:同 Materials_State 對稱處理。
+      await _negotiationManager.reconcileRequestStatus(rd.requestId);
     } catch (e) {
       debugPrint('[MeshEvt] Requests_State insert skipped: $e');
     }

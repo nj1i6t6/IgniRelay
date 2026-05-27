@@ -30,6 +30,10 @@ class EventType extends $pb.ProtobufEnum {
   static const EventType MATCH_GONE = EventType._(12, _omitEnumNames ? '' : 'MATCH_GONE');
   static const EventType CHAT_MESSAGE = EventType._(13, _omitEnumNames ? '' : 'CHAT_MESSAGE');
   static const EventType LOCATION_UPDATE = EventType._(14, _omitEnumNames ? '' : 'LOCATION_UPDATE');
+  static const EventType MATCH_REQUEST = EventType._(15, _omitEnumNames ? '' : 'MATCH_REQUEST');
+  static const EventType HANDSHAKE_COMPLETE = EventType._(16, _omitEnumNames ? '' : 'HANDSHAKE_COMPLETE');
+  static const EventType STATION_CLAIM = EventType._(17, _omitEnumNames ? '' : 'STATION_CLAIM');
+  static const EventType STATION_RESPONSE = EventType._(18, _omitEnumNames ? '' : 'STATION_RESPONSE');
 
   static const $core.List<EventType> values = <EventType> [
     RESOURCE_REGISTER,
@@ -47,6 +51,10 @@ class EventType extends $pb.ProtobufEnum {
     MATCH_GONE,
     CHAT_MESSAGE,
     LOCATION_UPDATE,
+    MATCH_REQUEST,
+    HANDSHAKE_COMPLETE,
+    STATION_CLAIM,
+    STATION_RESPONSE,
   ];
 
   static final $core.Map<$core.int, EventType> _byValue = $pb.ProtobufEnum.initByValue(values);

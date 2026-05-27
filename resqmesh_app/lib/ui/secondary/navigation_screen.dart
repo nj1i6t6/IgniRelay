@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ignirelay_app/app/controllers/ble_scan_controller.dart';
+import 'package:ignirelay_app/app/crypto/identity_manager.dart';
 import 'package:ignirelay_app/app/services/negotiation_manager.dart';
 import 'package:ignirelay_app/app/services/negotiation_events.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -18,6 +19,7 @@ import 'package:ignirelay_app/app/services/negotiation_repo.dart';
 import 'package:ignirelay_app/app/services/location_service.dart';
 import 'package:ignirelay_app/app/services/match_service.dart';
 import 'package:ignirelay_app/ui/secondary/physical_handoff.dart';
+import 'package:ignirelay_app/ui/secondary/physical_handoff_controller.dart';
 import 'package:ignirelay_app/ui/theme/ignirelay_theme.dart';
 import 'package:ignirelay_app/app/data/supply_category_data.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
@@ -62,6 +64,13 @@ class _NavigationScreenState extends State<NavigationScreen> {
   LatLng? _peerLocation;
   StreamSubscription<MatchUpdate>? _meshEventSub;
 
+  // 交接角色：由身分（本機 pubkey == 協商 provider pubkey）判定，與 deliveryMode 解耦。
+  // 過去用 deliveryMode 判定且開導航時被塞空字串，導致雙方都變 requester（Bug #2）。
+  bool _iAmProvider = false;
+  // 角色解析是 async（讀本機 pubkey），未解析完前禁用「開始交接」，避免 provider
+  // 在 _resolveRole 跑完前被當成 requester（預設值）誤走輸入 PIN 分支。
+  bool _roleResolved = false;
+
   // Negotiation 事件訂閱（取消/完成偵測）
   late final StreamSubscription _negotiationSub;
 
@@ -82,7 +91,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
   void initState() {
     super.initState();
     _startBleScan();
-    _loadPeerLocation();
+    // 先判定身分角色，解析後才能正確讀「對方」位置與走 provider/requester 交接分支。
+    _resolveRole();
     // 監聽 Negotiation 事件（取消 / 完成）
     _negotiationSub = _negotiationManager.events.listen((event) {
       if (event is NegotiationCancelled && event.negotiationId == widget.negotiationId) {
@@ -117,28 +127,55 @@ class _NavigationScreenState extends State<NavigationScreen> {
     });
   }
 
+  /// 以身分判定交接角色：本機 pubkey == 協商 provider pubkey → 我是供給方。
+  /// 與 deliveryMode 完全解耦（deliveryMode 只描述「誰移動」）。解析後重讀對方位置。
+  Future<void> _resolveRole() async {
+    var iAmProvider = false;
+    try {
+      final myKey = await context.read<IdentityManager>().getPublicKeyBytes();
+      List<int>? providerKey = widget.match.providerPubKey;
+      if (providerKey == null || providerKey.isEmpty) {
+        // MatchEntry 沒帶到時，從協商列補讀 provider_pub_key。
+        final row = await _negotiationRepo.getById(widget.negotiationId);
+        providerKey = (row?['provider_pub_key'] as Uint8List?)?.toList();
+      }
+      iAmProvider = handoffRoleForIdentity(
+            myPubKey: myKey,
+            providerPubKey: providerKey,
+          ) ==
+          HandoffRole.provider;
+    } catch (e) {
+      debugPrint('[Navigation] role resolve failed: $e');
+    }
+    if (!mounted) return;
+    setState(() {
+      _iAmProvider = iAmProvider;
+      _roleResolved = true;
+    });
+    _loadPeerLocation();
+  }
+
   Future<void> _loadPeerLocation() async {
     try {
       final session = await _negotiationRepo.getById(widget.negotiationId);
       if (session == null || !mounted) return;
       final status = session['status'] as String?;
       if (status != 'ACCEPTED' && status != 'NAVIGATING') return;
-      // 判斷自己是 provider 還是 requester，讀對方的位置
-      // （myLoc 目前未用於 peer 推算；保留 deliveryMode 判斷即可）
+      // 「對方」由身分決定：我是供給方 → 對方是需求方，反之亦然。
       final providerLat = (session['provider_lat'] as num?)?.toDouble();
       final providerLng = (session['provider_lng'] as num?)?.toDouble();
       final requesterLat = (session['requester_lat'] as num?)?.toDouble();
       final requesterLng = (session['requester_lng'] as num?)?.toDouble();
 
-      // 如果 deliveryMode == DELIVER, 我是供給者 → 對方是 requester
-      // 如果 deliveryMode == PICKUP, 我是需求者 → 對方是 provider
       LatLng? peerLoc;
-      if (widget.match.deliveryMode == 'DELIVER') {
+      if (_iAmProvider) {
+        // 我是供給方 → 對方是需求方
         if (requesterLat != null && requesterLng != null &&
             requesterLat != 0 && requesterLng != 0) {
           peerLoc = LatLng(requesterLat, requesterLng);
         }
       } else {
+        // 我是需求方 → 對方是供給方
         if (providerLat != null && providerLng != null &&
             providerLat != 0 && providerLng != 0) {
           peerLoc = LatLng(providerLat, providerLng);
@@ -289,13 +326,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
   // ── 開始交接 ──────────────────────────────────────────────────
 
   void _startHandoff() {
-    // Stage 5：依 deliveryMode 判定當前裝置在交接中的角色，避免硬編碼成 provider。
-    // 與 `_loadPeerLocation` / `_targetPos` 採同一套慣例：
-    //   - DELIVER：我是供給者（provider），要把物資帶到需求者位置
-    //   - PICKUP（含未填值的 fallback）：我是需求者（requester），要前往供給者位置
-    final role = widget.match.deliveryMode == 'DELIVER'
-        ? HandoffRole.provider
-        : HandoffRole.requester;
+    // 交接角色用「身分」判定（_resolveRole 已解析），與 deliveryMode 解耦：
+    //   - 供給方（_iAmProvider）：顯示 / 廣播 PIN
+    //   - 需求方：輸入 + BLE 送出 PIN
+    final role = _iAmProvider ? HandoffRole.provider : HandoffRole.requester;
     // Stage 6-fix：requester 端帶 peer deviceId 給 PhysicalHandoffScreen，
     // 讓 _submitPin 走 BLE writeHandshake 跨裝置驗證 PIN。
     // provider 端不需要 deviceId（它是被寫入的一方）。
@@ -307,7 +341,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
         resourceId: widget.match.resourceId,
         resourceType: widget.match.resourceType,
         urgency: widget.match.urgency,
-        requestId: widget.match.requestEventId,
+        // 邏輯 request_id（與 accept/decline/cancel 一致），非 Event_Logs event_id。
+        requestId: widget.match.requestId,
         negotiationId: widget.negotiationId,
         providerDeviceId: providerDeviceId,
       ),
@@ -466,7 +501,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _peerDetected ? _startHandoff : null,
+                        onPressed:
+                            (_peerDetected && _roleResolved) ? _startHandoff : null,
                         icon: Icon(
                           _peerDetected
                               ? Icons.handshake

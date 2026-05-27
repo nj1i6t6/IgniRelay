@@ -63,7 +63,11 @@ class NegotiationRepo {
         where: 'negotiation_id = ?', whereArgs: [negotiationId]);
   }
 
-  /// 供給方可用餘量 (只扣 ACCEPTED + NAVIGATING)
+  /// 供給方可用餘量 (扣 ACCEPTED + NAVIGATING + COMPLETED)
+  ///
+  /// 對稱於 [computeRemainingNeed]：COMPLETED 的量已交付,不應再算可用。
+  /// 之前漏扣 COMPLETED 會造成 `_reconcileMaterialStatus` 永遠看到 available > 0,
+  /// Materials_State 永遠停在 AVAILABLE/DEPLETED,不會轉 CONSUMED。
   Future<double> computeAvailableQty(String resourceId) async {
     final db = await _database;
     final mat = await db.query('Materials_State',
@@ -77,7 +81,7 @@ class NegotiationRepo {
     final committed = await db.rawQuery('''
       SELECT COALESCE(SUM(agreed_qty), 0) as committed
       FROM Match_Negotiations
-      WHERE resource_id = ? AND status IN ('ACCEPTED', 'NAVIGATING')
+      WHERE resource_id = ? AND status IN ('ACCEPTED', 'NAVIGATING', 'COMPLETED')
     ''', [resourceId]);
     final used = (committed.first['committed'] as num?)?.toDouble() ?? 0.0;
     return totalQty - used;
@@ -257,11 +261,11 @@ class NegotiationRepo {
       final totalQty = (mat.first['total_qty'] as num?)?.toDouble() ?? 0.0;
       final deliveryMode = (mat.first['delivery_mode'] as String?) ?? 'PICKUP';
 
-      // 3. Calculate committed quantity
+      // 3. Calculate committed quantity (對稱於 computeAvailableQty,含 COMPLETED)
       final committed = await txn.rawQuery('''
         SELECT COALESCE(SUM(agreed_qty), 0) as committed
         FROM Match_Negotiations
-        WHERE resource_id = ? AND status IN ('ACCEPTED', 'NAVIGATING')
+        WHERE resource_id = ? AND status IN ('ACCEPTED', 'NAVIGATING', 'COMPLETED')
       ''', [resourceId]);
       final usedQty =
           (committed.first['committed'] as num?)?.toDouble() ?? 0.0;

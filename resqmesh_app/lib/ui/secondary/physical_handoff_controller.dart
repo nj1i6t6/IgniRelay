@@ -11,6 +11,33 @@ import 'package:ignirelay_app/app/services/negotiation_repo.dart';
 
 enum HandoffRole { provider, requester }
 
+/// 依「身分」判定交接角色：本機公鑰 == 協商的 provider 公鑰 → [HandoffRole.provider]
+/// （顯示 / 廣播 PIN），否則 [HandoffRole.requester]（輸入 PIN）。
+///
+/// 不可改用 deliveryMode 判定：deliveryMode 只描述「誰移動」，與「誰是供給方」無關。
+/// 過去導航頁用 deliveryMode 判角色，而開導航時 deliveryMode 被塞成空字串，導致
+/// 雙方都落入 requester、沒人顯示 PIN、PIN 永遠對不上、handshakeComplete(type16)
+/// 永不送出，協商卡在 NAVIGATING 到不了 COMPLETED（Bug #2）。
+HandoffRole handoffRoleForIdentity({
+  required List<int>? myPubKey,
+  required List<int>? providerPubKey,
+}) {
+  if (myPubKey != null &&
+      providerPubKey != null &&
+      myPubKey.isNotEmpty &&
+      myPubKey.length == providerPubKey.length) {
+    var equal = true;
+    for (var i = 0; i < myPubKey.length; i++) {
+      if (myPubKey[i] != providerPubKey[i]) {
+        equal = false;
+        break;
+      }
+    }
+    if (equal) return HandoffRole.provider;
+  }
+  return HandoffRole.requester;
+}
+
 /// Stage 2A 拆分：physical_handoff_screen 的 FSM + business logic 容器。
 ///
 /// 狀態機：[HandoffFsm.idle] → confirming → completing → done | failed

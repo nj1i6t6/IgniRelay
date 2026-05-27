@@ -315,6 +315,46 @@ void main() {
     });
   });
 
+  group('Up Pipeline — EventType wire enum >14 (matchRequest/handshake)', () {
+    // Regression for the 0d two-phone finding: the proto `EventType` enum only
+    // defined values 0–14, but event_types.dart uses matchRequest=15,
+    // handshakeComplete=16, stationClaim=17, stationResponse=18. encodeWirePayload
+    // did `EventType.valueOf(eventType) ?? RESOURCE_REGISTER`, so 15–18 collapsed
+    // to wire type=0 → the receiver decoded type=0, sig-fail (type is in the
+    // signed canonical bytes) → requester-initiated match and handoff completion
+    // never crossed devices. The proto enum now includes 15–18.
+    for (final t in const [15, 16, 17, 18]) {
+      test('encode/decode preserves event_type=$t (not squashed to 0)', () {
+        final wire = MeshEventHandler.encodeWirePayload(
+          _uid('enum$t'), const [1, 2, 3],
+          urgency: 1, eventType: t,
+        );
+        final decoded = MeshEventHandler.decodeWirePayload(wire);
+        expect(decoded, isNotNull);
+        expect(decoded!.eventType, equals(t),
+            reason: 'eventType=$t must survive the wire, not fall back to 0');
+      });
+    }
+
+    test('signed type=15 (matchRequest) is received & stored as 15 (no sig-fail)',
+        () async {
+      final id = _uid('up-mreq');
+      final payload = [4, 5, 6];
+      final wire = await _makeSignedWire(id, payload, urgency: 1, eventType: 15);
+
+      final before = handler.receivedEventCount;
+      await handler.handleIncomingData(wire, 'device-mreq');
+      expect(handler.receivedEventCount, equals(before + 1),
+          reason: 'must not be dropped by sig-fail');
+
+      final db = await DatabaseHelper().database;
+      final rows = await db
+          .query('Event_Logs', where: 'event_id = ?', whereArgs: [id]);
+      expect(rows.length, equals(1));
+      expect(rows.first['event_type'], equals(15));
+    });
+  });
+
   group('Up Pipeline — Error Resilience', () {
     test('empty bytes: does not throw', () async {
       await expectLater(

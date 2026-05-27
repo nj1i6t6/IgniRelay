@@ -18,6 +18,15 @@ enum EventType {
   MATCH_GONE        = 12;  // 回覆：沒了
   CHAT_MESSAGE      = 13;  // 聊天訊息
   LOCATION_UPDATE   = 14;  // 媒合中位置同步
+  // ── New slots (must mirror lib/app/mesh/event_types.dart) ──
+  // 這些值原本只在 Dart 端 event_types.dart 定義，proto enum 漏補；導致
+  // encodeWirePayload 的 `EventType.valueOf(15/16/17/18)` 回 null → fallback
+  // 成 RESOURCE_REGISTER(0)，使 matchRequest / handshakeComplete 等事件在 wire
+  // 上被壓成 type=0、收端 sig-fail。補齊後 wire type 與簽章 canonical 一致。
+  MATCH_REQUEST      = 15;  // 需求方主動發起媒合（社區「我需要」）
+  HANDSHAKE_COMPLETE = 16;  // 實體交接完成
+  STATION_CLAIM      = 17;  // 站點認領
+  STATION_RESPONSE   = 18;  // 站點回覆
 }
 
 // 檢傷及優先級定義 (QoS & Triage)

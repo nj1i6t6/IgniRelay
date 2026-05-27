@@ -121,10 +121,12 @@ class MatchScreenController extends ChangeNotifier {
       List<Map<String, dynamic>> activeNeg = const [];
       if (_myPubKey != null) {
         final all = await _negotiationManager.getMyNegotiations(_myPubKey!);
-        activeNeg = all.where((n) {
+        final active = all.where((n) {
           final s = n['status'] as String;
           return s == 'PENDING' || s == 'ACCEPTED' || s == 'NAVIGATING';
         }).toList();
+        // 補上物資名稱 / 配送模式等顯示用 metadata（Match_Negotiations 只存外鍵）。
+        activeNeg = await _repo.enrichNegotiations(active);
       }
       if (_disposed) return;
 

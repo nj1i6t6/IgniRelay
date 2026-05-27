@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:ignirelay_app/app/data/supply_category_data.dart';
 import 'package:ignirelay_app/ui/theme/igni_colors.dart';
 import 'package:ignirelay_app/l10n/l10n_ext.dart';
 
@@ -60,6 +61,13 @@ class MatchTabNegotiations extends StatelessWidget {
     final expiresAt = (neg['expires_at'] as int?) ?? 0;
     final matchScore = (neg['match_score'] as num?)?.toDouble();
 
+    // 物資名稱：Match_Negotiations 不含 resourceType，由 enrichNegotiations 補進
+    // 'resource_type'。多筆協商同時進行時，這是分辨「在媒合什麼」的關鍵。
+    final resourceTypeCode = neg['resource_type'] as String? ?? '';
+    final resourceName = resourceTypeCode.isNotEmpty
+        ? getLocalizedReadableName(resourceTypeCode, context)
+        : '—';
+
     // Determine my role
     final providerKey = neg['provider_pub_key'] as Uint8List?;
     final isProvider = myPubKey != null && providerKey != null &&
@@ -111,6 +119,24 @@ class MatchTabNegotiations extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 物資名稱（讓多筆協商可分辨在媒合什麼）
+            Row(
+              children: [
+                Icon(Icons.inventory_2_outlined, color: p.text2, size: 16),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    resourceName,
+                    style: TextStyle(
+                        color: p.text0,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             // Header row
             Row(
               children: [

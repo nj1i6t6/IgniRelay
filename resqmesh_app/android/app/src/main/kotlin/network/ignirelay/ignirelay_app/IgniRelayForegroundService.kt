@@ -1296,8 +1296,9 @@ class IgniRelayForegroundService : Service() {
     // ── Bug 10: 差量推送（Bloom 比對後推送 Central 缺少的事件 + 本機 Bloom）──
     /**
      * 收到 Central 寫入的 Bloom Filter 後，比對差量，只推 Central 缺少的事件。
-     * 推送結尾附加本機 Bloom，讓 Central 知道本機已有哪些事件，
-     * 反向用 GATT Write 補送 Peripheral 缺少的事件。
+     * 推送結尾「若塞得下單次 notify」會附加本機 Bloom，讓 Central 知道本機已有哪些
+     * 事件，反向用 GATT Write 補送 Peripheral 缺少的事件。反向 Bloom 是最佳化、非
+     * 必需（細節見下方組裝 allPackets 處的註解）。
      *
      * 支援兩種格式：
      * - 新版 bit-vector：帶 magic [0xFF, 0xBF, 0x02, 0x00]，用 bloomMayContain 比對
@@ -1305,7 +1306,7 @@ class IgniRelayForegroundService : Service() {
      *
      * 協議格式：
      * - 事件封包：正常 Protobuf MeshEvent bytes
-     * - 本機 Bloom：前綴 4 bytes magic [0xFF, 0xB1, 0x00, 0x4D] + Bloom bytes
+     * - 本機 Bloom（可選）：前綴 4 bytes magic [0xFF, 0xB1, 0x00, 0x4D] + Bloom bytes
      * - 結束標記：[0xFF, 0xE7, 0xD0, 0x7E]（"END" magic）
      */
     private fun pushDiffToDevice(device: BluetoothDevice, remoteBloomBytes: ByteArray) {
@@ -1354,12 +1355,36 @@ class IgniRelayForegroundService : Service() {
         val bloomFmt = if (isBitVector) "bitvec(${remoteBloomBytes.size}B)" else "text(${remoteEventIds.size}ids)"
         Log.i(TAG, "pushDiff: ${device.address} bloom=$bloomFmt total=${events.size} skip=$bloomSkipped diff=${diffEvents.size}")
 
-        // 需要推送的封包：差量事件 + 本機 Bloom + 結束標記
-        val localBloom = sharedBloomBytes
-        val bloomPacket = byteArrayOf(0xFF.toByte(), 0xB1.toByte(), 0x00, 0x4D) + localBloom
+        // 需要推送的封包：差量事件 +（可選）反向本機 Bloom + 結束標記
         val endMarker = byteArrayOf(0xFF.toByte(), 0xE7.toByte(), 0xD0.toByte(), 0x7E)
 
-        val allPackets = diffEvents + listOf(bloomPacket, endMarker)
+        // 反向 Bloom（把本機 bloom 反推回 Central）：讓 Central 回寫本機缺少的事件時
+        // 能先做去重，省一點頻寬。但這是同步「最佳化」，不是正確性必需 —— Central 收
+        // 不到反向 bloom 時 remoteEventIds 會是空集合，於是回寫全部事件，再由本機收端
+        // 的 event_id 去重（seenEvents + DB-dup）兜底，系統仍會收斂。
+        //
+        // 問題：BLE notify 不能分片（不像 GATT Write 有 Long Write），而反向封包固定為
+        // 4(magic) + 2052(sharedBloomBytes，本身已含 4-byte bloom magic) = 2056B，
+        // 遠大於單次 notify 上限 minOf(MTU-3, 512)=512B —— 任何 MTU 都塞不下。過去這包
+        // 一律被 safeSingleNotify 以 oversize 擋下，每次同步都噴一筆誤導性的
+        // notify_push_error 並灌大 failCount，讓 logcat 看起來像真的送失敗。
+        //
+        // 修法：塞得下才送（保留最佳化）；塞不下就 skip 並記一行 info（不再當成錯誤）。
+        // 真正「任意 MTU 都送」的完整版需要對反向 bloom 做 chunk 分片 + Dart/iOS 收端
+        // 組裝，屬於新 wire 格式，這裡不做。
+        val bloomPacket = byteArrayOf(0xFF.toByte(), 0xB1.toByte(), 0x00, 0x4D) + sharedBloomBytes
+        val bloomCap = maxSingleNotifyBytes(device.address)
+        val includeBloom = bloomPacket.size <= bloomCap
+        if (!includeBloom) {
+            Log.i(TAG, "pushDiff: ${device.address} local bloom reverse-push skipped " +
+                "(${bloomPacket.size}B > cap ${bloomCap}B; peer dedup handled by receive-side)")
+        }
+
+        val allPackets = if (includeBloom) {
+            diffEvents + listOf(bloomPacket, endMarker)
+        } else {
+            diffEvents + listOf(endMarker)
+        }
 
         mainHandler.post {
             MainActivity.sharedEventSink?.success(mapOf(

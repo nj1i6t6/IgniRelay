@@ -34,20 +34,26 @@ void main() {
       expect(pb.EventType.MATCH_GONE.value, equals(12));
     });
 
-    test('values list contains all 15 entries', () {
-      expect(pb.EventType.values.length, equals(15));
+    test('values list contains all 19 entries', () {
+      expect(pb.EventType.values.length, equals(19));
     });
 
-    test('valueOf(14) returns LOCATION_UPDATE', () {
+    test('valueOf(14..18) map to the new-slot constants', () {
       expect(pb.EventType.valueOf(14), equals(pb.EventType.LOCATION_UPDATE));
+      expect(pb.EventType.valueOf(15), equals(pb.EventType.MATCH_REQUEST));
+      expect(pb.EventType.valueOf(16), equals(pb.EventType.HANDSHAKE_COMPLETE));
+      expect(pb.EventType.valueOf(17), equals(pb.EventType.STATION_CLAIM));
+      expect(pb.EventType.valueOf(18), equals(pb.EventType.STATION_RESPONSE));
     });
 
-    // v0.2.5 Stage 4 §6.1：取代舊的 `valueOf(15) returns null` 測試。
-    // 目的：每個 Dart 端 EventType 常數都必須有對應的 proto enum 值，否則
-    // 事件會被靜默編碼成 type=0（Bug 1 的根因）。
-    // 標記 skip：proto enum 目前只到 14，常數 15–18（matchRequest /
-    // handshakeComplete / stationClaim / stationResponse）尚無 proto 對應，
-    // v0.2.5 不修這個缺口。待 v0.3 Envelope v2 重排 EventType 後移除 skip。
+    // 每個 Dart 端 EventType 常數都必須有對應的 proto enum 值，否則事件會被
+    // encodeWirePayload 靜默編碼成 type=0（Bug 1 根因）。
+    //
+    // 此測試原本被 skip，註解寫「proto enum 只到 14，常數 15–18 尚無對應，
+    // 待 v0.3 再修」——但這個缺口其實正在線上把 matchRequest(15) /
+    // handshakeComplete(16) 壓成 type=0、收端 sig-fail，導致需求方發起的媒合與
+    // 交接完成跨機失效（0d 兩機實測坐實）。proto enum 已補齊 15–18，移除 skip，
+    // 讓本測試成為「Dart 常數 ↔ proto enum」漂移的長期守門員。
     test('Dart EventType constants must all have proto counterparts', () {
       final dartValues = <int>{
         EventType.resourceRegister, // 0
@@ -76,6 +82,6 @@ void main() {
                 'Sync protos/mesh_protocol.proto before adding new EventType '
                 'constants.');
       }
-    }, skip: 'Resolved by v0.3 Envelope v2 reset');
+    });
   });
 }

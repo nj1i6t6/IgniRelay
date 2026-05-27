@@ -263,6 +263,82 @@ class MatchRepository {
     return results;
   }
 
+  /// 為「進行中」協商列補上顯示用 metadata。
+  ///
+  /// `Match_Negotiations` 只存外鍵（resource_id / request_id / 雙方 pubkey），不含
+  /// 物資名稱或配送模式，因此進行中分頁畫不出「媒合了什麼物資」、`_openNavigationForNeg`
+  /// 也只能塞空字串給 `MatchEntry`。這裡用 resource_id → Materials_State、
+  /// request_id → Requests_State 補回：
+  ///   - `resource_type`     物資代碼（供 getLocalizedReadableName 顯示）
+  ///   - `delivery_mode`     配送模式（DELIVER / PICKUP / DROP_OFF）
+  ///   - `request_event_id`  需求事件 id（handoff 需要）
+  ///   - `urgency`           需求急迫度（handoff 逾時長度依此調整）
+  ///
+  /// sqflite 查詢結果為唯讀 map，故回傳新的可變 map。活躍協商數量很少，N+1 查詢可接受。
+  Future<List<Map<String, dynamic>>> enrichNegotiations(
+      List<Map<String, dynamic>> negs) async {
+    if (negs.isEmpty) return negs;
+    final db = await _db.database;
+    final out = <Map<String, dynamic>>[];
+    for (final neg in negs) {
+      final enriched = Map<String, dynamic>.from(neg);
+      final resourceId = neg['resource_id'] as String? ?? '';
+      final requestId = neg['request_id'] as String? ?? '';
+
+      String resourceType = '';
+      String deliveryMode = 'PICKUP';
+      String requestEventId = '';
+      int urgency = 0;
+
+      // 供給側：Materials_State 同時有 delivery_mode 與 payload(resourceType)
+      if (resourceId.isNotEmpty) {
+        final mat = await db.query('Materials_State',
+            columns: ['payload', 'delivery_mode'],
+            where: 'resource_id = ?',
+            whereArgs: [resourceId],
+            limit: 1);
+        if (mat.isNotEmpty) {
+          deliveryMode = (mat.first['delivery_mode'] as String?) ?? 'PICKUP';
+          final payload = mat.first['payload'] as Uint8List?;
+          if (payload != null) {
+            try {
+              resourceType = pb.ResourceData.fromBuffer(payload).resourceType;
+            } catch (_) {}
+          }
+        }
+      }
+
+      // 需求側：Requests_State 有 event_id；resourceType 作為供給側缺漏時的 fallback
+      if (requestId.isNotEmpty) {
+        final req = await db.rawQuery('''
+          SELECT r.event_id, r.payload, e.urgency
+          FROM Requests_State r
+          LEFT JOIN Event_Logs e ON r.event_id = e.event_id
+          WHERE r.request_id = ? LIMIT 1
+        ''', [requestId]);
+        if (req.isNotEmpty) {
+          requestEventId = (req.first['event_id'] as String?) ?? '';
+          urgency = (req.first['urgency'] as int?) ?? 0;
+          if (resourceType.isEmpty) {
+            final payload = req.first['payload'] as Uint8List?;
+            if (payload != null) {
+              try {
+                resourceType = pb.RequestData.fromBuffer(payload).resourceType;
+              } catch (_) {}
+            }
+          }
+        }
+      }
+
+      enriched['resource_type'] = resourceType;
+      enriched['delivery_mode'] = deliveryMode;
+      enriched['request_event_id'] = requestEventId;
+      enriched['urgency'] = urgency;
+      out.add(enriched);
+    }
+    return out;
+  }
+
   /// 查詢別人的可用物資供給（需求者反向媒合用）
   /// 使用 Materials_State 的 total_qty, delivery_mode 欄位
   Future<List<DecodedSupply>> getOthersSupplies() async {

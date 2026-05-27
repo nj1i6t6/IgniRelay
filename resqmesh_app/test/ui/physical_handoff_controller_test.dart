@@ -142,4 +142,47 @@ void main() {
       expect(high.pendingTimeout, const Duration(minutes: 30));
     });
   });
+
+  // Bug #2 迴歸：交接角色必須由「身分」判定，不可由 deliveryMode 判定。
+  // 過去用 deliveryMode（開導航時被塞空字串）→ 雙方都變 requester、沒人顯示 PIN。
+  group('handoffRoleForIdentity（Bug #2 角色判定）', () {
+    final myKey = List<int>.generate(32, (i) => i);
+    final otherKey = List<int>.generate(32, (i) => 100 + i);
+
+    test('本機 pubkey == provider pubkey → provider', () {
+      expect(
+        handoffRoleForIdentity(myPubKey: myKey, providerPubKey: myKey),
+        HandoffRole.provider,
+      );
+    });
+
+    test('本機 pubkey != provider pubkey → requester', () {
+      expect(
+        handoffRoleForIdentity(myPubKey: myKey, providerPubKey: otherKey),
+        HandoffRole.requester,
+      );
+    });
+
+    test('providerPubKey 為 null → requester（保守 fallback）', () {
+      expect(
+        handoffRoleForIdentity(myPubKey: myKey, providerPubKey: null),
+        HandoffRole.requester,
+      );
+    });
+
+    test('兩者皆空 list → requester（空不算 provider）', () {
+      expect(
+        handoffRoleForIdentity(myPubKey: const [], providerPubKey: const []),
+        HandoffRole.requester,
+      );
+    });
+
+    test('長度不同 → requester', () {
+      expect(
+        handoffRoleForIdentity(
+            myPubKey: myKey, providerPubKey: myKey.sublist(0, 16)),
+        HandoffRole.requester,
+      );
+    });
+  });
 }
