@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main, V0.2.5]
+  pull_request:
+    branches: [main, V0.2.5]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref to save Actions minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    name: Analyze & Test
+    # Windows runner: golden tests are rendered/validated on Windows in this
+    # project, so we run CI on the same platform to keep pixel comparisons stable.
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: resqmesh_app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.2'
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Architecture layer check
+        run: dart run tool/check_layers.dart --strict
+
+      - name: Analyze
+        # Infos/warnings are not fatal; errors fail the build.
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Run tests
+        run: flutter test
