@@ -1,0 +1,5 @@
+# The wire-conformance corpus is compared byte-for-byte against the LF output of
+# JsonEncoder in test/conformance/wire_conformance_corpus_test.dart. Pin it to LF
+# so the checkout is identical on every platform (CI Windows runners default to
+# core.autocrlf=true, which would otherwise rewrite it to CRLF and break the test).
+docs/specs/wire_conformance_v1.json text eol=lf
