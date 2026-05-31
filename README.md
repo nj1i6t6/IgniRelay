@@ -6,6 +6,7 @@
 
 **English** · [繁體中文](README.zh-Hant.md)
 
+[![CI](https://github.com/nj1i6t6/IgniRelay/actions/workflows/ci.yml/badge.svg)](https://github.com/nj1i6t6/IgniRelay/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-lightgrey.svg)](#platform-support)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B.svg?logo=flutter)](https://flutter.dev)
