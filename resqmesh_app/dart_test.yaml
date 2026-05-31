@@ -1,0 +1,8 @@
+# Test runner configuration.
+#
+# Tags let CI skip platform-dependent suites without affecting local runs.
+# Local `flutter test` still runs everything; CI uses `--exclude-tags golden`.
+tags:
+  golden:
+    # Golden (pixel) tests. Rendering depends on platform/GPU/font versions,
+    # so these are excluded from CI and validated locally on the dev machine.

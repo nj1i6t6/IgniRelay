@@ -10,6 +10,12 @@
 //   - StatusChip（同 scene 內 6 種 tone）
 //   - GlassIconBtn（同 scene 內 default / selected / danger 三態）
 // 不納入動效類（SlideUpSheet / PulseEffect / RippleEffect）以避免維護負擔。
+//
+// Tagged `golden`: pixel comparisons are platform/GPU-dependent, so CI excludes
+// this tag (`flutter test --exclude-tags golden`). Run locally with plain
+// `flutter test` to validate, and `--update-goldens` to regenerate baselines.
+@Tags(['golden'])
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
