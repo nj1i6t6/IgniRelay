@@ -16,7 +16,7 @@ Report privately through either channel:
 
 1. **GitHub Private Vulnerability Reporting** (preferred) — go to the repository's
    **Security → Report a vulnerability** tab and submit a private advisory.
-2. **Email** — `7220simon@gmail.com` with the subject line `[IgniRelay Security]`.
+2. **Email** — `simon@bochengsu.com` with the subject line `[IgniRelay Security]`.
 
 Please include, as far as you can:
 

@@ -18,7 +18,7 @@
 | App 名稱 | 烽傳 IgniRelay |
 | `pubspec.yaml` 名稱 | `ignirelay_app` |
 | 資料夾名稱 | `resqmesh_app` |
-| 版本 | `0.2.0+30` |
+| 版本 | `0.2.5+31` |
 | 主要平台 | Android、iOS |
 | 核心技術 | Flutter、SQLite、Ed25519、HLC、BLE GATT、離線 MBTiles |
 | 主要狀態模式 | Singleton service + SQLite projection + event stream + 局部 `ChangeNotifier` |

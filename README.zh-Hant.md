@@ -184,7 +184,7 @@ dart run tool/check_layers.dart --strict
 
 ## 目前狀態
 
-`pubspec.yaml` 版本 `0.2.0+30`，**active development**。部分協議事件（如 `QUARANTINE_VOTE`、
+`pubspec.yaml` 版本 `0.2.5+31`，**active development**。部分協議事件（如 `QUARANTINE_VOTE`、
 `FIRE_ALARM_RF`）目前在接收端為保留 / no-op；醫療摘要尚未真正掛入 SOS wire payload。
 閱讀 proto 時請勿假設每個 message 都已完整接線到 UI —— 詳見技術 README 的「已知缺口與風險」。
 

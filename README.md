@@ -191,7 +191,7 @@ reading order), see:
 
 ## Project status
 
-`pubspec.yaml` version `0.2.0+30`, **active development**. Some protocol events (e.g.
+`pubspec.yaml` version `0.2.5+31`, **active development**. Some protocol events (e.g.
 `QUARANTINE_VOTE`, `FIRE_ALARM_RF`) are currently reserved / no-op on the receive side, and the
 medical summary is not yet wired into the SOS wire payload. When reading the proto, do not assume
 every message is fully connected to the UI — see "Known gaps & risks" in the technical README.
