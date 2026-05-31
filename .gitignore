@@ -24,5 +24,5 @@
 # Local debug DB snapshot — 不該進版控
 /text/resqmesh_local_debug_snapshot.db
 
-# Claude Code per-machine 設定 — 每台機器不同，不該共享
-/.claude/settings.local.json
+# Claude Code 本地工作目錄（worktrees 可達數百 MB）與 per-machine 設定 — 不該進版控
+/.claude/
